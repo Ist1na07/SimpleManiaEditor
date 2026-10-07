@@ -13,6 +13,7 @@
 | 渲染 | 首页、时间轴、编辑器输出 PNG；检查中文、暗色主题、7K 网格与默认浮窗收起 |
 | Release 构建 | warnings-as-errors，0 warnings / 0 errors |
 | Windows 自包含 payload | 无 GUI smoke test：Skia native DLL 加载和 7K LN 保存/读取，退出码 0 |
+| ZIP 解压运行 | 在含空格的新目录解压，显式等待 EXE 结束，smoke test 退出码 0 |
 
 执行入口：`scripts/Test.ps1` 和 `scripts/Publish.ps1 -Zip`。测试数据均为自制谱面或系统临时目录副本，没有修改用户真实 Songs。
 
