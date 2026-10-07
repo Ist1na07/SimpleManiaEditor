@@ -162,7 +162,7 @@ public static class TimelinePlacementGeometry
             throw new ArgumentOutOfRangeException(nameof(tool));
         snapDivision = Math.Clamp(snapDivision, 1, 1920);
         if (tool == TimelineTool.Tap &&
-            currentBeat.Value - startBeat.Value < 1d / snapDivision - 0.000001)
+            Math.Abs(currentBeat.Value - startBeat.Value) < 1d / snapDivision - 0.000001)
             return new TimelinePlacement(TimelinePlacementKind.Tap, startBeat, null);
 
         var first = startBeat;

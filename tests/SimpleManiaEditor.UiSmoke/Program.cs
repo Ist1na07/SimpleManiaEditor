@@ -12,6 +12,7 @@ using LumaChart.Avalonia;
 using LumaChart.Avalonia.Controls;
 using LumaChart.Avalonia.Infrastructure;
 using LumaChart.Avalonia.ViewModels;
+using LumaChart.Avalonia.Audio;
 using LumaChart.Core.Models;
 
 internal static class Program
@@ -32,6 +33,8 @@ internal static class Program
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
             RunPointerWorkflow(screenshotRoot);
+            InteractionRegressionSpecs.Run();
+            PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             RunApplicationSmoke(screenshotRoot);
             Console.WriteLine("PASS headless pointer workflow, shortcuts, profile persistence, application startup and rendering");
             return 0;
@@ -136,6 +139,43 @@ internal static class Program
         var save = viewModel.SaveAndVerifyAsync(tab.Id);
         PumpUntil(() => save.IsCompleted);
         Require(save.GetAwaiter().GetResult()?.StructurallyEqual == true, "editor save/reload verification failed");
+        var gridPicker = (ComboBox)typeof(MainWindow).GetField("fixedGridPicker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        Require(gridPicker.IsVisible && gridPicker.TranslatePoint(new Point(), window)!.Value.Y < origin.Y,
+            "grid selector is not in fixed top toolbar");
+        var currentBeat = timeline.CurrentBeat;
+        var gridBefore = tab.Session.SnapDivision;
+        window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, 1), RawInputModifiers.Control);
+        Require(tab.Session.SnapDivision > gridBefore && timeline.CurrentBeat == currentBeat &&
+            gridPicker.SelectedItem is int displayedDivision && displayedDivision == tab.Session.SnapDivision,
+            "window Ctrl wheel did not synchronize the fixed grid selector");
+        var wavePath = Path.Combine(Path.GetDirectoryName(tab.WorkingPath)!, "simulation.wav");
+        WriteSimulationWave(wavePath);
+        tab.Session.Mutate(d => d.Metadata.AudioFile = "simulation.wav");
+        var transport = (WindowsAudioTransportViewModel)typeof(MainWindow).GetField("audioTransport", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        PumpUntil(() => transport.PlaybackSnapshot?.IsLoaded == true);
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == true);
+        var factory = (SimulatedAudioOutputFactory)PlatformAudioOutputs.Current!;
+        var pausesBefore = factory.Outputs.Sum(output => output.PauseCalls);
+        window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, -1));
+        var targetBeat = timeline.CurrentBeat;
+        Pump(250);
+        Require(transport.PlaybackSnapshot?.IsPlaying == true && factory.Outputs.Sum(output => output.PauseCalls) == pausesBefore,
+            "wheel seek paused playback instead of continuing");
+        Require(transport.PlaybackSnapshot!.Position.TotalMilliseconds >= targetBeat * 500 - 40 &&
+            transport.PlaybackSnapshot.Position.TotalMilliseconds < targetBeat * 500 + 700, "wheel did not seek to target time");
+        window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, -1));
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == false);
+        Pump(250);
+        Require(transport.PlaybackSnapshot?.IsPlaying == false, "pending wheel seek resumed after explicit Space pause");
+        Require(factory.Outputs.Any(output => output.Format.SampleRate == 16000 && output.BytesRead > 0) &&
+            factory.Outputs.All(output => output.ReadFailure == null), "simulated sink did not consume real DSP output cleanly");
+        tab.Session.Mutate(d => d.Metadata.AudioFile = "");
+        Pump(150);
+        save = viewModel.SaveAndVerifyAsync(tab.Id);
+        PumpUntil(() => save.IsCompleted);
+        Require(save.GetAwaiter().GetResult()?.StructurallyEqual == true, "final audio workflow save failed");
         window.Close();
         Pump(200);
     }
@@ -150,6 +190,18 @@ internal static class Program
         window.KeyPress(key, modifiers, PhysicalKey.None, null);
         window.KeyRelease(key, modifiers, PhysicalKey.None, null);
         Dispatcher.UIThread.RunJobs();
+    }
+    private static void WriteSimulationWave(string path)
+    {
+        const int rate = 16000;
+        const int frames = rate * 20;
+        using var writer = new BinaryWriter(File.Create(path));
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); writer.Write(36 + frames * 2);
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt ")); writer.Write(16);
+        writer.Write((short)1); writer.Write((short)1); writer.Write(rate); writer.Write(rate * 2);
+        writer.Write((short)2); writer.Write((short)16);
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("data")); writer.Write(frames * 2);
+        for (var i = 0; i < frames; i++) writer.Write((short)(Math.Sin(i * Math.PI * 2 * 440 / rate) * 8000));
     }
     private static void PumpUntil(Func<bool> condition)
     {

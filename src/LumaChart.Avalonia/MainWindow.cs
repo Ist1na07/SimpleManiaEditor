@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -81,7 +81,7 @@ public sealed partial class MainWindow : PlatformWindow
     }
 
     private static readonly int[] QuickSnapDivisions =
-        [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32];
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32, 48, 64];
     private static readonly double[] QuickGridScales = [.5, 1, 1.5, 2, 2.5, 3];
     private static readonly double[] QuickPlaybackRates = [.2, .4, .6, 1];
     private static readonly Color WindowColor = Color.Parse("#111315");
@@ -1002,7 +1002,7 @@ public sealed partial class MainWindow : PlatformWindow
         autoBackupTimer.Tick += AutoBackupTimer_Tick;
         editorSeekCommitTimer = new DispatcherTimer(DispatcherPriority.Normal)
         {
-            Interval = TimeSpan.FromMilliseconds(90)
+            Interval = TimeSpan.FromMilliseconds(12)
         };
         editorSeekCommitTimer.Tick += (_, _) =>
         {
@@ -1278,6 +1278,7 @@ public sealed partial class MainWindow : PlatformWindow
         keySoundRuntime.StateChanged += KeySoundRuntime_StateChanged;
         timeline.CurrentBeatChanged += Timeline_CurrentBeatChanged;
         timeline.ManualNavigationRequested += Timeline_ManualNavigationRequested;
+        timeline.SnapDivisionChangeRequested += (_, direction) => AdjustQuickSnap(direction);
         timeline.PixelsPerBeatChanged += Timeline_PixelsPerBeatChanged;
         timeline.SelectionChanged += (_, _) => UpdateSelectionUi();
         timeline.TimingSelectionChanged += Timeline_TimingSelectionChanged;
@@ -5473,8 +5474,12 @@ public sealed partial class MainWindow : PlatformWindow
             Padding = new Thickness(1),
             Child = timelineHost
         };
-        Grid.SetColumn(timelineFrame, 2);
-        workbench.Children.Add(timelineFrame);
+        var timelineColumn = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+        timelineColumn.Children.Add(BuildFixedGridToolbar());
+        Grid.SetRow(timelineFrame, 1);
+        timelineColumn.Children.Add(timelineFrame);
+        Grid.SetColumn(timelineColumn, 2);
+        workbench.Children.Add(timelineColumn);
         inspectorText.Foreground = MutedBrush;
         inspectorText.FontSize = 12;
         inspectorText.LineHeight = 22;
@@ -7931,6 +7936,7 @@ public sealed partial class MainWindow : PlatformWindow
         divisionPicker.SelectedItem = division;
         editorViewSettings = editorViewSettings.WithSnapDivision(division);
         SyncSettingsSnapBox(division, addCustomDivisionItem);
+        SyncFixedGridPicker(division);
         RefreshQuickValuesPaletteValues();
         timeline.InvalidateVisual();
         viewModel.SetStatus(AvaloniaLocalizationCatalog.Format("当前分度 1/{0}", division));
@@ -7962,6 +7968,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void RefreshQuickValuesPaletteValues()
     {
+        SyncFixedGridPicker(viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision);
         var division = viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision;
         quickSnapText.Text = $"1/{division}";
         quickGridScaleText.Text = $"{timeline.PixelsPerBeat / 140d:0.00}x";
@@ -15847,7 +15854,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void RunEditorFrame(bool updateVisuals)
     {
-        var pump = editorViewSettings.FrameRateLimit > WindowsFrameRateOptions.Default &&
+        var pump = editorViewSettings.FrameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate &&
                    TryReadEditorHighRateSample(out var sampled)
             ? sampled
             : keySoundPlanRebuildPending
@@ -15906,7 +15913,7 @@ public sealed partial class MainWindow : PlatformWindow
     private static TimeSpan WindowsEditorFrameInterval(int frameRateLimit)
     {
         var normalized = WindowsFrameRateOptions.Normalize(frameRateLimit);
-        var visualRate = Math.Min(normalized, WindowsFrameRateOptions.Default);
+        var visualRate = normalized;
         return TimeSpan.FromMilliseconds(1000d / visualRate);
     }
 
@@ -15947,7 +15954,7 @@ public sealed partial class MainWindow : PlatformWindow
             // The audio UI timer calls this every tick; it must not restart the
             // editor pump underneath a running playtest.
             !playtestInProgress &&
-            limit > WindowsFrameRateOptions.Default &&
+            limit > WindowsFrameRateOptions.CompositionDrivenRate &&
             isPlaying;
         if (shouldRunHighRate &&
             (!editorHighRateFramePumpRunning ||
@@ -16061,15 +16068,15 @@ public sealed partial class MainWindow : PlatformWindow
         var limit = editorViewSettings.FrameRateLimit;
         var performance = timeline.Performance.Snapshot();
         frameRateStatusIdleShown = false;
-        frameRateStatusText.Text = limit > WindowsFrameRateOptions.Default
+        frameRateStatusText.Text = limit > WindowsFrameRateOptions.CompositionDrivenRate
             ? AvaloniaLocalizationCatalog.Format("时钟采样: {0:0} · 画面更新: {1:0}", editorHighRateFramePump.TakeTickCount() / seconds, editorFrameUpdates / seconds)
             : AvaloniaLocalizationCatalog.Format("画面: {0:0} · 更新回调: {1:0}", editorFrameUpdates / seconds, editorFrameUpdates / seconds);
         AutomationProperties.SetName(frameRateStatusText, frameRateStatusText.Text);
         AutomationProperties.SetHelpText(
             frameRateStatusText,
             $"FrameRateLimit={limit}; " +
-            $"HighRateClock={limit > WindowsFrameRateOptions.Default}; " +
-            $"FrameDriver={(limit <= WindowsFrameRateOptions.Default ? "TopLevel.RequestAnimationFrame" : "DispatcherTimer")}; " +
+            $"HighRateClock={limit > WindowsFrameRateOptions.CompositionDrivenRate}; " +
+            $"FrameDriver={(limit <= WindowsFrameRateOptions.CompositionDrivenRate ? "TopLevel.RequestAnimationFrame" : "DispatcherTimer")}; " +
             $"AudioClockIndependent=true; " +
             $"TimerIntervalMs={audioUiTimer.Interval.TotalMilliseconds:F6}; " +
             $"RenderSamples={performance.RenderMilliseconds.Samples}; " +
@@ -16554,7 +16561,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (editorSeekPending && ReferenceEquals(editorSeekTab, tab))
         {
             if (!resumeAfterSeek) editorSeekResumeRequested = false;
-            EnsurePendingEditorSeekTransportPaused();
+            if (shortcutSettings.Profile != EditorInteractionProfile.OsuMania) EnsurePendingEditorSeekTransportPaused();
             UpdatePendingEditorSeekTarget(milliseconds);
             return true;
         }
@@ -16572,7 +16579,7 @@ public sealed partial class MainWindow : PlatformWindow
         editorSeekUsesMusic = usesMusic;
         editorSeekResumeRequested = resumeAfterSeek && (musicWasPlaying || usesSilent);
         keySoundRuntime.InvalidatePlayback();
-        if (musicWasPlaying)
+        if (musicWasPlaying && shortcutSettings.Profile != EditorInteractionProfile.OsuMania)
         {
             editorSeekPauseTask = PauseMusicForEditorSeekAsync(generation, tab);
         }
@@ -16606,6 +16613,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void EnsurePendingEditorSeekTransportPaused()
     {
+        if (shortcutSettings.Profile == EditorInteractionProfile.OsuMania) return;
         var tab = editorSeekTab;
         if (!editorSeekPending || tab == null || !IsCurrentKeySoundTab(tab)) return;
         if (editorSeekUsesMusic)
@@ -17249,6 +17257,7 @@ public sealed partial class MainWindow : PlatformWindow
     {
         _ = sender;
         _ = eventArgs;
+        if (shortcutSettings.Profile == EditorInteractionProfile.OsuMania) return;
         editorSeekResumeSuppressedUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(650);
         if (editorSeekPending)
         {

@@ -75,6 +75,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         "audioClient", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private IWavePlayer? output;
+    private TransportEnvelopeSampleProvider? transportEnvelope;
     private WaveStream? source;
     private RateAdjustingSampleProvider? rateProvider;
     private WindowsPhaseVocoderTimeStretchSampleProvider? phaseVocoderProvider;
@@ -360,6 +361,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         try
         {
             if (output.PlaybackState == PlaybackState.Playing) output.Pause();
+            transportEnvelope?.FadeIn();
             ArmAudioClock();
             output.Play();
             positionClock.Restart();
@@ -373,6 +375,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     public void Pause() => RunSerialized(() =>
     {
         if (output == null) return;
+        FadeOutAndDrain();
         if (positionClock.IsRunning) CapturePosition(false);
         if (output.PlaybackState == PlaybackState.Playing) output.Pause();
     });
@@ -504,6 +507,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     private void RecreateOutputAtCore(TimeSpan position, bool resume)
     {
         if (source == null) return;
+        FadeOutAndDrain();
         // Land on the new position before the old output goes away. Leaving the
         // clock running would have Position keep extrapolating from the anchor
         // this rebuild is moving away from, over an output that is already
@@ -587,7 +591,8 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 createdVolumeProvider,
                 musicReallyEnded,
                 () => Interlocked.Increment(ref transientMusicZeroCount));
-            createdOutput = CreateOutput(createdMixer.ToWaveProvider());
+            var envelope = new TransportEnvelopeSampleProvider(createdMixer);
+            createdOutput = CreateOutput(envelope.ToWaveProvider());
             createdOutput.PlaybackStopped += OnPlaybackStopped;
             rateProvider = createdRateProvider;
             phaseVocoderProvider = createdPhaseVocoderProvider;
@@ -595,6 +600,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             localVolumeProvider = createdVolumeProvider;
             outputMixer = createdMixer;
             output = createdOutput;
+            transportEnvelope = envelope;
             Volatile.Write(
                 ref measuredOutputLatencyMilliseconds,
                 requestedOutputLatencyMilliseconds);
@@ -602,6 +608,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             positionClock.Reset();
             if (!resume) return;
             ThrowIfDisposed();
+            envelope.FadeIn();
             ArmAudioClock();
             createdOutput.Play();
             positionClock.Restart();
@@ -1010,6 +1017,16 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         }
     }
 
+    private void FadeOutAndDrain()
+    {
+        if (output?.PlaybackState != PlaybackState.Playing || transportEnvelope == null) return;
+        var latency = Math.Clamp(Volatile.Read(ref measuredOutputLatencyMilliseconds), 1, 80);
+        // This runs on the serialized audio worker, never the UI thread. The sink
+        // must consume the faded buffer before Pause/Stop cuts the device stream.
+        _ = transportEnvelope.FadeOut().Wait(TimeSpan.FromMilliseconds(latency + TransportEnvelopeSampleProvider.FadeMilliseconds + 10));
+        Thread.Sleep((int)Math.Ceiling(latency) + 2);
+    }
+
     private void DisposeOutput()
     {
         IWavePlayer? previousOutput;
@@ -1022,6 +1039,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         var previousMixer = outputMixer;
         var previousSoundTouchProviders = soundTouchProviders;
         outputMixer = null;
+        transportEnvelope = null;
         rateProvider = null;
         phaseVocoderProvider = null;
         soundTouchProviders = [];

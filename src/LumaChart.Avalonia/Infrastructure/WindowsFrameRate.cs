@@ -10,7 +10,8 @@ public static class WindowsFrameRateOptions
 {
     private static readonly int[] Values = [30, 60, 90, 120, 144, 165, 240, 330, 1000];
 
-    public const int Default = 165;
+    public const int Default = 1000;
+    public const int CompositionDrivenRate = 165;
 
     public static IReadOnlyList<int> Presets => Values;
 

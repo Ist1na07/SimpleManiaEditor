@@ -814,7 +814,8 @@ public static class WindowsEditorViewSettingsStore
                     persisted.DifficultyCardX,
                     persisted.DifficultyCardY,
                     persisted.DifficultyCardCollapsed,
-                    persisted.FrameRateLimit,
+                    persisted.FrameDefaultsRevision == 0 && persisted.FrameRateLimit == 165
+                        ? WindowsFrameRateOptions.Default : persisted.FrameRateLimit,
                     persisted.NoteAnchor,
                     persisted.MusicVolume,
                     persisted.PreservePitch,
@@ -872,6 +873,7 @@ public static class WindowsEditorViewSettingsStore
                     DifficultyCardY = normalized.DifficultyCardY,
                     DifficultyCardCollapsed = normalized.DifficultyCardCollapsed,
                     FrameRateLimit = normalized.FrameRateLimit,
+                    FrameDefaultsRevision = 1,
                     NoteAnchor = normalized.NoteAnchor,
                     MusicVolume = normalized.MusicVolume,
                     PreservePitch = normalized.PreservePitch,
@@ -947,6 +949,7 @@ public static class WindowsEditorViewSettingsStore
         public double DifficultyCardY { get; set; }
         public bool DifficultyCardCollapsed { get; set; }
         public int FrameRateLimit { get; set; } = WindowsEditorViewSettings.DefaultFrameRateLimit;
+        public int FrameDefaultsRevision { get; set; }
         public WindowsNoteAnchorMode NoteAnchor { get; set; } =
             WindowsNoteAnchorMode.CellBottom;
         public double MusicVolume { get; set; } = WindowsEditorViewSettings.DefaultMusicVolume;

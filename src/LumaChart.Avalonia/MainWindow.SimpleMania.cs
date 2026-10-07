@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.Controls.Templates;
 using LumaChart.Avalonia.Infrastructure;
 
 namespace LumaChart.Avalonia;
@@ -14,6 +15,9 @@ public sealed partial class MainWindow
     };
     private bool recoveryCheckpointInProgress;
     private string checkpointRevision = "";
+    private ComboBox? fixedGridPicker;
+    private bool syncingFixedGridPicker;
+    private CheckBox? reverseTimeWheelBox;
 
     private void InitializeSimpleMania()
     {
@@ -21,6 +25,7 @@ public sealed partial class MainWindow
             editorViewSettings = editorViewSettings.WithQuickPalette(0, 0, collapsed: true)
                 .WithQuickValuesPalette(0, 0, collapsed: true);
         timeline.InteractionProfile = shortcutSettings.Profile;
+        timeline.ReverseTimeWheel = shortcutSettings.ReverseTimeWheel;
         recoveryCheckpointTimer.Tick += async (_, _) => await CheckpointRecoveryAsync();
         recoveryCheckpointTimer.Start();
         Closed += (_, _) => recoveryCheckpointTimer.Stop();
@@ -58,13 +63,27 @@ public sealed partial class MainWindow
             CancelShortcutCapture();
             shortcutSettings.SelectProfile(profile);
             timeline.InteractionProfile = profile;
+            timeline.ReverseTimeWheel = shortcutSettings.ReverseTimeWheel;
+            if (reverseTimeWheelBox != null) reverseTimeWheelBox.IsChecked = shortcutSettings.ReverseTimeWheel;
             RefreshShortcutButtons();
             RefreshShortcutLabels();
             shortcutSettingsSaveTimer.Stop();
             shortcutSettingsSaveTimer.Start();
             viewModel.SetStatus(profile == EditorInteractionProfile.OsuMania
-                ? "osu!mania：1 选择 / 2 单键 / 3 长键，Ctrl 多选，Alt+滚轮缩放"
+                ? "osu!mania：1/2/3 工具，Ctrl 多选及滚轮调网格，Alt+滚轮缩放"
                 : "已切换到 Luma legacy 操作方案");
+        };
+        reverseTimeWheelBox = new CheckBox
+        {
+            Content = "滚轮向下前进时间（osu!editor 习惯）",
+            IsChecked = shortcutSettings.ReverseTimeWheel
+        };
+        reverseTimeWheelBox.IsCheckedChanged += (_, _) =>
+        {
+            shortcutSettings.ReverseTimeWheel = reverseTimeWheelBox.IsChecked == true;
+            timeline.ReverseTimeWheel = shortcutSettings.ReverseTimeWheel;
+            shortcutSettingsSaveTimer.Stop();
+            shortcutSettingsSaveTimer.Start();
         };
         return new StackPanel
         {
@@ -73,12 +92,62 @@ public sealed partial class MainWindow
             {
                 new TextBlock { Text = "操作方案（切换时重置快捷键）", Foreground = Brushes.White },
                 picker,
+                reverseTimeWheelBox,
                 new TextBlock
                 {
-                    Text = "osu!mania：1/2/3 工具 · Ctrl 多选 · 左拖框选 · 右键删键 · Alt+滚轮缩放",
+                    Text = "1/2/3 工具 · Ctrl 多选 · Ctrl+滚轮网格 · Alt+滚轮缩放",
                     Foreground = MutedBrush, TextWrapping = TextWrapping.Wrap, FontSize = 11
                 }
             }
         };
+    }
+
+    private Control BuildFixedGridToolbar()
+    {
+        fixedGridPicker = new ComboBox
+        {
+            ItemsSource = QuickSnapDivisions,
+            SelectedItem = editorViewSettings.SnapDivision,
+            Width = 88,
+            ItemTemplate = new FuncDataTemplate<int>((division, _) => new TextBlock { Text = $"1/{division}" })
+        };
+        global::Avalonia.Automation.AutomationProperties.SetAutomationId(fixedGridPicker, "Editor.Grid.Division");
+        fixedGridPicker.SelectionChanged += (_, _) =>
+        {
+            if (!syncingFixedGridPicker && fixedGridPicker.SelectedItem is int division)
+            {
+                SetQuickSnapDivision(division);
+                timeline.Focus();
+            }
+        };
+        return new Border
+        {
+            Background = RaisedBrush, Padding = new Thickness(10, 5),
+            BorderBrush = StrokeBrush, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new StackPanel
+            {
+                Orientation = global::Avalonia.Layout.Orientation.Horizontal, Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = "网格", Foreground = Brushes.White, VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center },
+                    fixedGridPicker,
+                    new TextBlock { Text = "Ctrl+滚轮调整网格  ·  Alt+滚轮缩放", Foreground = MutedBrush,
+                        FontSize = 11, VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Center }
+                }
+            }
+        };
+    }
+
+    private void SyncFixedGridPicker(int division)
+    {
+        if (fixedGridPicker == null) return;
+        syncingFixedGridPicker = true;
+        try
+        {
+            fixedGridPicker.ItemsSource = QuickSnapDivisions.Contains(division)
+                ? QuickSnapDivisions : QuickSnapDivisions.Append(division).Order().ToArray();
+            fixedGridPicker.SelectedItem = division;
+        }
+        finally { syncingFixedGridPicker = false; }
     }
 }

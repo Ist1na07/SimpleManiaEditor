@@ -120,6 +120,7 @@ public sealed class WindowsEditorShortcutSettings
 
     public Dictionary<string, string> Bindings { get; set; }
     public EditorInteractionProfile Profile { get; set; } = EditorInteractionProfile.OsuMania;
+    public bool ReverseTimeWheel { get; set; } = true;
 
     public static Dictionary<string, string> CreateLegacyDefaults() =>
         new(StringComparer.OrdinalIgnoreCase)
@@ -175,6 +176,7 @@ public sealed class WindowsEditorShortcutSettings
     public void SelectProfile(EditorInteractionProfile profile)
     {
         Profile = profile;
+        ReverseTimeWheel = profile == EditorInteractionProfile.OsuMania;
         Bindings = CreateDefaults(profile);
     }
 
@@ -415,6 +417,7 @@ public static class WindowsEditorShortcutSettingsStore
             var settings = new WindowsEditorShortcutSettings(persisted?.Bindings);
             if (Enum.TryParse<EditorInteractionProfile>(persisted?.Profile, out var profile) && Enum.IsDefined(profile))
                 settings.Profile = profile;
+            settings.ReverseTimeWheel = persisted?.ReverseTimeWheel ?? settings.Profile == EditorInteractionProfile.OsuMania;
             return settings;
         }
         catch (Exception exception)
@@ -437,7 +440,7 @@ public static class WindowsEditorShortcutSettingsStore
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(
-                new PersistedSettings { Bindings = settings.Bindings, Profile = settings.Profile.ToString() },
+                new PersistedSettings { Bindings = settings.Bindings, Profile = settings.Profile.ToString(), ReverseTimeWheel = settings.ReverseTimeWheel },
                 JsonOptions);
             using (var output = new FileStream(
                        temporary,
@@ -477,5 +480,6 @@ public static class WindowsEditorShortcutSettingsStore
     {
         public Dictionary<string, string>? Bindings { get; set; }
         public string? Profile { get; set; }
+        public bool? ReverseTimeWheel { get; set; }
     }
 }

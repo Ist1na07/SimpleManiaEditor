@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Automation;
@@ -261,7 +261,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         AutomationProperties.SetHelpText(
             fpsText,
             $"FrameRateLimit={this.frameRateLimit}; " +
-            $"HighRateClock={this.frameRateLimit > WindowsFrameRateOptions.Default}; " +
+            $"HighRateClock={this.frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate}; " +
             "AudioClockIndependent=true");
         compositionFrameGate = new WindowsFrameRateGate(this.frameRateLimit);
         settingsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -291,7 +291,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             if (closing || lifetime.IsCancellationRequested) return;
             settingsUiReady = true;
             RefreshAutomationDiagnostics(CurrentMilliseconds());
-            if (this.frameRateLimit > WindowsFrameRateOptions.Default)
+            if (this.frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate)
             {
                 try
                 {
@@ -358,7 +358,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         uiScale,
         fontScale,
         frameRateLimit,
-        frameRateLimit > WindowsFrameRateOptions.Default,
+        frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate,
         highRateFramePump.IsRunning,
         highRateFramePump.TotalTickCount,
         highRateClockStartError ?? string.Empty,
@@ -1128,7 +1128,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         if (frameClock.ElapsedMilliseconds >= 1_000)
         {
             var seconds = Math.Max(.001, frameClock.Elapsed.TotalSeconds);
-            var nextFpsText = frameRateLimit > WindowsFrameRateOptions.Default
+            var nextFpsText = frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate
                 ? AvaloniaLocalizationCatalog.Format("时钟采样 {0:0} · 画面更新 {1:0}", highRateFramePump.TakeTickCount() / seconds, presentedFrames / seconds)
                 : AvaloniaLocalizationCatalog.Format("画面 {0:0} · 更新回调 {1:0}", renderedFrames / seconds, presentedFrames / seconds);
             if (!string.Equals(fpsText.Text, nextFpsText, StringComparison.Ordinal))
@@ -1141,7 +1141,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         }
         if (!playing) return;
         var audioClock = audio.SampleClock();
-        var current = frameRateLimit > WindowsFrameRateOptions.Default
+        var current = frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate
             ? BitConverter.Int64BitsToDouble(Interlocked.Read(ref sampledMillisecondsBits))
             : audioClock.IsLoaded
                 ? audioClock.Position.TotalMilliseconds
@@ -1558,7 +1558,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             $"lastResolvedKey={lastResolvedKey}; " +
             $"workingCopy={workingCopyPath}; uiScale={uiScale:R}; fontScale={fontScale:R}; " +
             $"frameRateLimit={frameRateLimit}; " +
-            $"highRateClock={frameRateLimit > WindowsFrameRateOptions.Default}; " +
+            $"highRateClock={frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate}; " +
             "frameDriver=TopLevel.RequestAnimationFrame; " +
             $"highRateClockRunning={highRateFramePump.IsRunning}; " +
             $"highRateClockTicks={highRateFramePump.TotalTickCount}; " +

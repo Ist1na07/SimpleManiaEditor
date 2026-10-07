@@ -345,6 +345,8 @@ public sealed class TimelineSurface : Control
     private Point eraseLastPoint;
     private TimelineTool tool = TimelineTool.Select;
     public EditorInteractionProfile InteractionProfile { get; set; } = EditorInteractionProfile.OsuMania;
+    public bool ReverseTimeWheel { get; set; } = true;
+    public event EventHandler<int>? SnapDivisionChangeRequested;
     private bool proEditorEnabled;
     private int proGridColumnCount = ProEditorWorkspaceGeometry.DefaultTotalColumns;
     private double gridLaneWidth = WindowsEditorViewSettings.DefaultGridLaneWidth;
@@ -1441,10 +1443,10 @@ public sealed class TimelineSurface : Control
 
         var lane = WorkspaceColumnAtX(point.X, geometry);
         var timingHit = HitTestTimingLabel(point, geometry);
-        var tailHit = timingHit.HasValue || Tool == TimelineTool.Erase
+        var tailHit = !leftPressed || rightPressed || timingHit.HasValue || Tool == TimelineTool.Erase
             ? null
             : HitTestHoldTail(point, geometry);
-        var bodyHit = lane == NoWorkspaceColumn
+        var bodyHit = rightPressed ? HitTestVisibleNote(point, geometry) : lane == NoWorkspaceColumn
             ? null
             : HitTestDisplayedNote(
                 lane,
@@ -2154,7 +2156,12 @@ public sealed class TimelineSurface : Control
     {
         if (session == null) return;
         Performance.MarkInput();
-        if (proEditorEnabled && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        if (InteractionProfile == EditorInteractionProfile.OsuMania && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            var direction = Math.Sign(eventArgs.Delta.Y);
+            if (direction != 0) SnapDivisionChangeRequested?.Invoke(this, direction);
+        }
+        else if (proEditorEnabled && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
             ManualNavigationRequested?.Invoke(
                 this,
@@ -2170,7 +2177,7 @@ public sealed class TimelineSurface : Control
             SetZoom(PixelsPerBeat * (eventArgs.Delta.Y > 0 ? 1.08 : 1 / 1.08));
         }
         else if (WindowsTimelineVisualParityPolicy.ResolveWheelDirection(
-                     eventArgs.Delta.Y) is { } direction &&
+                     ReverseTimeWheel ? -eventArgs.Delta.Y : eventArgs.Delta.Y) is { } direction &&
                  direction != 0)
             SetCurrentBeatFromManualNavigation(TimelineGridNavigation.Step(
                 CurrentBeat,
@@ -4482,6 +4489,34 @@ public sealed class TimelineSurface : Control
             if (distance > tolerancePixels || distance >= bestDistance) continue;
             best = note;
             bestDistance = distance;
+        }
+        return best;
+    }
+
+    // Destructive input uses the drawn rectangle, never the forgiving resize handle.
+    private ChartNote? HitTestVisibleNote(Point point, TimelineGeometry geometry)
+    {
+        var beat = PointerToRawNoteBeat(point.Y, geometry);
+        var radius = noteHeight / (2 * Math.Max(1, PixelsPerBeat));
+        noteIndex.Query(beat - GetMaximumStoredRenderBeatAdjustment() - radius,
+            beat + radius, hitScratch, includeDrafts: proEditorEnabled);
+        ChartNote? best = null;
+        var bestRank = int.MaxValue;
+        var bestDistance = double.PositiveInfinity;
+        foreach (var note in hitScratch)
+        {
+            if (hiddenGroups.Contains(note.Group)) continue;
+            var bounds = GetNoteBounds(note, geometry);
+            var head = NoteYAtBeat(note.Beat, geometry);
+            var tail = note.EndBeat.HasValue ? NoteYAtBeat(note.EndBeat.Value, geometry) : head;
+            if (hideLongNoteBodies && note.IsHold)
+                bounds = new Rect(bounds.Left, head - noteHeight / 2, bounds.Width, noteHeight);
+            if (!bounds.Contains(point)) continue;
+            var distance = Math.Abs(point.Y - head);
+            var rank = distance <= noteHeight / 2 ? 0 : Math.Abs(point.Y - tail) <= noteHeight / 2 ? 1 : 2;
+            if (rank == 1) distance = Math.Abs(point.Y - tail);
+            if (rank > bestRank || rank == bestRank && distance >= bestDistance) continue;
+            best = note; bestRank = rank; bestDistance = distance;
         }
         return best;
     }
