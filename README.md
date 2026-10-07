@@ -2,7 +2,12 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-目前处于规划与上游审计阶段，尚未实现本项目的应用改造。用户已允许调整技术栈，当前路线为基于 LumaChart Studio 客户端复用 C#/.NET + Avalonia。目标仍是离线可用，谱面和项目资料以公开格式保存在用户选择的目录中。
+当前为 0.1.0 Windows 体验版，基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端改造。默认 osu!mania 操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+
+双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor/`，已包含运行时。
+
+- [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
+- [0.1 发布说明](docs/RELEASE-0.1.md)：完成范围、验证与待完成事项。
 
 - [当前改造方案与审计](docs/LUMA_ADOPTION.md)：Luma 的复用边界、实测结果、osu 交互与数据兼容改造、修订后的路线。
 - [原完整规划](docs/PLAN.md)：需求、数据与功能语义基线；其中 Python/Web 技术方案已被当前改造方案替代。

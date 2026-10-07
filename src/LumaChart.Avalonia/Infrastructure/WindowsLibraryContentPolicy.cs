@@ -9,8 +9,8 @@ public sealed record WindowsLibraryContentState(
 
 public static class WindowsLibraryContentPolicy
 {
-    public const string EmptyLibraryTitle = "开始使用 LumaChart";
-    public const string EmptyLibrarySubtitle = "像代码工作区一样，从一个明确的项目入口开始。";
+    public const string EmptyLibraryTitle = "开始创作 osu!mania 谱面";
+    public const string EmptyLibrarySubtitle = "打开现有 .osu 谱面，或新建一个 7K 项目。";
     public const string NoSearchResultsTitle = "没有符合筛选条件的项目";
     public const string NoSearchResultsSubtitle = "当前搜索没有匹配结果；请清空搜索或更换筛选条件。";
 

@@ -1,4 +1,5 @@
 using LumaChart.Application.Editing;
+using LumaChart.Specs;
 using LumaChart.Application.Collaboration;
 using LumaChart.Core.Editing;
 using LumaChart.Core.Analysis;
@@ -58,6 +59,7 @@ var tests = new (string Name, Action Body)[]
     ("New offline charts use the guest creator identity", TestNewChartDefaultCreator),
     ("Malody BGM note compatibility", TestMalodyBackgroundMusicNote),
     ("osu!mania compatibility", TestOsu),
+    ("Native osu edits preserve source fields, absolute time, backups and recovery", OsuPreservationSpecs.Run),
     ("osu duplicate fields and sections are tolerated", TestOsuDuplicateFields),
     ("osu unspecified preview normalizes for MC editing", TestOsuUnspecifiedPreview),
     ("osu OD and HP round-trip/export override", TestOsuDifficultySettings),
@@ -864,13 +866,12 @@ static void TestOsu()
         Assert(saved.StartsWith("osu file format v14") && saved.Contains("Mode: 3") && saved.Contains("[HitObjects]") &&
                 saved.Contains("PreviewTime: 12345") && saved.Contains("background.jpg") && saved.Contains(",-50,"), "osu export is invalid");
         Assert(saved.Contains("0:0:0:75:clap.wav"), "osu custom hit sample did not export");
-        Assert(saved.Contains("LumaChartBPM:" + independentChartBpm.ToString("R",
-                    System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal),
-            "osu export did not retain the independent chart-level BPM extension");
+        Assert(!saved.Contains("LumaChartBPM:", StringComparison.Ordinal),
+            "native osu saving introduced an editor-only BPM extension");
         var roundTrip = OsuManiaSerializer.Load(path);
-        Assert(roundTrip.Metadata.Bpm == independentChartBpm &&
+        Assert(MalodyMcSerializer.Parse(MalodyMcSerializer.Serialize(chart)).Metadata.Bpm == independentChartBpm &&
                Math.Abs(roundTrip.Timing.First(timing => timing.Bpm.HasValue).Bpm!.Value - 120) < .001,
-            "osu save/reopen collapsed the independent chart BPM onto the first Timing BPM");
+            "recovery lost the independent editor BPM or native osu timing changed");
     }
     finally { if (File.Exists(path)) File.Delete(path); }
 

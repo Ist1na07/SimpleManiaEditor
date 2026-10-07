@@ -146,7 +146,8 @@ public sealed class ChartDocument
         Metadata.HpDrainRate = double.IsFinite(Metadata.HpDrainRate)
             ? Math.Clamp(Metadata.HpDrainRate, 0, 10)
             : 8;
-        Notes.RemoveAll(n => (!n.IsDraft && (n.Lane < 0 || n.Lane >= KeyCount)) || n.Beat.Value < 0);
+        var nativeOsu = UnknownRoot.ContainsKey("_sme_osu_source");
+        Notes.RemoveAll(n => (!n.IsDraft && (n.Lane < 0 || n.Lane >= KeyCount)) || (!nativeOsu && n.Beat.Value < 0));
         foreach (var note in Notes)
         {
             if (note.IsDraft) note.DraftColumn = Math.Clamp(note.DraftColumn, -64, KeyCount + 63);

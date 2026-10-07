@@ -46,7 +46,7 @@ using System.Globalization;
 
 namespace LumaChart.Avalonia;
 
-public sealed class MainWindow : PlatformWindow
+public sealed partial class MainWindow : PlatformWindow
 {
     /// <summary>
     /// Exposes the already-built editor surface for SingleView hosts. The
@@ -918,10 +918,13 @@ public sealed class MainWindow : PlatformWindow
         string? createdOnlineHostError = null;
         try
         {
-            createdOnlineHost = WindowsOnlineAccountHost.Create();
-            createdOnlineHost.Session.Changed += OnlineAccountSession_Changed;
-            createdOnlineHost.Session.NotificationsReceived +=
-                OnlineAccountSession_NotificationsReceived;
+            if (SimpleManiaProduct.OnlineEnabled)
+            {
+                createdOnlineHost = WindowsOnlineAccountHost.Create();
+                createdOnlineHost.Session.Changed += OnlineAccountSession_Changed;
+                createdOnlineHost.Session.NotificationsReceived +=
+                    OnlineAccountSession_NotificationsReceived;
+            }
         }
         catch (Exception exception)
         {
@@ -1228,9 +1231,10 @@ public sealed class MainWindow : PlatformWindow
                     .WithCollapsed(false));
         }
 
-        Title = "LumaChart Studio";
+        Title = SimpleManiaProduct.Name;
+        InitializeSimpleMania();
         TryApplyApplicationIcon();
-        ConfigureInitialWindowBounds(1320, 800, 1080, 680);
+        ConfigureInitialWindowBounds(1720, 960, 1080, 680);
         Background = new SolidColorBrush(WindowColor);
         FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft YaHei UI");
         FontSize = 12;
@@ -2867,7 +2871,7 @@ public sealed class MainWindow : PlatformWindow
         aboutVersionText.Margin = new Thickness(0, 5, 0, 0);
         AutomationProperties.SetAutomationId(aboutVersionText, "About.Version");
 
-        aboutContentText.Text = "LumaChart Studio";
+        aboutContentText.Text = "SimpleManiaEditor 0.1.0\n面向 osu!mania / 7K 的本地编辑器\n基于 LumaChart Studio（MIT）改造。";
         aboutContentText.Foreground = new SolidColorBrush(Color.Parse("#B8C1C3"));
         aboutContentText.TextWrapping = TextWrapping.Wrap;
         aboutContentText.LineHeight = 22;
@@ -2889,7 +2893,7 @@ public sealed class MainWindow : PlatformWindow
             {
                 new TextBlock
                 {
-                    Text = "关于 LumaChart Studio",
+                    Text = "关于 SimpleManiaEditor",
                     FontSize = 22,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = new SolidColorBrush(Color.Parse("#E3E8E9"))
@@ -3574,7 +3578,7 @@ public sealed class MainWindow : PlatformWindow
                 },
                 new TextBlock
                 {
-                    Text = "LumaChart",
+                    Text = "SimpleMania",
                     FontSize = 13,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = Brushes.White,
@@ -3583,7 +3587,7 @@ public sealed class MainWindow : PlatformWindow
                 },
                 new TextBlock
                 {
-                    Text = "  STUDIO",
+                    Text = "  EDITOR",
                     FontSize = 9,
                     Foreground = new SolidColorBrush(Color.Parse("#777F84")),
                     VerticalAlignment = VerticalAlignment.Center
@@ -3665,6 +3669,11 @@ public sealed class MainWindow : PlatformWindow
                 libraryButton
             }
         };
+        if (!SimpleManiaProduct.OnlineEnabled)
+        {
+            friendsButton.IsVisible = false;
+            onlineButton.IsVisible = false;
+        }
         Grid.SetColumn(titleActions, 3);
         bar.Children.Add(titleActions);
 
@@ -10843,7 +10852,7 @@ public sealed class MainWindow : PlatformWindow
             Child = new StackPanel
             {
                 Spacing = 10,
-                Children = { header, shortcutListPanel, shortcutStatusText }
+                Children = { header, BuildInteractionProfileSelector(), shortcutListPanel, shortcutStatusText }
             }
         };
     }
@@ -10869,7 +10878,7 @@ public sealed class MainWindow : PlatformWindow
     {
         CancelShortcutCapture(updateStatus: false);
         shortcutSettings.Reset();
-        shortcutStatusText.Text = "快捷键已恢复 WPF 1.1.0 默认值";
+        shortcutStatusText.Text = "快捷键已恢复当前操作方案的默认值";
         MarkShortcutSettingsDirty();
         RefreshShortcutButtons();
         RefreshShortcutLabels();
@@ -13510,7 +13519,7 @@ public sealed class MainWindow : PlatformWindow
                             Padding = new Thickness(7, 3),
                             Child = new TextBlock
                             {
-                                Text = "MALODY",
+                                Text = "BPM / SV",
                                 Foreground = new SolidColorBrush(Color.Parse("#A7B1B4")),
                                 FontSize = 9
                             }
@@ -16496,7 +16505,7 @@ public sealed class MainWindow : PlatformWindow
         try
         {
             using var stream = AssetLoader.Open(
-                new Uri("avares://LumaChart.Avalonia/Assets/app-icon.png"));
+                new Uri("avares://SimpleManiaEditor/Assets/app-icon.png"));
             Icon = new WindowIcon(stream);
         }
         catch (Exception exception) when (
@@ -17563,7 +17572,7 @@ public sealed class MainWindow : PlatformWindow
         // Translated here rather than left to the localization pass: this runs on
         // every UI refresh, so an asynchronous pass would keep racing it and the
         // title bar would flip back to the source language.
-        Title = localizationController.Translate(surface.WindowTitle);
+        Title = localizationController.Translate(surface.WindowTitle).Replace("LumaChart Studio", SimpleManiaProduct.Name, StringComparison.Ordinal);
 #if LUMACHART_SHARED
         RefreshTabletLibraryCards();
 #else
@@ -23663,6 +23672,14 @@ public sealed class MainWindow : PlatformWindow
     private void UpdateOnlineAccountUi()
     {
         if (onlineAccountButton == null) return;
+        if (!SimpleManiaProduct.OnlineEnabled)
+        {
+            titleUserNameText.Text = "本地创作";
+            titleUserStateText.Text = "离线可用";
+            onlineAccountButton.IsEnabled = false;
+            ToolTip.SetTip(onlineAccountButton, "本地谱面编辑，无需账号");
+            return;
+        }
         ReconcileChartingHeartbeatTimer();
         if (onlineAccountHost == null)
         {
@@ -24380,6 +24397,8 @@ public sealed class MainWindow : PlatformWindow
             {
                 var mode = await viewModel
                     .TryGetSynchronizedSuspendedOsuTimingModeAsync(path);
+                if (!mode.HasValue && shortcutSettings.Profile == EditorInteractionProfile.OsuMania && !evidenceShowOsuImportDialog)
+                    mode = OsuNoteTimingImportMode.PreserveMilliseconds;
                 if (!mode.HasValue)
                 {
                     var choice = await new OsuImportModeDialog(

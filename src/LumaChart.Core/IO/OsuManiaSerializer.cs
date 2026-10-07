@@ -17,8 +17,13 @@ public static class OsuManiaSerializer
     public static ChartDocument Load(string path) =>
         Load(path, OsuNoteTimingImportMode.PreserveMilliseconds);
 
-    public static ChartDocument Load(string path, OsuNoteTimingImportMode noteTimingMode) =>
-        Parse(File.ReadAllText(path), path, Environment.UserName, noteTimingMode);
+    public static ChartDocument Load(string path, OsuNoteTimingImportMode noteTimingMode)
+    {
+        var document = Parse(File.ReadAllText(path), path, Environment.UserName, noteTimingMode);
+        using var input = File.OpenRead(path);
+        OsuSourceEnvelope.RememberUtf8Bom(document, input.ReadByte() == 0xef && input.ReadByte() == 0xbb && input.ReadByte() == 0xbf);
+        return document;
+    }
 
     public static ChartDocument Parse(string text, string? path = null) =>
         Parse(text, path, Environment.UserName, OsuNoteTimingImportMode.PreserveMilliseconds);
@@ -261,18 +266,27 @@ public static class OsuManiaSerializer
             var sound = sampleParts.Length > 4
                 ? ChartResourceReference.SanitizeImported(sampleParts[4])
                 : string.Empty;
-            document.Notes.Add(new ChartNote
+            var importedNote = new ChartNote
             {
                 Lane = lane, Beat = noteBeat, EndBeat = end, Volume = volume,
                 Sound = sound.Length > 0 ? sound : null
-            });
+            };
+            OsuSourceEnvelope.AttachNote(importedNote, string.Join(',', parts), keyCount);
+            document.Notes.Add(importedNote);
         }
         document.Normalize();
+        OsuSourceEnvelope.Capture(document, text);
         return document;
     }
 
     public static void Save(ChartDocument document, string path, double? overallDifficulty = null, double? hpDrainRate = null)
     {
+        if (OsuSourceEnvelope.TrySerialize(document, overallDifficulty, hpDrainRate, out var retained))
+        {
+            File.WriteAllText(path, retained, new UTF8Encoding(OsuSourceEnvelope.HasUtf8Bom(document)));
+            document.FilePath = path;
+            return;
+        }
         var map = new TimingMap(document.Timing);
         var requestedOd = overallDifficulty ?? document.Metadata.OverallDifficulty;
         var requestedHp = hpDrainRate ?? document.Metadata.HpDrainRate;
@@ -308,7 +322,7 @@ public static class OsuManiaSerializer
         builder.AppendLine($"Version:{CleanValue(document.Metadata.Version)}");
         builder.AppendLine($"{LumaChartBpmMetadataKey}:{RoundTripNumber(ChartBpmForSave(document))}");
         builder.AppendLine("Source:");
-        builder.AppendLine("Tags:LumaChart Studio Malody mania");
+        builder.AppendLine("Tags:");
         builder.AppendLine("BeatmapID:-1");
         builder.AppendLine("BeatmapSetID:-1\n");
         builder.AppendLine("[Difficulty]");

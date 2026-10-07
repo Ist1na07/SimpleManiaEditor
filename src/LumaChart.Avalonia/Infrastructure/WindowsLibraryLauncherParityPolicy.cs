@@ -7,7 +7,7 @@ internal static class WindowsLibraryLauncherParityPolicy
     public const string ContractVersion = "wpf-1.1.0-library-launcher-r1";
     public const string OpenProjectPickerTitle = "选择具体谱面目录";
     public const string ChooseWorkspacePickerTitle =
-        "选择 LumaChart 工作目录或 Malody chart 目录";
+        "选择谱面创作目录或 osu! Songs 目录";
 
     public static WindowsNativeMessageBoxRequest CreateProjectDirectoryNotice(
         DesktopProjectDirectoryValidationException exception)

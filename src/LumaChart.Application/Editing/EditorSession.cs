@@ -1,5 +1,6 @@
 using LumaChart.Core.Editing;
 using LumaChart.Core.Models;
+using LumaChart.Core.IO;
 
 namespace LumaChart.Application.Editing;
 
@@ -95,6 +96,7 @@ public sealed class EditorSession
         try
         {
             mutation(document);
+            OsuSourceEnvelope.ReanchorUnmovedNotes(previous, document);
             document.Normalize();
             var deniedCategory = GetDeniedEditCategory(previous, document);
             if (deniedCategory != null)

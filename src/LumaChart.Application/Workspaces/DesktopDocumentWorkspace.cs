@@ -497,10 +497,12 @@ public sealed class DesktopDocumentWorkspace
     public async Task<DesktopChartTab> CreateAsync(
         ChartDocument document,
         string? suggestedName = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DesktopChartFormat format = DesktopChartFormat.MalodyMc)
     {
         ArgumentNullException.ThrowIfNull(document);
         var (folder, sourcePath) = AllocateNewChartLocation(suggestedName);
+        if (format == DesktopChartFormat.OsuMania) sourcePath = Path.ChangeExtension(sourcePath, ".osu");
         try
         {
             var sourceDocument = document.Clone();
@@ -509,7 +511,7 @@ public sealed class DesktopDocumentWorkspace
             await WriteSourceSnapshotAtomicAsync(
                 sourceDocument,
                 sourcePath,
-                DesktopChartFormat.MalodyMc,
+                format,
                 cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -531,12 +533,17 @@ public sealed class DesktopDocumentWorkspace
     public async Task<DesktopNamedAudioChartCreation> CreateNamedAudioChartAsync(
         string? requestedName,
         string? creator,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int keyCount = 4,
+        DesktopChartFormat format = DesktopChartFormat.MalodyMc)
     {
         var (folder, sourcePath, finalName) = AllocateNamedAudioChartLocation(requestedName);
+        if (format == DesktopChartFormat.OsuMania) sourcePath = Path.ChangeExtension(sourcePath, ".osu");
         try
         {
             var document = new ChartDocument();
+            document.KeyCount = Math.Clamp(keyCount, 1, 18);
+            document.Metadata.Version = $"{document.KeyCount}K";
             document.Metadata.Creator = string.IsNullOrWhiteSpace(creator)
                 ? defaultCreator
                 : creator.Trim();
@@ -548,7 +555,7 @@ public sealed class DesktopDocumentWorkspace
             await WriteSourceSnapshotAtomicAsync(
                 document,
                 sourcePath,
-                DesktopChartFormat.MalodyMc,
+                format,
                 cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -637,6 +644,10 @@ public sealed class DesktopDocumentWorkspace
             // treating it as an untrusted hash mismatch and replacing it with
             // the unchanged source.
             await PersistCoreAsync(snapshots, cancellationToken).ConfigureAwait(false);
+            if (File.Exists(tab.SourcePath) && !string.IsNullOrEmpty(tab.SourceSha256) &&
+                !string.Equals(await ComputeSha256Async(tab.SourcePath, cancellationToken).ConfigureAwait(false),
+                    tab.SourceSha256, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("源谱面已被其他程序修改；请另存为或重新打开，当前编辑已保存在恢复副本中。");
             await WriteSourceSnapshotAtomicAsync(
                 committed,
                 tab.SourcePath,
@@ -1092,13 +1103,15 @@ public sealed class DesktopDocumentWorkspace
             }
         }
 
-        if (document == null && workingMatchesManifest && (!sourceExists || sourceMatchesManifest))
+        if (document == null && workingMatchesManifest && (!sourceExists || sourceMatchesManifest || item.IsDirty))
         {
             try
             {
                 document = await LoadWorkingCopyAsync(workingPath, cancellationToken).ConfigureAwait(false);
                 preservedRoomDraft = item.IsPreservedRoomDraft;
                 dirty = preservedRoomDraft || item.IsDirty;
+                if (sourceExists && !sourceMatchesManifest)
+                    recoveryWarnings.Add($"{sourcePath}: source changed externally; unsaved edits were recovered separately. Save As or reload before replacing the source.");
                 if (!sourceExists)
                 {
                     dirty = true;
@@ -1187,7 +1200,7 @@ public sealed class DesktopDocumentWorkspace
             osuTimingImportMode)
         {
             CurrentBeat = double.IsFinite(item.CurrentBeat) ? Math.Max(0, item.CurrentBeat) : 0,
-            SourceSha256 = currentSourceHash ?? item.SourceSha256,
+            SourceSha256 = dirty && sourceChanged ? item.SourceSha256 : currentSourceHash ?? item.SourceSha256,
             WorkingSha256 = currentWorkingHash ?? item.WorkingSha256,
             SourceMissing = !sourceExists,
             IsPreservedRoomDraft = preservedRoomDraft,
@@ -1724,6 +1737,8 @@ public sealed class DesktopDocumentWorkspace
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (format == DesktopChartFormat.OsuMania && File.Exists(destination))
+                File.Copy(destination, destination + ".sme-backup", overwrite: true);
             File.Move(temporary, destination, overwrite: true);
         }
         finally
@@ -2218,7 +2233,7 @@ public sealed class DesktopChartTab
         }
     }
 
-    public string FormatBadge => Format == DesktopChartFormat.OsuMania ? "OSU → MC" : "MALODY";
+    public string FormatBadge => Format == DesktopChartFormat.OsuMania ? "OSU!MANIA" : "MALODY";
 }
 
 public sealed record DesktopChartSaveResult(

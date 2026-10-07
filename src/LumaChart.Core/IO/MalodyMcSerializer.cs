@@ -88,6 +88,11 @@ public static class MalodyMcSerializer
 
         foreach (var pair in root)
             if (pair.Key is not ("meta" or "time" or "effect" or "note" or "noteref" or "_luma_draft_notes")) document.UnknownRoot[pair.Key] = pair.Value?.DeepClone();
+        if (OsuSourceEnvelope.HasSource(document) && root["_sme_osu_editor"] is JsonObject editorState)
+        {
+            document.Metadata.OverallDifficulty = ReadDouble(editorState, "od", 8);
+            document.Metadata.HpDrainRate = ReadDouble(editorState, "hp", 8);
+        }
 
         if (root["time"] is JsonArray times)
         {
@@ -288,6 +293,10 @@ public static class MalodyMcSerializer
     public static string Serialize(ChartDocument document)
     {
         var unknownRoot = document.UnknownRoot.DeepClone().AsObject();
+        if (OsuSourceEnvelope.HasSource(document)) unknownRoot["_sme_osu_editor"] = new JsonObject
+        {
+            ["od"] = document.Metadata.OverallDifficulty, ["hp"] = document.Metadata.HpDrainRate
+        };
         var extra = unknownRoot.TryGetPropertyValue("extra", out var preservedExtra)
             ? preservedExtra?.DeepClone()
             : null;

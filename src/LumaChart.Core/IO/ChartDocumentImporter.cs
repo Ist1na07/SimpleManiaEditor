@@ -134,6 +134,8 @@ public static class ChartDocumentImporter
             ? 3
             : 0;
         var text = StrictUtf8.GetString(bytes, offset, length - offset);
-        return ImportText(text, format, defaultCreator, osuNoteTimingMode);
+        var document = ImportText(text, format, defaultCreator, osuNoteTimingMode);
+        if (format == ChartImportFormat.OsuMania) OsuSourceEnvelope.RememberUtf8Bom(document, offset == 3);
+        return document;
     }
 }

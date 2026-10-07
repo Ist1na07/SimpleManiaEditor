@@ -45,7 +45,7 @@ public static class WindowsTitleBarParityPolicy
 
         var osu = format == DesktopChartFormat.OsuMania;
         return new WindowsDocumentTabPresentation(
-            FormatBadge: osu ? "OSU → MC" : "MALODY",
+            FormatBadge: osu ? "OSU!MANIA" : "MALODY",
             DisplayTitle: displayTitle + (isDirty ? "  *" : string.Empty),
             TabBackground: Parse(isActive ? "#2B3437" : "#1D2124"),
             TabBorder: Parse(isActive ? "#6F979A" : "#333A3E"),

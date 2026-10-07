@@ -15,6 +15,10 @@ public static class ChartStructuralFingerprint
     public static string Compute(ChartDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        // Native osu verification compares the exported payload, including retained
+        // events/metadata. Recovery envelopes change on reload and are not chart data.
+        if (OsuSourceEnvelope.TrySerialize(document, null, null, out var nativeText))
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(nativeText.Replace("\r\n", "\n", StringComparison.Ordinal))));
         var snapshot = document.Clone();
         snapshot.FilePath = null;
         foreach (var note in snapshot.Notes) note.OnlineCreatorUserId = 0;
@@ -26,8 +30,8 @@ public static class ChartStructuralFingerprint
     public static ChartStructureSummary Summarize(ChartDocument document) =>
         new(
             document.KeyCount,
-            document.Notes.Count,
-            document.Notes.Count(note => note.IsHold),
+            document.Notes.Count(note => !OsuSourceEnvelope.HasSource(document) || !note.IsDraft),
+            document.Notes.Count(note => note.IsHold && (!OsuSourceEnvelope.HasSource(document) || !note.IsDraft)),
             document.Timing.Count,
             Compute(document));
 }

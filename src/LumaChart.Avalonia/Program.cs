@@ -17,6 +17,13 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Contains("--smoke-test", StringComparer.Ordinal))
+        {
+            Environment.ExitCode = SimpleManiaSmokeTest.Run();
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(WindowsSingleInstancePolicy.ScopeEnvironment)))
+            Environment.SetEnvironmentVariable(WindowsSingleInstancePolicy.ScopeEnvironment, "simple-mania-editor-preview");
         AvaloniaAppPaths.ConfigureSiblingClientProfileEnvironment();
         PlatformExternalUriServices.Current = new WindowsShellExternalUriService();
         PlatformTextInputServices.Current = new WindowsTextInputService();

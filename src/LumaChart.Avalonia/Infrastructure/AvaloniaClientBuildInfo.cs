@@ -10,7 +10,7 @@ public static class AvaloniaClientBuildInfo
     // per-platform split. Bring the #if WINDOWS split back the next time only
     // one platform moves.
     public const string ProtocolVersion = "1.3.0.0";
-    public const string DisplayVersion = "1.3.0.0";
+    public const string DisplayVersion = SimpleManiaProduct.Version;
     public const string Channel = "beta";
 
     // The platform this client runs on. The server versions Windows, Android and

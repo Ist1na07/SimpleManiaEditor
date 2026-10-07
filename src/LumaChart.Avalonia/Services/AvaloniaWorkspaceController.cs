@@ -258,10 +258,10 @@ public sealed class AvaloniaWorkspaceController
                 Title = title,
                 Artist = "Unknown Artist",
                 Creator = creator,
-                Version = "Normal",
+                Version = "7K",
                 Bpm = 120
             },
-            KeyCount = 4,
+            KeyCount = 7,
             Timing = [new TimingEvent { Beat = BeatPosition.Zero, Bpm = 120 }]
         };
         await tabIoGate.WaitAsync(cancellationToken);
@@ -270,7 +270,8 @@ public sealed class AvaloniaWorkspaceController
             return await workspace.CreateAsync(
                     document,
                     suggestedName ?? title,
-                    cancellationToken)
+                    cancellationToken,
+                    DesktopChartFormat.OsuMania)
                 .ConfigureAwait(false);
         }
         finally
@@ -291,7 +292,9 @@ public sealed class AvaloniaWorkspaceController
             return await workspace.CreateNamedAudioChartAsync(
                     requestedName,
                     creator,
-                    cancellationToken)
+                    cancellationToken,
+                    keyCount: 7,
+                    format: DesktopChartFormat.OsuMania)
                 .ConfigureAwait(false);
         }
         finally

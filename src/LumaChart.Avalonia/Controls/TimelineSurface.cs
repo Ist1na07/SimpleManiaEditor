@@ -344,6 +344,7 @@ public sealed class TimelineSurface : Control
     private long eraseStartChangeSerial;
     private Point eraseLastPoint;
     private TimelineTool tool = TimelineTool.Select;
+    public EditorInteractionProfile InteractionProfile { get; set; } = EditorInteractionProfile.OsuMania;
     private bool proEditorEnabled;
     private int proGridColumnCount = ProEditorWorkspaceGeometry.DefaultTotalColumns;
     private double gridLaneWidth = WindowsEditorViewSettings.DefaultGridLaneWidth;
@@ -1519,7 +1520,7 @@ public sealed class TimelineSurface : Control
                 return;
             }
 
-            if (eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            if (EditorInteractionPolicy.AdditiveSelection(InteractionProfile, eventArgs.KeyModifiers))
             {
                 if (selectedTimingIds.Add(timing.Id)) PrimarySelectedTimingId = timing.Id;
                 else
@@ -1578,6 +1579,11 @@ public sealed class TimelineSurface : Control
         {
             if (hit == null)
             {
+                if (InteractionProfile == EditorInteractionProfile.OsuMania)
+                {
+                    eventArgs.Handled = true;
+                    return;
+                }
                 BeginMarquee(point, eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 CaptureInteraction(eventArgs.Pointer, MouseButton.Right, point);
             }
@@ -1589,9 +1595,10 @@ public sealed class TimelineSurface : Control
             return;
         }
 
-        if (hit == null && Tool == TimelineTool.Select)
+        if (hit == null && (Tool == TimelineTool.Select ||
+            InteractionProfile == EditorInteractionProfile.OsuMania && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control)))
         {
-            BeginMarquee(point, eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            BeginMarquee(point, EditorInteractionPolicy.AdditiveSelection(InteractionProfile, eventArgs.KeyModifiers));
             CaptureInteraction(eventArgs.Pointer, MouseButton.Left, point);
             eventArgs.Handled = true;
             return;
@@ -1606,7 +1613,7 @@ public sealed class TimelineSurface : Control
             if (session.IsReadOnly || !session.CanEditNotes)
             {
                 var deniedHadTimingSelection = selectedTimingIds.Count > 0;
-                if (eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                if (EditorInteractionPolicy.AdditiveSelection(InteractionProfile, eventArgs.KeyModifiers))
                 {
                     if (!session.Selection.Add(hit.Id)) session.Selection.Remove(hit.Id);
                 }
@@ -1639,7 +1646,7 @@ public sealed class TimelineSurface : Control
                 eventArgs.Handled = true;
                 return;
             }
-            if (!controlPressed && shiftPressed)
+            if (EditorInteractionPolicy.AdditiveSelection(InteractionProfile, eventArgs.KeyModifiers))
             {
                 if (!session.Selection.Add(hit.Id)) session.Selection.Remove(hit.Id);
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -1654,7 +1661,8 @@ public sealed class TimelineSurface : Control
                 session.Selection,
                 selectedTimingIds,
                 hit.Id,
-                preserveNoteBatch: controlPressed);
+                preserveNoteBatch: EditorInteractionPolicy.PreserveDragBatch(
+                    InteractionProfile, eventArgs.KeyModifiers, session.Selection.Contains(hit.Id)));
             PrimarySelectedTimingId = null;
             if (!CanBeginNoteEdit("移动"))
             {
@@ -2154,7 +2162,7 @@ public sealed class TimelineSurface : Control
             SetTrackPanOffset(proTrackOffset +
                 (eventArgs.Delta.Y > 0 ? gridLaneWidth : -gridLaneWidth));
         }
-        else if (eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control))
+        else if (EditorInteractionPolicy.ZoomWheel(InteractionProfile, eventArgs.KeyModifiers))
         {
             ManualNavigationRequested?.Invoke(
                 this,

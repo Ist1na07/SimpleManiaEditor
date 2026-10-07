@@ -1,0 +1,5 @@
+* text=auto
+src/licenses/** -text
+*.png -text
+*.ico -text
+*.wav -text

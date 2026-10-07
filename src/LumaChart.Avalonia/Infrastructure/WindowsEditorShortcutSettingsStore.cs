@@ -119,8 +119,9 @@ public sealed class WindowsEditorShortcutSettings
     }
 
     public Dictionary<string, string> Bindings { get; set; }
+    public EditorInteractionProfile Profile { get; set; } = EditorInteractionProfile.OsuMania;
 
-    public static Dictionary<string, string> CreateDefaults() =>
+    public static Dictionary<string, string> CreateLegacyDefaults() =>
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["New"] = "Ctrl+N",
@@ -159,19 +160,37 @@ public sealed class WindowsEditorShortcutSettings
             ["SnapSetFixed"] = "Ctrl+="
         };
 
+    public static Dictionary<string, string> CreateDefaults(EditorInteractionProfile profile = EditorInteractionProfile.OsuMania)
+    {
+        var bindings = CreateLegacyDefaults();
+        if (profile == EditorInteractionProfile.LumaLegacy) return bindings;
+        bindings["ToolSelect"] = "D1";
+        bindings["ToolTap"] = "D2";
+        bindings["ToolHold"] = "D3";
+        bindings["ToolErase"] = "D4";
+        for (var i = 0; i <= 9; i++) bindings[$"Group{i}"] = $"Alt+D{i}";
+        return bindings;
+    }
+
+    public void SelectProfile(EditorInteractionProfile profile)
+    {
+        Profile = profile;
+        Bindings = CreateDefaults(profile);
+    }
+
     public void Normalize()
     {
         Bindings = new Dictionary<string, string>(
             Bindings ?? new Dictionary<string, string>(),
             StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in CreateDefaults())
+        foreach (var pair in CreateDefaults(Profile))
             if (!Bindings.TryGetValue(pair.Key, out var value) || value == null)
                 Bindings[pair.Key] = pair.Value;
     }
 
     public void Reset()
     {
-        Bindings = CreateDefaults();
+        Bindings = CreateDefaults(Profile);
     }
 
     public WindowsEditorShortcutAssignmentResult Assign(
@@ -393,7 +412,10 @@ public static class WindowsEditorShortcutSettingsStore
             var persisted = JsonSerializer.Deserialize<PersistedSettings>(
                 bytes,
                 JsonOptions);
-            return new WindowsEditorShortcutSettings(persisted?.Bindings);
+            var settings = new WindowsEditorShortcutSettings(persisted?.Bindings);
+            if (Enum.TryParse<EditorInteractionProfile>(persisted?.Profile, out var profile) && Enum.IsDefined(profile))
+                settings.Profile = profile;
+            return settings;
         }
         catch (Exception exception)
         {
@@ -415,7 +437,7 @@ public static class WindowsEditorShortcutSettingsStore
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(
-                new PersistedSettings { Bindings = settings.Bindings },
+                new PersistedSettings { Bindings = settings.Bindings, Profile = settings.Profile.ToString() },
                 JsonOptions);
             using (var output = new FileStream(
                        temporary,
@@ -454,5 +476,6 @@ public static class WindowsEditorShortcutSettingsStore
     private sealed class PersistedSettings
     {
         public Dictionary<string, string>? Bindings { get; set; }
+        public string? Profile { get; set; }
     }
 }

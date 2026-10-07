@@ -22,7 +22,7 @@ public static class AvaloniaAppPaths
     private const string LocalDataOverride = "LUMACHART_AVALONIA_LOCAL_DATA_ROOT";
     private const string EditingRootOverride = "LUMACHART_AVALONIA_EDITING_ROOT";
     private const string WorkspaceRootOverride = "LUMACHART_AVALONIA_WORKSPACE_ROOT";
-    private const string LegacyEditingCacheFolderName = "LumaChart Editing Cache";
+    private const string LegacyEditingCacheFolderName = "SimpleManiaEditor Editing Cache";
     private const int DefaultProGridColumns = 12;
     private const int MaximumProGridColumns = 64;
     private static IAppStorageLocations? registeredLocations;
@@ -313,7 +313,7 @@ public static class AvaloniaAppPaths
         {
             return EnsureDirectory(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                "LumaChart Workspace"));
+                "SimpleManiaEditor Maps"));
         }
     }
 
@@ -329,7 +329,7 @@ public static class AvaloniaAppPaths
             roots,
             TryReadWorkspaceRoot(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LumaChart Studio",
+                "SimpleManiaEditor",
                 "workspace.json")));
         return roots.ToArray();
     }
@@ -434,8 +434,8 @@ public static class AvaloniaAppPaths
             LocalDataOverride,
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LumaChart Studio",
-                "Avalonia"));
+                "SimpleManiaEditor",
+                "Preview"));
         var persistentEditingRoot = ResolveDefaultPersistentEditingRoot(localDataRoot);
         return new WindowsAvaloniaAppStorageLocations(
             localDataRoot,
