@@ -322,7 +322,7 @@ public sealed class WindowsAudioTransportViewModel : IAsyncDisposable
 
     public async Task SetPlaybackRateAsync(double value, CancellationToken cancellationToken = default)
     {
-        value = Math.Round(Math.Clamp(value, .2, 1), 2);
+        value = Math.Round(Math.Clamp(value, .2, 2), 2);
         WindowsAudioPlaybackService? current;
         long generation;
         lock (gate)

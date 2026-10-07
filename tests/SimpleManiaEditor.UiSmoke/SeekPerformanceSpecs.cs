@@ -21,6 +21,14 @@ internal static class SeekPerformanceSpecs
             engine.PlaybackRate = 1;
             stages = (Array)typeof(WindowsAudioDeviceEngine).GetField("soundTouchProviders", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(engine)!;
             if (stages.Length != 0) throw new InvalidOperationException("return to 1x failed to bypass time stretching");
+            engine.PlaybackRate = 2;
+            engine.Play();
+            engine.Seek(TimeSpan.FromSeconds(2));
+            Thread.Sleep(30);
+            if (engine.PlaybackRate != 2 || !engine.IsPlaying || outputs.Outputs.All(o => o.BytesRead == 0) ||
+                outputs.Outputs.Any(o => o.ReadFailure != null))
+                throw new InvalidOperationException("2x pitch-preserving playback did not consume valid audio");
+            engine.Pause();
             engine.PlaybackRate = .25;
             engine.Play();
             var checks = 0;

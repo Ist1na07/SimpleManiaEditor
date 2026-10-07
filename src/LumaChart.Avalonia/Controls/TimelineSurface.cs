@@ -346,6 +346,10 @@ public sealed class TimelineSurface : Control
     private TimelineTool tool = TimelineTool.Select;
     public EditorInteractionProfile InteractionProfile { get; set; } = EditorInteractionProfile.OsuMania;
     public bool ReverseTimeWheel { get; set; } = true;
+    public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
+    public const double MinimumZoom = 12;
+    public const double MaximumZoom = 3840;
+    public const double PlaybackWheelStepMilliseconds = 500;
     public event EventHandler<int>? SnapDivisionChangeRequested;
     private bool proEditorEnabled;
     private int proGridColumnCount = ProEditorWorkspaceGeometry.DefaultTotalColumns;
@@ -943,7 +947,7 @@ public sealed class TimelineSurface : Control
 
     public void SetZoom(double pixelsPerBeat)
     {
-        var next = Math.Clamp(pixelsPerBeat, 24, 480);
+        var next = Math.Clamp(pixelsPerBeat, MinimumZoom, MaximumZoom);
         if (Math.Abs(PixelsPerBeat - next) < .001) return;
         PixelsPerBeat = next;
         InvalidateAudioScene();
@@ -2179,10 +2183,17 @@ public sealed class TimelineSurface : Control
         else if (WindowsTimelineVisualParityPolicy.ResolveWheelDirection(
                      ReverseTimeWheel ? -eventArgs.Delta.Y : eventArgs.Delta.Y) is { } direction &&
                  direction != 0)
-            SetCurrentBeatFromManualNavigation(TimelineGridNavigation.Step(
-                CurrentBeat,
-                session.SnapDivision,
-                direction).Value);
+        {
+            if (isPlaybackActive && InteractionProfile == EditorInteractionProfile.OsuMania)
+            {
+                var map = audioVisualizationTimingMap ?? new TimingMap(session.Document.Timing);
+                var milliseconds = map.BeatToMilliseconds(BeatPosition.FromDouble(CurrentBeat)) +
+                    (ReverseTimeWheel ? -eventArgs.Delta.Y : eventArgs.Delta.Y) * PlaybackWheelStepMilliseconds;
+                SetCurrentBeatFromManualNavigation(Math.Max(0, map.MillisecondsToBeat(milliseconds).Value));
+            }
+            else SetCurrentBeatFromManualNavigation(TimelineGridNavigation.Step(
+                CurrentBeat, session.SnapDivision, direction).Value);
+        }
         eventArgs.Handled = true;
     }
 
@@ -3948,7 +3959,7 @@ public sealed class TimelineSurface : Control
             3);
     }
 
-    private static void DrawLongNote(
+    private void DrawLongNote(
         DrawingContext context,
         double left,
         double startY,
@@ -3957,6 +3968,15 @@ public sealed class TimelineSurface : Control
         double renderedNoteHeight,
         IPen? contourPen = null)
     {
+        if (NoteStyle == EditorNoteStyle.Osu)
+        {
+            var inset = Math.Max(2, width * .12);
+            context.FillRectangle(HoldFaceBrush, new Rect(left + inset, Math.Min(startY, endY),
+                Math.Max(1, width - 2 * inset), Math.Abs(endY - startY)));
+            DrawTapNote(context, new Rect(left, startY - renderedNoteHeight / 2, width, renderedNoteHeight), contourPen);
+            DrawTapNote(context, new Rect(left, endY - renderedNoteHeight / 2, width, renderedNoteHeight), contourPen);
+            return;
+        }
         var top = Math.Min(startY, endY) - renderedNoteHeight / 2;
         var totalHeight = Math.Max(renderedNoteHeight, Math.Abs(endY - startY) + renderedNoteHeight);
         var rect = new Rect(left, top, width, totalHeight);
@@ -4183,7 +4203,7 @@ public sealed class TimelineSurface : Control
             DrawTapNote(context, tapRect);
     }
 
-    private static void DrawHoldInteractionPreview(
+    private void DrawHoldInteractionPreview(
         DrawingContext context,
         double left,
         double headY,

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Automation;
@@ -185,7 +185,8 @@ internal sealed class PlaytestWindow : PlatformWindow
         int frameRateLimit,
         double effectiveUiScale,
         double effectiveFontScale,
-        bool inheritFullscreen)
+        bool inheritFullscreen,
+        bool autoStart = false)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheWorkingCopyPath);
@@ -194,7 +195,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         audioPath = string.IsNullOrWhiteSpace(resolvedAudioPath) ? null : resolvedAudioPath;
         workingCopyPath = Path.GetFullPath(cacheWorkingCopyPath);
         playbackRate = double.IsFinite(currentPlaybackRate)
-            ? Math.Clamp(currentPlaybackRate, .2, 1)
+            ? Math.Clamp(currentPlaybackRate, .2, 2)
             : 1;
         preservePitch = currentPreservePitch;
         musicVolume = Math.Clamp(currentMusicVolume, 0, 1);
@@ -305,6 +306,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             }
             RequestPlaytestAnimationFrame();
             RefreshAutomationDiagnostics(CurrentMilliseconds());
+            if (autoStart) await TogglePauseAsync();
         };
         PropertyChanged += (_, eventArgs) =>
         {

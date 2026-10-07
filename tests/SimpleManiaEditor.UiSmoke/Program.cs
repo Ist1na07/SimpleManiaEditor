@@ -3,6 +3,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Automation;
+using Avalonia.VisualTree;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
@@ -13,6 +16,7 @@ using LumaChart.Avalonia.Controls;
 using LumaChart.Avalonia.Infrastructure;
 using LumaChart.Avalonia.ViewModels;
 using LumaChart.Avalonia.Audio;
+using LumaChart.Avalonia.Dialogs;
 using LumaChart.Core.Models;
 
 internal static class Program
@@ -141,15 +145,35 @@ internal static class Program
         var save = viewModel.SaveAndVerifyAsync(tab.Id);
         PumpUntil(() => save.IsCompleted);
         Require(save.GetAwaiter().GetResult()?.StructurallyEqual == true, "editor save/reload verification failed");
-        var gridPicker = (ComboBox)typeof(MainWindow).GetField("fixedGridPicker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        var gridPicker = (Slider)typeof(MainWindow).GetField("fixedGridSlider", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         Require(gridPicker.IsVisible && gridPicker.TranslatePoint(new Point(), window)!.Value.Y < origin.Y,
             "grid selector is not in fixed top toolbar");
         var currentBeat = timeline.CurrentBeat;
         var gridBefore = tab.Session.SnapDivision;
         window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, 1), RawInputModifiers.Control);
         Require(tab.Session.SnapDivision > gridBefore && timeline.CurrentBeat == currentBeat &&
-            gridPicker.SelectedItem is int displayedDivision && displayedDivision == tab.Session.SnapDivision,
+            ((TextBlock)typeof(MainWindow).GetField("fixedGridText", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).Text == $"1/{tab.Session.SnapDivision}",
             "window Ctrl wheel did not synchronize the fixed grid selector");
+        tab.Session.SnapDivision = 4;
+        window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, 1), RawInputModifiers.Control);
+        Require(tab.Session.SnapDivision == 6, "Ctrl wheel included manual-only 1/5 division");
+        foreach (var (from, expected) in new[] { (6, 8), (8, 12) })
+        {
+            tab.Session.SnapDivision = from;
+            window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, 1), RawInputModifiers.Control);
+            Require(tab.Session.SnapDivision == expected, "Ctrl wheel included a manual-only division");
+        }
+        gridPicker.Value = 4;
+        Require(tab.Session.SnapDivision == 5, "slider could not manually choose 1/5");
+        var commandMenu = (Border)typeof(MainWindow).GetField("commandMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        commandMenu.IsVisible = true;
+        Dispatcher.UIThread.RunJobs();
+        Require(commandMenu.TranslatePoint(new Point(), window)!.Value.Y >= gridPicker.TranslatePoint(new Point(0, gridPicker.Bounds.Height), window)!.Value.Y,
+            "expanded gear menu overlaps fixed toolbar");
+        Require(timeline.TranslatePoint(new Point(), window)!.Value.Y >= commandMenu.TranslatePoint(new Point(0, commandMenu.Bounds.Height), window)!.Value.Y,
+            "expanded gear menu overlaps the chart/tools row");
+        using (var menuFrame = window.CaptureRenderedFrame()!) menuFrame.Save(Path.Combine(screenshots, "editor-menu.png"), PngBitmapEncoderOptions.Default);
+        commandMenu.IsVisible = false;
         var wavePath = Path.Combine(Path.GetDirectoryName(tab.WorkingPath)!, "simulation.wav");
         WriteSimulationWave(wavePath);
         SeekPerformanceSpecs.CheckCanceledPreparation(wavePath);
@@ -176,6 +200,57 @@ internal static class Program
         Require(transport.PlaybackSnapshot?.IsPlaying == false, "pending wheel seek resumed after explicit Space pause");
         Require(factory.Outputs.Any(output => output.Format.SampleRate == 16000 && output.BytesRead > 0) &&
             factory.Outputs.All(output => output.ReadFailure == null), "simulated sink did not consume real DSP output cleanly");
+        var fixedRate = (Slider)typeof(MainWindow).GetField("fixedRateSlider", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        fixedRate.Value = 1.5;
+        PumpUntil(() => Math.Abs(transport.PlaybackRate - 1.5) < .001 && transport.PlaybackSnapshot?.PlaybackRate == 1.5);
+        Require(transport.PlaybackSnapshot!.PlaybackRate == 1.5, "top rate slider failed to apply >1x playback");
+        fixedRate.Value = 1;
+        PumpUntil(() => Math.Abs(transport.PlaybackRate - 1) < .001 && transport.PlaybackSnapshot?.PlaybackRate == 1);
+        var tapToolButton = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.ToolRail.Tap");
+        tapToolButton.Focus();
+        var clicks = 0;
+        tapToolButton.Click += (_, _) => clicks++;
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == true);
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == false);
+        Require(clicks == 0, "Space activated the focused tool button");
+        gridPicker.Focus();
+        var preservedGrid = tab.Session.SnapDivision;
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == true);
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == false);
+        Require(tab.Session.SnapDivision == preservedGrid, "Space changed the focused grid slider");
+        var optionPicker = window.GetVisualDescendants().OfType<ComboBox>().First(c => c.IsEffectivelyVisible && c.Bounds.Width > 0);
+        Require(optionPicker.Focus(), "visible option picker did not receive focus");
+        var preservedOption = optionPicker.SelectedIndex;
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == true);
+        Stroke(window, Key.Space);
+        PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == false);
+        Require(!optionPicker.IsDropDownOpen && optionPicker.SelectedIndex == preservedOption,
+            "Space activated a focused non-text option picker");
+        timeline.SetCurrentBeat(4);
+        var playtestButton = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Toolbar.Playtest");
+        playtestButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        PumpUntil(() => window.OwnedWindows.OfType<PlaytestWindow>().Any());
+        var playtest = window.OwnedWindows.OfType<PlaytestWindow>().Single();
+        PumpUntil(() => playtest.Diagnostics.Playing);
+        Require(Math.Abs(playtest.Diagnostics.StartMilliseconds - 2000) < .01, "one-click playtest did not start at current time");
+        playtest.Close();
+        Pump(200);
+        var settingsTab = (TabItem)typeof(MainWindow).GetField("settingsInspectorTab", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        var inspectorTabs = (TabControl)typeof(MainWindow).GetField("editorInspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        inspectorTabs.SelectedItem = settingsTab;
+        Dispatcher.UIThread.RunJobs();
+        var skinPicker = window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetAutomationId(c) == "Editor.NoteStyle");
+        skinPicker.SelectedIndex = 1;
+        Require(timeline.NoteStyle == EditorNoteStyle.Malody, "skin selector did not switch editor rendering");
+        using (var skinFrame = window.CaptureRenderedFrame()!) skinFrame.Save(Path.Combine(screenshots, "editor-malody.png"), PngBitmapEncoderOptions.Default);
+        skinPicker.SelectedIndex = 0;
+        Require(timeline.NoteStyle == EditorNoteStyle.Osu && EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Osu,
+            "skin selector did not restore/persist osu default");
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

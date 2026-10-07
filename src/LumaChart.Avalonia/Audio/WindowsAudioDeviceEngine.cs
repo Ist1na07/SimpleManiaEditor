@@ -257,7 +257,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
 
     private void SetPlaybackRateLocked(double value)
     {
-        var boundedRate = Math.Clamp(value, .2, 1);
+        var boundedRate = Math.Clamp(value, .2, 2);
         var requiresPhaseVocoder = source != null &&
             WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(
                 boundedRate,

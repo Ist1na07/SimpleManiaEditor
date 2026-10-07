@@ -45,6 +45,27 @@ internal static class InteractionRegressionSpecs
         window.MouseWheel(point, new Vector(0, 1), RawInputModifiers.Control);
         Require(gridRequests == 1 && session.SnapDivision == 8 && timeline.CurrentBeat == before && timeline.PixelsPerBeat == zoom,
             "Ctrl wheel changed time/zoom instead of grid");
+        timeline.SetPlaybackActive(true);
+        foreach (var division in new[] { 4, 64 })
+        {
+            session.SnapDivision = division;
+            timeline.SetCurrentBeat(4);
+            window.MouseWheel(point, new Vector(0, -1));
+            Require(Math.Abs(timeline.CurrentBeat - 5) < .0001, "playing wheel was tied to grid instead of a fixed 500ms step");
+        }
+        timeline.SetPlaybackActive(false);
+        timeline.SetCurrentBeat(4);
+        window.MouseWheel(point, new Vector(0, -1));
+        Require(Math.Abs(timeline.CurrentBeat - (4 + 1d / 64)) < .0001, "paused wheel no longer follows the snap grid");
+        timeline.SetZoom(1920);
+        Require(timeline.PixelsPerBeat == 1920 && new WindowsEditorViewSettings(gridBeatHeight: 1920).Normalize().GridBeatHeight == 1920,
+            "expanded zoom was clamped by timeline or persisted settings");
+        timeline.SetZoom(zoom);
+        timeline.SetCurrentBeat(4);
+        Require(timeline.NoteStyle == EditorNoteStyle.Osu, "default note style is not osu");
+        EditorPresentationSettingsStore.SaveNoteStyle(EditorNoteStyle.Malody);
+        Require(EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Malody, "alternate skin did not persist");
+        EditorPresentationSettingsStore.SaveNoteStyle(EditorNoteStyle.Osu);
         session.SnapDivision = 4;
         var probe = timeline.GetPlacementEvidenceProbe() ?? throw new InvalidOperationException("missing reverse gesture probe");
         window.MouseDown(probe.HoldEndTarget.SurfacePoint, MouseButton.Left);

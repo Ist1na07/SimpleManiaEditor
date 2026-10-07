@@ -73,7 +73,7 @@ public sealed class WindowsEditorViewSettings
         double trackOpacity = DefaultTrackOpacity)
     {
         GridLaneWidth = Math.Clamp(FiniteOr(gridLaneWidth, DefaultGridLaneWidth), 32, 180);
-        GridBeatHeight = Math.Clamp(FiniteOr(gridBeatHeight, DefaultGridBeatHeight), 24, 480);
+        GridBeatHeight = Math.Clamp(FiniteOr(gridBeatHeight, DefaultGridBeatHeight), 12, 3840);
         MainEditorHorizontalOffset = Math.Clamp(
             Math.Round(FiniteOr(mainEditorHorizontalOffset, 0)),
             -600,
@@ -110,7 +110,7 @@ public sealed class WindowsEditorViewSettings
         SnapDivision = snapDivision is >= 1 and <= 1920
             ? snapDivision
             : DefaultSnapDivision;
-        PlaybackRate = double.IsFinite(playbackRate) && playbackRate is >= .2 and <= 1
+        PlaybackRate = double.IsFinite(playbackRate) && playbackRate is >= .2 and <= 2
             ? Math.Round(playbackRate, 2)
             : DefaultPlaybackRate;
         DifficultyCardX = Math.Clamp(Math.Round(FiniteOr(difficultyCardX, 0)), -4000, 4000);

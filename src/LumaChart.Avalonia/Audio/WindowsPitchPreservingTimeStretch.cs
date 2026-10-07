@@ -40,7 +40,7 @@ internal static class WindowsPitchPreservingTimeStretchPolicy
     }
 
     private static double NormalizeRate(double playbackRate) =>
-        double.IsFinite(playbackRate) ? Math.Clamp(playbackRate, .2, 1) : 1;
+        double.IsFinite(playbackRate) ? Math.Clamp(playbackRate, .2, 2) : 1;
 }
 
 /// <summary>

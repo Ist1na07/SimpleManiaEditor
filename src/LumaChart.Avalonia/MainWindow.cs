@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -82,6 +82,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private static readonly int[] QuickSnapDivisions =
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32, 48, 64];
+    private static readonly int[] WheelSnapDivisions = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
     private static readonly double[] QuickGridScales = [.5, 1, 1.5, 2, 2.5, 3];
     private static readonly double[] QuickPlaybackRates = [.2, .4, .6, 1];
     private static readonly Color WindowColor = Color.Parse("#111315");
@@ -5474,9 +5475,9 @@ public sealed partial class MainWindow : PlatformWindow
             Padding = new Thickness(1),
             Child = timelineHost
         };
-        var timelineColumn = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
-        timelineColumn.Children.Add(BuildFixedGridToolbar());
-        Grid.SetRow(timelineFrame, 1);
+        var timelineColumn = new Grid { ColumnDefinitions = new ColumnDefinitions("90,*") };
+        timelineColumn.Children.Add(BuildFixedToolRail());
+        Grid.SetColumn(timelineFrame, 1);
         timelineColumn.Children.Add(timelineFrame);
         Grid.SetColumn(timelineColumn, 2);
         workbench.Children.Add(timelineColumn);
@@ -5608,6 +5609,15 @@ public sealed partial class MainWindow : PlatformWindow
         var extension = BuildExtensionPalette();
         Grid.SetColumn(extension, 2);
         workbench.Children.Add(extension);
+        // Fixed controls and the expandable menu each get a layout row.
+        // Palettes stay in the chart row below both command areas.
+        workbench.RowDefinitions = new RowDefinitions("Auto,Auto,*");
+        foreach (var child in workbench.Children) Grid.SetRow(child, 2);
+        Grid.SetRow(commandMenuButton, 0);
+        Grid.SetRow(commandMenu, 1);
+        var fixedToolbar = BuildFixedGridToolbar();
+        Grid.SetColumn(fixedToolbar, 2);
+        workbench.Children.Add(fixedToolbar);
         editorView.Children.Add(workbench);
     }
 
@@ -6618,7 +6628,7 @@ public sealed partial class MainWindow : PlatformWindow
         Dispatcher.UIThread.Post(() => timeline.Focus(), DispatcherPriority.Input);
     }
 
-    private async Task StartPlaytestAsync(double startBeat)
+    private async Task StartPlaytestAsync(double startBeat, bool autoStart = false)
     {
         // Claimed before the first await: persisting the working copy yields,
         // and a double click used to open two modal playtest windows.
@@ -6626,7 +6636,7 @@ public sealed partial class MainWindow : PlatformWindow
         playtestInProgress = true;
         try
         {
-            await StartPlaytestCoreAsync(startBeat);
+            await StartPlaytestCoreAsync(startBeat, autoStart);
         }
         finally
         {
@@ -6638,7 +6648,7 @@ public sealed partial class MainWindow : PlatformWindow
         }
     }
 
-    private async Task StartPlaytestCoreAsync(double startBeat)
+    private async Task StartPlaytestCoreAsync(double startBeat, bool autoStart)
     {
         var tab = viewModel.ActiveTab;
         if (tab == null)
@@ -6680,7 +6690,8 @@ public sealed partial class MainWindow : PlatformWindow
                 editorViewSettings.FrameRateLimit,
                 displayScaleController.CurrentSettings.UiScale,
                 displayScaleController.CurrentSettings.FontScale,
-                WindowState == WindowState.FullScreen);
+                WindowState == WindowState.FullScreen,
+                autoStart);
             StopEditorHighRateFramePump();
             await dialog.ShowDialog(this);
             viewModel.SetStatus(
@@ -7890,12 +7901,12 @@ public sealed partial class MainWindow : PlatformWindow
         }
         else if (TryTimingNumber(text, out var value))
         {
-            if (Equals(editor.Tag, "Grid") && value is >= .2 and <= 3.4)
+            if (Equals(editor.Tag, "Grid") && value >= TimelineSurface.MinimumZoom / 140 && value <= TimelineSurface.MaximumZoom / 140)
             {
                 SetQuickGridScale(value);
                 valid = true;
             }
-            else if (Equals(editor.Tag, "Rate") && value is >= .2 and <= 1)
+            else if (Equals(editor.Tag, "Rate") && value is >= .2 and <= 2)
             {
                 _ = SetQuickPlaybackRateAsync(value);
                 valid = true;
@@ -7906,8 +7917,8 @@ public sealed partial class MainWindow : PlatformWindow
             viewModel.SetStatus(Equals(editor.Tag, "Snap")
                 ? "分度范围：1–1920"
                 : Equals(editor.Tag, "Grid")
-                    ? "缩放范围：0.2–3.4"
-                    : "倍速范围：0.2–1.0");
+                    ? "缩放范围：0.09–27.43"
+                    : "倍速范围：0.2–2.0");
         EndQuickValueEdit(button, editor);
     }
 
@@ -7920,12 +7931,12 @@ public sealed partial class MainWindow : PlatformWindow
     private void AdjustQuickSnap(int direction)
     {
         var current = viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision;
-        var index = Array.IndexOf(QuickSnapDivisions, current);
+        var index = Array.IndexOf(WheelSnapDivisions, current);
         var target = index >= 0
-            ? QuickSnapDivisions[Math.Clamp(index + direction, 0, QuickSnapDivisions.Length - 1)]
+            ? WheelSnapDivisions[Math.Clamp(index + direction, 0, WheelSnapDivisions.Length - 1)]
             : direction > 0
-                ? QuickSnapDivisions.FirstOrDefault(value => value > current, current)
-                : QuickSnapDivisions.LastOrDefault(value => value < current, current);
+                ? WheelSnapDivisions.FirstOrDefault(value => value > current, current)
+                : WheelSnapDivisions.LastOrDefault(value => value < current, current);
         SetQuickSnapDivision(target);
     }
 
@@ -7946,12 +7957,12 @@ public sealed partial class MainWindow : PlatformWindow
     private void AdjustQuickGrid(int direction)
     {
         var scale = Math.Round(timeline.PixelsPerBeat / 140d * 10) / 10d;
-        SetQuickGridScale(Math.Clamp(scale + direction * .1, .2, 3.4));
+        SetQuickGridScale(Math.Clamp(scale + direction * .1, TimelineSurface.MinimumZoom / 140, TimelineSurface.MaximumZoom / 140));
     }
 
     private void SetQuickGridScale(double scale)
     {
-        timeline.SetZoom(Math.Clamp(Math.Round(140 * scale), 24, 480));
+        timeline.SetZoom(Math.Round(140 * scale));
         RefreshQuickValuesPaletteValues();
     }
 
@@ -7960,7 +7971,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async Task SetQuickPlaybackRateAsync(double rate)
     {
-        rate = Math.Round(Math.Clamp(rate, .2, 1), 2);
+        rate = Math.Round(Math.Clamp(rate, .2, 2), 2);
         await SetEditorPlaybackRateAsync(rate);
         RefreshQuickValuesPaletteValues();
         viewModel.SetStatus(AvaloniaLocalizationCatalog.Format("音频与谱面倍速：{0:0.00}x", rate));
@@ -7973,6 +7984,7 @@ public sealed partial class MainWindow : PlatformWindow
         quickSnapText.Text = $"1/{division}";
         quickGridScaleText.Text = $"{timeline.PixelsPerBeat / 140d:0.00}x";
         quickPlaybackRateText.Text = $"{audioTransport.PlaybackRate:0.00}x";
+        SyncFixedPlaybackRate();
     }
 
     private void ApplyQuickValuesPaletteLayout()
@@ -10118,8 +10130,8 @@ public sealed partial class MainWindow : PlatformWindow
                 "主编辑区域 X 轴偏移");
             ConfigureSettingsSlider(
                 gridBeatHeightSlider,
-                24,
-                480,
+                TimelineSurface.MinimumZoom,
+                TimelineSurface.MaximumZoom,
                 1,
                 editorViewSettings.GridBeatHeight,
                 "Settings.GridBeatHeight",
@@ -10914,6 +10926,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void RefreshShortcutLabels()
     {
+        RefreshFixedTools();
         foreach (var pair in quickShortcutButtons)
             ToolTip.SetTip(
                 pair.Value.Button,
@@ -13014,7 +13027,7 @@ public sealed partial class MainWindow : PlatformWindow
         };
 
         audioRateSlider.Minimum = .2;
-        audioRateSlider.Maximum = 1;
+        audioRateSlider.Maximum = 2;
         audioRateSlider.Value = 1;
         audioRateSlider.SmallChange = .05;
         audioRateSlider.LargeChange = .1;
@@ -15320,12 +15333,15 @@ public sealed partial class MainWindow : PlatformWindow
         }
 
         var textEditing = IsTextEditingEvent(eventArgs);
+        var reservedSpace = eventArgs.Key == Key.Space && eventArgs.KeyModifiers == KeyModifiers.None &&
+            WindowsAvaloniaEditorInputPolicy.FindTextEditingControl(eventArgs.Source as Control) is not TextBox &&
+            WindowsAvaloniaEditorInputPolicy.FindTextEditingControl(FocusManager?.GetFocusedElement() as Control) is not TextBox;
         imeDuplicateCommitGuard.ObserveKeyDown(
             eventArgs.Key,
             eventArgs.KeyModifiers,
             textEditing,
             Environment.TickCount64);
-        if (textEditing && WindowsAvaloniaEditorInputPolicy.DeferToTextInputMethod(
+        if (!reservedSpace && textEditing && WindowsAvaloniaEditorInputPolicy.DeferToTextInputMethod(
                 eventArgs.Key,
                 eventArgs.KeyModifiers))
             return;
@@ -15377,6 +15393,17 @@ public sealed partial class MainWindow : PlatformWindow
         {
             ToggleFullscreen();
             eventArgs.Handled = true;
+            return;
+        }
+
+        if (reservedSpace)
+        {
+            eventArgs.Handled = true;
+            if (oneShotShortcutState.TryPress(Key.Space))
+            {
+                try { await ToggleAudioPlaybackAsync(); }
+                catch (Exception exception) { viewModel.SetStatus($"播放切换失败：{exception.Message}"); }
+            }
             return;
         }
 
@@ -15575,7 +15602,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async void Window_KeyUp(object? sender, KeyEventArgs eventArgs)
     {
-        if (IsTextEditingEvent(eventArgs) && WindowsAvaloniaEditorInputPolicy.DeferToTextInputMethod(
+        if (eventArgs.Key != Key.Space && IsTextEditingEvent(eventArgs) && WindowsAvaloniaEditorInputPolicy.DeferToTextInputMethod(
                 eventArgs.Key,
                 eventArgs.KeyModifiers))
             return;
@@ -16373,6 +16400,7 @@ public sealed partial class MainWindow : PlatformWindow
                     audioPositionSlider.Maximum);
             audioVolumeSlider.Value = audioTransport.Volume * 100;
             audioRateSlider.Value = audioTransport.PlaybackRate;
+            SyncFixedPlaybackRate();
             audioPreservePitchBox.IsChecked = audioTransport.PreservePitch;
             audioPreservePitchBox.IsEnabled =
                 WindowsInspectorParityPolicy.SettingsPreservePitchEnabledWithoutLoadedAudio;
@@ -24814,6 +24842,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void UpdateTimelineToolButtons()
     {
+        RefreshFixedTools();
         var session = viewModel.ActiveTab?.Session;
         foreach (var pair in timelineToolButtons)
         {
