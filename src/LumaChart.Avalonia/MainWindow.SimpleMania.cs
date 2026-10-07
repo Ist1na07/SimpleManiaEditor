@@ -18,6 +18,18 @@ public sealed partial class MainWindow
     private ComboBox? fixedGridPicker;
     private bool syncingFixedGridPicker;
     private CheckBox? reverseTimeWheelBox;
+    private bool positionInspectorRefreshQueued;
+
+    private void QueuePositionInspectorRefresh()
+    {
+        if (positionInspectorRefreshQueued) return;
+        positionInspectorRefreshQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            positionInspectorRefreshQueued = false;
+            if (!windowCloseTeardownStarted) UpdateInspector();
+        }, DispatcherPriority.Background);
+    }
 
     private void InitializeSimpleMania()
     {

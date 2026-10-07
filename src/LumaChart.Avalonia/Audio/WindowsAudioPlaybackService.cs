@@ -48,11 +48,11 @@ internal readonly record struct WindowsAudioPlaybackClockSample(
 /// <summary>
 /// UI-independent Windows transport. Decoder/output mutations run behind an
 /// asynchronous serialization gate, and rapid timeline seeks collapse into one
-/// backend rebuild after a short quiet window.
+/// source transition after a short quiet window.
 /// </summary>
 public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
 {
-    public static readonly TimeSpan DefaultSeekCoalescingWindow = TimeSpan.FromMilliseconds(24);
+    public static readonly TimeSpan DefaultSeekCoalescingWindow = TimeSpan.FromMilliseconds(4);
     private static readonly TimeSpan DisposeOperationWaitTimeout = TimeSpan.FromSeconds(2);
 
     private readonly SemaphoreSlim operationGate = new(1, 1);
@@ -317,7 +317,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Requests a seek. Calls arriving inside the coalescing window share one
-    /// decoder/output rebuild and all complete when the newest position is applied.
+    /// source transition and all complete when the newest position is applied.
     /// </summary>
     public Task SeekAsync(TimeSpan position, CancellationToken cancellationToken = default)
     {
@@ -734,7 +734,9 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
                     ThrowIfSeekStale(expectedSeekGeneration, expectedLoadGeneration);
                     activeEngine = GetOrCreateEngine();
                     ThrowIfSeekStale(expectedSeekGeneration, expectedLoadGeneration);
-                    activeEngine.Seek(position);
+                    if (activeEngine is WindowsAudioDeviceEngine nativeEngine)
+                        nativeEngine.Seek(position, () => ThrowIfSeekStale(expectedSeekGeneration, expectedLoadGeneration));
+                    else activeEngine.Seek(position);
                     ThrowIfSeekStale(expectedSeekGeneration, expectedLoadGeneration);
                 }, CancellationToken.None).ConfigureAwait(false);
 

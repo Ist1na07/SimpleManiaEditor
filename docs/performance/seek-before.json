@@ -1,0 +1,29 @@
+{
+  "Fixture": "20s 16kHz mono WAV; simulated 5ms consuming sink; not hardware latency",
+  "Results": [
+    {
+      "Rate": 1,
+      "PreservePitch": false,
+      "Samples": 8,
+      "MedianMs": 63.5007,
+      "P95Ms": 79.6663,
+      "DeviceRebuilds": 8
+    },
+    {
+      "Rate": 1,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 63.4536,
+      "P95Ms": 78.1891,
+      "DeviceRebuilds": 8
+    },
+    {
+      "Rate": 0.5,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 63.3868,
+      "P95Ms": 77.641,
+      "DeviceRebuilds": 8
+    }
+  ]
+}

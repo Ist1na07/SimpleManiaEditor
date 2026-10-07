@@ -20,6 +20,8 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--seek-benchmark")
+            return SeekPerformanceSpecs.Run(args.Length > 1 ? args[1] : null, args.Length > 2 ? args[2] : null);
         var root = Path.Combine(Path.GetTempPath(), "sme-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_LOCAL_DATA_ROOT", Path.Combine(root, "settings"));
@@ -150,6 +152,7 @@ internal static class Program
             "window Ctrl wheel did not synchronize the fixed grid selector");
         var wavePath = Path.Combine(Path.GetDirectoryName(tab.WorkingPath)!, "simulation.wav");
         WriteSimulationWave(wavePath);
+        SeekPerformanceSpecs.CheckCanceledPreparation(wavePath);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "simulation.wav");
         var transport = (WindowsAudioTransportViewModel)typeof(MainWindow).GetField("audioTransport", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         PumpUntil(() => transport.PlaybackSnapshot?.IsLoaded == true);
@@ -157,11 +160,13 @@ internal static class Program
         PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == true);
         var factory = (SimulatedAudioOutputFactory)PlatformAudioOutputs.Current!;
         var pausesBefore = factory.Outputs.Sum(output => output.PauseCalls);
+        var devicesBefore = factory.Outputs.Count;
         window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, -1));
         var targetBeat = timeline.CurrentBeat;
         Pump(250);
         Require(transport.PlaybackSnapshot?.IsPlaying == true && factory.Outputs.Sum(output => output.PauseCalls) == pausesBefore,
             "wheel seek paused playback instead of continuing");
+        Require(factory.Outputs.Count == devicesBefore, "wheel seek recreated a device instead of reusing output");
         Require(transport.PlaybackSnapshot!.Position.TotalMilliseconds >= targetBeat * 500 - 40 &&
             transport.PlaybackSnapshot.Position.TotalMilliseconds < targetBeat * 500 + 700, "wheel did not seek to target time");
         window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, -1));
@@ -191,7 +196,7 @@ internal static class Program
         window.KeyRelease(key, modifiers, PhysicalKey.None, null);
         Dispatcher.UIThread.RunJobs();
     }
-    private static void WriteSimulationWave(string path)
+    internal static void WriteSimulationWave(string path)
     {
         const int rate = 16000;
         const int frames = rate * 20;

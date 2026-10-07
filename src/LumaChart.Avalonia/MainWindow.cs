@@ -16599,8 +16599,9 @@ public sealed partial class MainWindow : PlatformWindow
         keySoundRuntime.ResetPlaybackCursor(
             pendingEditorSeekMilliseconds,
             audioTransport.PlaybackRate);
-        editorSeekCommitTimer.Stop();
-        editorSeekCommitTimer.Start();
+        // Schedule from the first wheel event; a continuous scroll must not keep
+        // postponing the commit until the user stops moving the wheel.
+        if (!editorSeekCommitTimer.IsEnabled) editorSeekCommitTimer.Start();
     }
 
     private async Task PauseMusicForEditorSeekAsync(long generation, DesktopChartTab tab)
@@ -17238,7 +17239,7 @@ public sealed partial class MainWindow : PlatformWindow
     {
         if (settingProgrammaticPlaybackBeat) return;
         UpdatePlaybackPositionUi(beat);
-        UpdateInspector();
+        QueuePositionInspectorRefresh();
 
         var tab = viewModel.ActiveTab;
         if (tab == null || !IsCurrentKeySoundTab(tab)) return;

@@ -14,6 +14,10 @@ try {
     & (Join-Path $PSScriptRoot 'New-Demo.ps1') -OutputDirectory (Join-Path $publishRoot 'examples/7K-Sandbox')
     Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/QUICKSTART.md') -Destination (Join-Path $publishRoot 'QuickStart.md')
     Copy-Item -LiteralPath $releaseNotes -Destination (Join-Path $publishRoot 'ReleaseNotes.md')
+    $performanceNotes = Join-Path $taskRoot 'docs/performance'
+    if (Test-Path -LiteralPath $performanceNotes) {
+        Copy-Item -LiteralPath $performanceNotes -Destination $publishRoot -Recurse -Force
+    }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Demo.cmd') -Destination (Join-Path $publishRoot 'Demo.cmd')
     $verificationRoot = Join-Path $taskRoot 'artifacts'
     New-Item -ItemType Directory -Path $verificationRoot -Force | Out-Null

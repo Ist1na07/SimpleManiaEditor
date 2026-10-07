@@ -1,4 +1,4 @@
-# SimpleManiaEditor 0.1.1 体验版
+# SimpleManiaEditor 0.1.2 体验版
 
 Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
@@ -54,4 +54,4 @@ Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
 应用以本地模式运行，不需要账号，不连接原作者的账号或更新服务。更新时保留用户资料目录即可。
 
-当前完成范围与限制见 `ReleaseNotes.md`，或仓库 `docs/RELEASE-0.1.1.md` 和初版发布说明。
+当前完成范围与限制见 `ReleaseNotes.md`，或仓库 `docs/RELEASE-0.1.2.md` 和前版发布说明。

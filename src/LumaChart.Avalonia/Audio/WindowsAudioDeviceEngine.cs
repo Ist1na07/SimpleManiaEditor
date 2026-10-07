@@ -6,7 +6,6 @@ using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using SoundTouch;
 using SoundTouch.Net.NAudioSupport;
 
 namespace LumaChart.Avalonia.Audio;
@@ -75,6 +74,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         "audioClient", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private IWavePlayer? output;
+    private string? loadedSourcePath;
     private TransportEnvelopeSampleProvider? transportEnvelope;
     private WaveStream? source;
     private RateAdjustingSampleProvider? rateProvider;
@@ -264,8 +264,10 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 source.WaveFormat.Channels);
         var hasPitchPreservingPipeline =
             phaseVocoderProvider != null || soundTouchProviders.Length > 0;
-        if (preservePitch && source != null && hasPitchPreservingPipeline &&
-            (phaseVocoderProvider != null) != requiresPhaseVocoder)
+        var requiresPitchPreservingPipeline = Math.Abs(boundedRate - 1) > .000001;
+        if (preservePitch && source != null &&
+            (hasPitchPreservingPipeline != requiresPitchPreservingPipeline ||
+             hasPitchPreservingPipeline && (phaseVocoderProvider != null) != requiresPhaseVocoder))
         {
             var position = TimeSpan.FromTicks(ReadPositionTicks());
             var resume = IsPlaying;
@@ -331,6 +333,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         DisposePlayback();
         var opened = AudioDecoder.OpenWaveStream(path);
         source = opened;
+        loadedSourcePath = Path.GetFullPath(path);
         Interlocked.Exchange(ref durationTicks, Math.Max(0, opened.TotalTime.Ticks));
         BeginClockTransition(0);
         try
@@ -386,12 +389,79 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         RecreateOutputAt(TimeSpan.Zero, false);
     });
 
-    public void Seek(TimeSpan position) => RunSerialized(() =>
+    public void Seek(TimeSpan position) => Seek(position, null);
+
+    internal void Seek(TimeSpan position, Action? validateRequest) => RunSerialized(() =>
     {
         if (source == null) return;
         var ticks = Math.Clamp(position.Ticks, 0, Interlocked.Read(ref durationTicks));
-        RecreateOutputAt(TimeSpan.FromTicks(ticks), IsPlaying);
+        var target = TimeSpan.FromTicks(ticks);
+        validateRequest?.Invoke();
+        if (output != null && outputMixer?.IsActive == true && transportEnvelope != null &&
+            loadedSourcePath != null && preservePitch &&
+            WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(playbackRate, source.WaveFormat.Channels))
+        {
+            SeekPrepared(target, validateRequest);
+            return;
+        }
+        if (output != null && outputMixer?.IsActive == true && transportEnvelope != null)
+        {
+            var resume = IsPlaying;
+            BeginClockTransition(ticks);
+            try { transportEnvelope.ChangeSource(() => RecreateOutputAtCore(target, resume, reuseDevice: true)); }
+            // Device stop may wait for the callback; release the envelope read
+            // lock before cleaning up a failed in-stream transition.
+            catch { DisposeOutput(); throw; }
+            finally { EndClockTransition(); }
+        }
+        else RecreateOutputAt(target, IsPlaying);
     });
+
+    private void SeekPrepared(TimeSpan target, Action? validateRequest)
+    {
+        var preparedSource = AudioDecoder.OpenWaveStream(loadedSourcePath!);
+        PreparedMusicPipeline? pipeline = null;
+        var committed = false;
+        var oldSource = source!;
+        var oldStages = soundTouchProviders;
+        try
+        {
+            // Slow DSP priming runs on an independent decoder while the render
+            // callback continues consuming the old pipeline without waiting.
+            pipeline = PreparedMusicPipeline.Build(preparedSource, target, playbackRate, preservePitch, volume, ThrowIfDisposed);
+            validateRequest?.Invoke();
+            var resume = IsPlaying;
+            BeginClockTransition(target.Ticks);
+            try
+            {
+                transportEnvelope!.ChangeSource(() =>
+                {
+                    outputMixer!.ReplaceMusic(pipeline.Volume, pipeline.Ended);
+                    source = preparedSource;
+                    rateProvider = pipeline.Rate;
+                    phaseVocoderProvider = pipeline.PhaseVocoder;
+                    soundTouchProviders = pipeline.Stages;
+                    localVolumeProvider = pipeline.Volume;
+                    Interlocked.Exchange(ref positionAnchorTicks, target.Ticks);
+                    if (resume) { ArmAudioClock(); positionClock.Restart(); }
+                    else positionClock.Reset();
+                    committed = true;
+                });
+            }
+            finally { EndClockTransition(); }
+        }
+        finally
+        {
+            if (committed)
+            {
+                foreach (var stage in oldStages)
+                    if (stage is IDisposable disposable)
+                        try { disposable.Dispose(); } catch { }
+                try { oldSource.Dispose(); } catch { }
+            }
+            else { pipeline?.Dispose(); preparedSource.Dispose(); }
+        }
+    }
 
     public void RefreshDefaultOutputDevice(bool resumePlayback) => RunSerialized(() =>
     {
@@ -504,10 +574,10 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         }
     }
 
-    private void RecreateOutputAtCore(TimeSpan position, bool resume)
+    private void RecreateOutputAtCore(TimeSpan position, bool resume, bool reuseDevice = false)
     {
         if (source == null) return;
-        FadeOutAndDrain();
+        if (!reuseDevice) FadeOutAndDrain();
         // Land on the new position before the old output goes away. Leaving the
         // clock running would have Position keep extrapolating from the anchor
         // this rebuild is moving away from, over an output that is already
@@ -516,84 +586,40 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         // continue from, which is what the tail of this method anchors anyway.
         Interlocked.Exchange(ref positionAnchorTicks, position.Ticks);
         positionClock.Reset();
-        DisposeOutput();
+        var previousStages = reuseDevice ? soundTouchProviders : [];
+        if (!reuseDevice) DisposeOutput();
         RateAdjustingSampleProvider? createdRateProvider = null;
         WindowsPhaseVocoderTimeStretchSampleProvider? createdPhaseVocoderProvider = null;
         var createdSoundTouchProviders = new List<SoundTouchWaveProvider>();
         VolumeSampleProvider? createdVolumeProvider = null;
         QueuedOverlayMixerSampleProvider? createdMixer = null;
         IWavePlayer? createdOutput = null;
+        var musicReplaced = false;
         try
         {
-            source.CurrentTime = position;
-            // A decoder seek can be slow; do not build a device for an engine
-            // whose disposal is already waiting on this call.
-            ThrowIfDisposed();
-            var boundedSource = LengthCappedSampleProvider.FromWaveStream(source);
-            var activeSource = source;
-            bool RateSourceReallyEnded() =>
-                boundedSource.IsEnded ||
-                activeSource.CurrentTime >=
-                activeSource.TotalTime - TimeSpan.FromMilliseconds(250);
-            ISampleProvider musicProvider;
-            SoundTouchContinuitySampleProvider? createdContinuityProvider = null;
-            Func<bool> musicReallyEnded = RateSourceReallyEnded;
-            if (preservePitch)
+            var pipeline = PreparedMusicPipeline.Build(source, position, playbackRate, preservePitch, volume, ThrowIfDisposed);
+            createdRateProvider = pipeline.Rate;
+            createdPhaseVocoderProvider = pipeline.PhaseVocoder;
+            createdSoundTouchProviders.AddRange(pipeline.Stages);
+            createdVolumeProvider = pipeline.Volume;
+            var musicReallyEnded = pipeline.Ended;
+            TransportEnvelopeSampleProvider envelope;
+            if (reuseDevice)
             {
-                if (WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(
-                        playbackRate,
-                        boundedSource.WaveFormat.Channels))
-                {
-                    createdPhaseVocoderProvider =
-                        new WindowsPhaseVocoderTimeStretchSampleProvider(
-                            boundedSource,
-                            RateSourceReallyEnded,
-                            playbackRate);
-                    _ = createdPhaseVocoderProvider.Prime();
-                    musicProvider = createdPhaseVocoderProvider;
-                    musicReallyEnded = () => createdPhaseVocoderProvider.IsEnded;
-                }
-                else
-                {
-                    IWaveProvider stageSource = boundedSource.ToWaveProvider();
-                    var processor = new SoundTouchProcessor();
-                    var stageProvider = new SoundTouchWaveProvider(stageSource, processor)
-                    {
-                        Tempo = (float)WindowsPitchPreservingTimeStretchPolicy
-                            .ResolveSoundTouchTempo(playbackRate),
-                        Pitch = 1,
-                        Rate = 1
-                    };
-                    WindowsPitchPreservingTimeStretchPolicy.Configure(processor);
-                    createdSoundTouchProviders.Add(stageProvider);
-                    stageSource = stageProvider;
-                    createdContinuityProvider = new SoundTouchContinuitySampleProvider(
-                        stageSource.ToSampleProvider(),
-                        () => boundedSource.IsEnded);
-                    musicProvider = createdContinuityProvider;
-                    musicReallyEnded = () => createdContinuityProvider.IsEnded;
-                }
+                createdMixer = outputMixer!;
+                createdMixer.ReplaceMusic(createdVolumeProvider, musicReallyEnded);
+                musicReplaced = true;
+                envelope = transportEnvelope!;
+                createdOutput = output!;
             }
             else
             {
-                createdRateProvider = new RateAdjustingSampleProvider(
-                    boundedSource,
-                    RateSourceReallyEnded)
-                {
-                    PlaybackRate = playbackRate
-                };
-                createdRateProvider.Reset(position);
-                musicProvider = createdRateProvider;
+                createdMixer = new QueuedOverlayMixerSampleProvider(createdVolumeProvider, musicReallyEnded,
+                    () => Interlocked.Increment(ref transientMusicZeroCount));
+                envelope = new TransportEnvelopeSampleProvider(createdMixer);
+                createdOutput = CreateOutput(envelope.ToWaveProvider());
+                createdOutput.PlaybackStopped += OnPlaybackStopped;
             }
-
-            createdVolumeProvider = new VolumeSampleProvider(musicProvider) { Volume = volume };
-            createdMixer = new QueuedOverlayMixerSampleProvider(
-                createdVolumeProvider,
-                musicReallyEnded,
-                () => Interlocked.Increment(ref transientMusicZeroCount));
-            var envelope = new TransportEnvelopeSampleProvider(createdMixer);
-            createdOutput = CreateOutput(envelope.ToWaveProvider());
-            createdOutput.PlaybackStopped += OnPlaybackStopped;
             rateProvider = createdRateProvider;
             phaseVocoderProvider = createdPhaseVocoderProvider;
             soundTouchProviders = [.. createdSoundTouchProviders];
@@ -608,13 +634,20 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             positionClock.Reset();
             if (!resume) return;
             ThrowIfDisposed();
-            envelope.FadeIn();
+            if (!reuseDevice) envelope.FadeIn();
             ArmAudioClock();
-            createdOutput.Play();
+            if (!reuseDevice) createdOutput.Play();
             positionClock.Restart();
         }
         catch
         {
+            if (reuseDevice)
+            {
+                foreach (var stage in createdSoundTouchProviders)
+                    if (stage is IDisposable disposable)
+                        try { disposable.Dispose(); } catch { }
+                throw;
+            }
             createdMixer?.Complete();
             if (createdOutput != null)
             {
@@ -636,6 +669,13 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             ResetAudioClock();
             positionClock.Reset();
             throw;
+        }
+        finally
+        {
+            if (musicReplaced)
+                foreach (var stage in previousStages)
+                    if (stage is IDisposable disposable)
+                        try { disposable.Dispose(); } catch { }
         }
     }
 
@@ -1129,8 +1169,8 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         // legitimate decoder overshoot, so real material passes untouched.
         internal const float MaximumMusicSampleMagnitude = 4f;
 
-        private readonly ISampleProvider music;
-        private readonly Func<bool> musicSourceEnded;
+        private ISampleProvider music;
+        private Func<bool> musicSourceEnded;
         private readonly Action? onTransientMusicZero;
         private readonly ConcurrentQueue<ISampleProvider> pending = new();
         private readonly List<ISampleProvider> active = [];
@@ -1161,6 +1201,21 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         /// output stopping underneath it.
         /// </summary>
         public bool MusicEnded => Volatile.Read(ref musicEnded);
+
+        public void ReplaceMusic(ISampleProvider provider, Func<bool> ended)
+        {
+            lock (readGate)
+            {
+                if (completed) throw new ObjectDisposedException(nameof(QueuedOverlayMixerSampleProvider));
+                if (!provider.WaveFormat.Equals(WaveFormat)) throw new InvalidOperationException("Seek cannot change output format.");
+                music = provider;
+                musicSourceEnded = ended;
+                musicEnded = false;
+                terminalSilenceReturned = false;
+                active.Clear();
+                while (pending.TryDequeue(out _)) { }
+            }
+        }
 
         public bool TryEnqueue(ISampleProvider provider)
         {

@@ -1,0 +1,49 @@
+{
+  "Fixture": "20s 16kHz mono WAV; simulated 5ms consuming sink; not hardware latency",
+  "Results": [
+    {
+      "Format": ".wav",
+      "Rate": 1,
+      "PreservePitch": false,
+      "Samples": 8,
+      "MedianMs": 0.1441,
+      "P95Ms": 4.568,
+      "StreamingDuringSeek": 1,
+      "MaxCallbackReadMs": 3.426,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 1,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.1377,
+      "P95Ms": 0.2602,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 0.0851,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 0.5,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.3154,
+      "P95Ms": 0.5309,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 10.9352,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 0.25,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 64.1568,
+      "P95Ms": 72.1485,
+      "StreamingDuringSeek": 8,
+      "MaxCallbackReadMs": 2.7735,
+      "DeviceRebuilds": 0
+    }
+  ]
+}

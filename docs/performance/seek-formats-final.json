@@ -1,0 +1,137 @@
+{
+  "Fixture": "Generated 20s fixtures in WAV/MP3/Ogg; simulated 5ms consuming sink; not hardware latency",
+  "Results": [
+    {
+      "Format": ".mp3",
+      "Rate": 1,
+      "PreservePitch": false,
+      "Samples": 8,
+      "MedianMs": 0.1503,
+      "P95Ms": 4.7707,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 5.2101,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".mp3",
+      "Rate": 1,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.1773,
+      "P95Ms": 0.4501,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 1.1032,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".mp3",
+      "Rate": 0.5,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.2019,
+      "P95Ms": 0.2726,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 5.8502,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".mp3",
+      "Rate": 0.25,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 60.7799,
+      "P95Ms": 71.4206,
+      "StreamingDuringSeek": 8,
+      "MaxCallbackReadMs": 6.4818,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".ogg",
+      "Rate": 1,
+      "PreservePitch": false,
+      "Samples": 8,
+      "MedianMs": 0.7264,
+      "P95Ms": 1.7606,
+      "StreamingDuringSeek": 3,
+      "MaxCallbackReadMs": 1.3257,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".ogg",
+      "Rate": 1,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.6903,
+      "P95Ms": 0.8354,
+      "StreamingDuringSeek": 3,
+      "MaxCallbackReadMs": 0.5894,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".ogg",
+      "Rate": 0.5,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.5154,
+      "P95Ms": 0.7753,
+      "StreamingDuringSeek": 1,
+      "MaxCallbackReadMs": 2.4891,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".ogg",
+      "Rate": 0.25,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 50.0053,
+      "P95Ms": 86.7596,
+      "StreamingDuringSeek": 8,
+      "MaxCallbackReadMs": 2.7347,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 1,
+      "PreservePitch": false,
+      "Samples": 8,
+      "MedianMs": 0.1472,
+      "P95Ms": 0.297,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 1.8227,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 1,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.1284,
+      "P95Ms": 1.3038,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 0.3264,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 0.5,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 0.1704,
+      "P95Ms": 0.6496,
+      "StreamingDuringSeek": 0,
+      "MaxCallbackReadMs": 2.0515,
+      "DeviceRebuilds": 0
+    },
+    {
+      "Format": ".wav",
+      "Rate": 0.25,
+      "PreservePitch": true,
+      "Samples": 8,
+      "MedianMs": 90.1131,
+      "P95Ms": 122.0088,
+      "StreamingDuringSeek": 8,
+      "MaxCallbackReadMs": 5.9722,
+      "DeviceRebuilds": 0
+    }
+  ]
+}

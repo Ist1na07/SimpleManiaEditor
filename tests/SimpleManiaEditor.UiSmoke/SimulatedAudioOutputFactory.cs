@@ -19,6 +19,7 @@ internal sealed class SimulatedAudioOutputFactory : IPlatformAudioOutputFactory
         private int state;
         private int pauses;
         private long bytesRead;
+        private long maxReadTicks;
         public Exception? ReadFailure { get; private set; }
         public Output(IWaveProvider provider)
         {
@@ -29,6 +30,7 @@ internal sealed class SimulatedAudioOutputFactory : IPlatformAudioOutputFactory
         public WaveFormat OutputWaveFormat => provider.WaveFormat;
         public int PauseCalls => Volatile.Read(ref pauses);
         public long BytesRead => Interlocked.Read(ref bytesRead);
+        public double MaxReadMilliseconds => Interlocked.Read(ref maxReadTicks) * 1000d / System.Diagnostics.Stopwatch.Frequency;
         public PlaybackState PlaybackState => (PlaybackState)Volatile.Read(ref state);
         public float Volume { get; set; } = 1;
         public event EventHandler<StoppedEventArgs>? PlaybackStopped;
@@ -48,7 +50,12 @@ internal sealed class SimulatedAudioOutputFactory : IPlatformAudioOutputFactory
                 {
                     if (PlaybackState == PlaybackState.Playing)
                     {
+                        var start = System.Diagnostics.Stopwatch.GetTimestamp();
                         var read = provider.Read(buffer, 0, buffer.Length);
+                        var elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+                        long previous;
+                        do { previous = Interlocked.Read(ref maxReadTicks); }
+                        while (elapsed > previous && Interlocked.CompareExchange(ref maxReadTicks, elapsed, previous) != previous);
                         Interlocked.Add(ref bytesRead, read);
                         if (read == 0) Stop();
                     }

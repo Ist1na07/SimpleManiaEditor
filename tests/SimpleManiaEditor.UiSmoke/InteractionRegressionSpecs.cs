@@ -69,12 +69,20 @@ internal static class InteractionRegressionSpecs
 
     private static void CheckAudioEnvelope()
     {
-        var envelope = new TransportEnvelopeSampleProvider(new ConstantStereoSource());
+        var source = new ConstantStereoSource();
+        var envelope = new TransportEnvelopeSampleProvider(source);
         var data = new float[1024];
         envelope.FadeIn();
         envelope.Read(data, 0, data.Length);
         Require(data[0] == 0 && Math.Abs(data[^1] - 1) < 1e-6, "start ramp not silent-to-full");
         AssertSmoothStereo(data);
+        envelope.ChangeSource(() => source.Value = -1);
+        envelope.Read(data, 0, data.Length);
+        Require(data[0] > .9f && data[^1] == -1, "seek splice dropped to silence or failed to change source");
+        for (var i = 2; i < data.Length; i += 2)
+            Require(Math.Abs(data[i] - data[i - 2]) <= 2f / 144 + .00001f && data[i] == data[i + 1], "seek splice introduced a sharp edge");
+        envelope.ChangeSource(() => source.Value = 1);
+        envelope.Read(data, 0, data.Length);
         var fade = envelope.FadeOut();
         envelope.Read(data, 0, data.Length);
         Require(fade.IsCompleted && data[0] == 1 && data[^1] == 0, "pause ramp did not reach silence");
@@ -115,7 +123,8 @@ internal static class InteractionRegressionSpecs
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     private sealed class ConstantStereoSource : ISampleProvider
     {
+        public float Value { get; set; } = 1;
         public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
-        public int Read(float[] buffer, int offset, int count) { Array.Fill(buffer, 1f, offset, count); return count; }
+        public int Read(float[] buffer, int offset, int count) { Array.Fill(buffer, Value, offset, count); return count; }
     }
 }
