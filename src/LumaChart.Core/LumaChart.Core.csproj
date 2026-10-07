@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Display-language catalogs. They live in the lowest project because UI copy
+    is not confined to the UI: the library card subtitle is built in
+    LumaChart.Application, and the account and analysis messages a user reads
+    come from LumaChart.Online and this project. Embedding them here lets every
+    layer translate its own text, and every host (Windows, Android, iOS) get
+    them from a plain assembly resource rather than an Avalonia asset.
+
+    The _-prefixed files are tooling inputs, not catalogs, so they stay out.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\i18n\*.json"
+                      Exclude="Resources\i18n\_*.json"
+                      LogicalName="LumaChart.Core.Resources.i18n.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,44 @@
+osu file format v14
+
+[General]
+AudioFilename: audio.mp3
+Mode: 3
+SampleSet: Normal
+PreviewTime: -1
+
+[Editor]
+Bookmarks: 1000,2000
+BeatDivisor: 7
+
+[Metadata]
+Title: AuditProbe
+Artist: AuditArtist
+Creator: AuditMapper
+Version: 7K
+Source: ProbeSource
+Tags: preserve-me
+BeatmapID:42
+BeatmapSetID:43
+
+[Difficulty]
+CircleSize:7
+OverallDifficulty:8
+HPDrainRate:6
+SliderMultiplier:1.8
+
+[Events]
+0,0,"background.jpg",0,0
+1,0,"video.mp4",0,0
+2,3000,5000
+5,2000,0,"sample.wav",80
+
+[TimingPoints]
+0,500,3,3,2,37,1,1
+1000,-50,3,2,3,45,0,8
+
+[HitObjects]
+36,192,1000,1,6,2:3:4:0:custom.wav
+256,192,1500,128,8,2000:3:2:1:50:tail.wav
+
+[AuditUnknown]
+KeepMe: yes

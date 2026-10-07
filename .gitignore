@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+dist/
+artifacts/
+*.user
+*.suo
+*.log
+*.local.*
+.codex-nuget-packages/
+data/
+!fixtures/**

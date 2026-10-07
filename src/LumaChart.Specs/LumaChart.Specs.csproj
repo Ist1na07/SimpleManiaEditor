@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LumaChart.Application\LumaChart.Application.csproj" />
+    <ProjectReference Include="..\LumaChart.Core\LumaChart.Core.csproj" />
+    <ProjectReference Include="..\LumaChart.Online\LumaChart.Online.csproj" />
+    <ProjectReference Include="..\LumaChart.Storage.Abstractions\LumaChart.Storage.Abstractions.csproj" />
+  </ItemGroup>
+
+  <!--
+    The server-backed specs need LumaChart.Server, which the client-only
+    open-source snapshot does not ship. When the project is present it is
+    referenced and LUMACHART_SERVER turns those specs on; without it the
+    remaining client, core and sync specs still build and run.
+  -->
+  <PropertyGroup>
+    <LumaChartServerProject>$(MSBuildThisFileDirectory)..\LumaChart.Server\LumaChart.Server.csproj</LumaChartServerProject>
+    <LumaChartHasServer Condition="Exists('$(LumaChartServerProject)')">true</LumaChartHasServer>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(LumaChartHasServer)' == 'true'">
+    <DefineConstants>$(DefineConstants);LUMACHART_SERVER</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(LumaChartHasServer)' == 'true'">
+    <ProjectReference Include="$(LumaChartServerProject)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(LumaChartHasServer)' != 'true'">
+    <Compile Remove="ServerFixSpecs.cs" />
+    <Compile Remove="RoomLeasePolicySpecs.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

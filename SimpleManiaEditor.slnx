@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="src/LumaChart.Core/LumaChart.Core.csproj" />
+  <Project Path="src/LumaChart.Application/LumaChart.Application.csproj" />
+  <Project Path="src/LumaChart.Online/LumaChart.Online.csproj" />
+  <Project Path="src/LumaChart.Storage.Abstractions/LumaChart.Storage.Abstractions.csproj" />
+  <Project Path="src/LumaChart.Avalonia/LumaChart.Avalonia.csproj" />
+  <Project Path="src/LumaChart.Specs/LumaChart.Specs.csproj" />
+</Solution>

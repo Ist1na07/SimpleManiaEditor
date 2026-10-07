@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "Chinese string literals that must NOT be translated, and are therefore",
+    "excluded from the localization coverage gate.",
+    "",
+    "These are never shown to a user as a label. Translating them would change",
+    "what the code does, so each entry names why it is exempt. Add to this list",
+    "only when a literal is machine-readable data that happens to contain",
+    "Chinese, never to make the gate quieter about a real UI string."
+  ],
+  "entries": [
+    {
+      "value": "(?i)\"(?<key>password|passwd|pwd|token|access_token|refresh_token|secret|authorization|roomPassword|verificationCode|验证码|密码)\"\\s*:\\s*\"(?:\\\\.|[^\"\\\\])*\"",
+      "reason": "Redaction regex in WindowsDiagnosticLog. The Chinese words are alternation branches that match key names in captured JSON; rewriting them would stop passwords and verification codes from being redacted."
+    },
+    {
+      "value": "(?<key>验证码|房间密码|密码)\\s*[:=：]\\s*(?:\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|[^\\s,;，；]+)",
+      "reason": "Redaction regex in WindowsDiagnosticLog for key=value text. Same reason as above."
+    },
+    {
+      "value": "Controlled Windows diagnostic fault; token=diagnostic-secret-token; 房间密码：diagnostic-room-password",
+      "reason": "Fault injected on purpose in Program.cs to prove the diagnostic log redacts a token and a room password. The redaction patterns are matched against this exact text, so a translation would invalidate the check it exists for."
+    }
+  ]
+}
