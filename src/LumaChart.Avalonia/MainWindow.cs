@@ -6613,7 +6613,7 @@ public sealed partial class MainWindow : PlatformWindow
         Dispatcher.UIThread.Post(() => timeline.Focus(), DispatcherPriority.Input);
     }
 
-    private async Task StartPlaytestAsync(double startBeat, bool autoStart = false)
+    private async Task StartPlaytestAsync(double startBeat, bool settingsOnly = false)
     {
         // Claimed before the first await: persisting the working copy yields,
         // and a double click used to open two modal playtest windows.
@@ -6621,7 +6621,7 @@ public sealed partial class MainWindow : PlatformWindow
         playtestInProgress = true;
         try
         {
-            await StartPlaytestCoreAsync(startBeat, autoStart);
+            await StartPlaytestCoreAsync(startBeat, settingsOnly);
         }
         finally
         {
@@ -6633,7 +6633,7 @@ public sealed partial class MainWindow : PlatformWindow
         }
     }
 
-    private async Task StartPlaytestCoreAsync(double startBeat, bool autoStart)
+    private async Task StartPlaytestCoreAsync(double startBeat, bool settingsOnly)
     {
         var tab = viewModel.ActiveTab;
         if (tab == null)
@@ -6642,7 +6642,7 @@ public sealed partial class MainWindow : PlatformWindow
             return;
         }
         var snapshot = tab.Session.CaptureCommittedDocument();
-        if (snapshot.Notes.All(note => note.IsDraft))
+        if (!settingsOnly && snapshot.Notes.All(note => note.IsDraft))
         {
             await ShowSettingsMessageAsync("测试演奏", "当前谱面没有可测试的正式 Note。");
             return;
@@ -6663,7 +6663,7 @@ public sealed partial class MainWindow : PlatformWindow
             viewModel.SetStatus("正在启动官方 osu!mania 试玩…");
             await OfficialPlaytestLauncher.RunAsync(snapshot,
                 File.Exists(tab.SourcePath) ? tab.SourcePath : tab.WorkingPath, safeStartBeat,
-                settings, audioTransport.PlaybackRate, audioTransport.PreservePitch, audioTransport.Volume);
+                settings, audioTransport.PlaybackRate, audioTransport.PreservePitch, audioTransport.Volume, settingsOnly);
             viewModel.SetStatus(
                 AvaloniaLocalizationCatalog.Format("测试演奏已退出 · 源谱未写入 · 缓存 {0}", Path.GetFileName(tab.WorkingPath)));
         }

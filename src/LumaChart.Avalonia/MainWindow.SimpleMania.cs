@@ -185,7 +185,7 @@ public sealed partial class MainWindow
         };
         SyncFixedGridPicker(editorViewSettings.SnapDivision);
         SyncFixedPlaybackRate();
-        var playtest = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat, autoStart: true));
+        var playtest = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat));
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtest, "Editor.Toolbar.Playtest");
         ConfigureOfficialPlaytestMenu(playtest);
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right,

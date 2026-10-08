@@ -22,13 +22,14 @@ public sealed record PlaytestRequest
     public string[] SkinPaths { get; init; } = [];
     public Dictionary<int, string[]> KeyBindings { get; init; } = [];
     public string SettingsImportRevision { get; init; } = "";
+    public bool SettingsOnly { get; init; }
 
     public static PlaytestRequest Read(string path)
     {
         if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("试玩请求过大。");
         var request = JsonSerializer.Deserialize<PlaytestRequest>(File.ReadAllText(path)) ?? throw new InvalidDataException("试玩请求为空。");
         if (request.ProtocolVersion != 1) throw new InvalidDataException("试玩协议版本不兼容。");
-        if (!File.Exists(request.BeatmapArchive)) throw new FileNotFoundException("试玩工作副本不存在。", request.BeatmapArchive);
+        if (!request.SettingsOnly && !File.Exists(request.BeatmapArchive)) throw new FileNotFoundException("试玩工作副本不存在。", request.BeatmapArchive);
         if (!Path.IsPathFullyQualified(request.DataRoot)) throw new InvalidDataException("试玩数据目录必须是绝对路径。");
         if (!double.IsFinite(request.StartMilliseconds) || request.StartMilliseconds < 0 ||
             !double.IsFinite(request.Rate) || request.Rate < .1 || request.Rate > 2)

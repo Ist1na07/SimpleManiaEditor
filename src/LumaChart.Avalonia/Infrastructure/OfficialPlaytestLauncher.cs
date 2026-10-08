@@ -16,7 +16,7 @@ internal static class OfficialPlaytestLauncher
     internal static IOfficialPlaytestProcess ProcessRunner { get; set; } = new OfficialPlaytestProcess();
 
     public static async Task RunAsync(ChartDocument snapshot, string sourcePath, double startBeat,
-        WindowsPlaytestSettings settings, double rate, bool preservePitch, double volume)
+        WindowsPlaytestSettings settings, double rate, bool preservePitch, double volume, bool settingsOnly = false)
     {
         var scratch = Path.Combine(AvaloniaAppPaths.SessionScratchRoot, "official-playtest", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(scratch);
@@ -25,17 +25,21 @@ internal static class OfficialPlaytestLauncher
         var start = Math.Max(0, timing.BeatToMilliseconds(BeatPosition.FromDouble(Math.Max(0, startBeat))));
         // Slice the disposable copy, so prior objects are not missed/scored when starting mid-song.
         // Timing, SV, background, full audio and hitsounds retain their original timestamps.
-        practice.Notes.RemoveAll(n => n.IsDraft || timing.BeatToMilliseconds(n.Beat) < start - .01);
-        if (practice.Notes.Count == 0) throw new InvalidOperationException("当前位置之后没有可试玩的正式按键。");
-        var package = await OsuFullPackageExportService.ExportAsync(new(practice, sourcePath,
-            Path.Combine(scratch, "practice.osz"), scratch, practice.Metadata.OverallDifficulty, practice.Metadata.HpDrainRate));
+        OsuFullPackageExportResult? package = null;
+        if (!settingsOnly)
+        {
+            practice.Notes.RemoveAll(n => n.IsDraft || timing.BeatToMilliseconds(n.Beat) < start - .01);
+            if (practice.Notes.Count == 0) throw new InvalidOperationException("当前位置之后没有可试玩的正式按键。");
+            package = await OsuFullPackageExportService.ExportAsync(new(practice, sourcePath,
+                Path.Combine(scratch, "practice.osz"), scratch, practice.Metadata.OverallDifficulty, practice.Metadata.HpDrainRate));
+        }
         var skinPaths = OsuSkinLibrary.List(settings.SkinPath).Where(s => s.Path.Length > 0 && s.Available).Select(s => s.Path).ToList();
         var incomingSkins = Path.Combine(AvaloniaAppPaths.LocalDataRoot, "official-skin-imports");
         if (Directory.Exists(incomingSkins)) skinPaths.AddRange(Directory.EnumerateFiles(incomingSkins, "*.osk"));
         var settingsImportPath = Path.Combine(AvaloniaAppPaths.LocalDataRoot, "official-settings-import.txt");
         var request = new PlaytestRequest
         {
-            BeatmapArchive = package.DestinationArchivePath, ChartEntry = package.MainChartEntryPath,
+            BeatmapArchive = package?.DestinationArchivePath ?? "", ChartEntry = package?.MainChartEntryPath ?? "", SettingsOnly = settingsOnly,
             DataRoot = Path.Combine(AvaloniaAppPaths.LocalDataRoot, "osu-host"), StartMilliseconds = start,
             Rate = rate, PreservePitch = preservePitch, Volume = volume, AutoPlay = settings.AutoPlay,
             ManiaSpeed = settings.ManiaSpeed, UpsideDown = settings.UpsideDown, FullScreen = settings.FullScreen,

@@ -7,7 +7,8 @@ param(
     [string]$DataRoot = '',
     [double]$StartMilliseconds = 0,
     [double]$Rate = 1,
-    [switch]$VerifySettings
+    [switch]$VerifySettings,
+    [switch]$SettingsOnly
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
@@ -35,6 +36,7 @@ $request = @{
     StartMilliseconds=$StartMilliseconds; Rate=$Rate; PreservePitch=$true; AutoPlay=$true; ManiaSpeed=31
     FullScreen=$false; Volume=0; SelectedSkinPath=$SelectedSkinPath; SkinPaths=$SkinPaths
     KeyBindings=@{'7'=@('S','D','F','Space','J','K','L')}
+    SettingsOnly=[bool]$SettingsOnly
 }
 $request.KeyBindings['11'] = @('A','S','D','F','G','Space','H','J','K','L','OemSemicolon')
 $manifest = Join-Path $testRoot 'request.json'
@@ -69,6 +71,11 @@ if ($process.ExitCode -ne 0 -or (Test-Path -LiteralPath ($manifest + '.error.txt
     throw 'Official engine verification failed.'
 }
 $ready = Get-Content -LiteralPath ($manifest + '.ready.json') -Raw | ConvertFrom-Json
+if ($SettingsOnly) {
+    if ($ready.Mode -ne 'settings' -or (Get-Item -LiteralPath ($manifest + '.png')).Length -lt 20000) { throw 'Official settings did not load.' }
+    Write-Output ('PASS official settings-only entry, no gameplay lock; screenshot=' + $manifest + '.png')
+    return
+}
 $verified = Get-Content -LiteralPath ($manifest + '.verified.json') -Raw | ConvertFrom-Json
 if ($ready.OfficialPlayer -ne 'osu.Game.Screens.Play.Player' -or $ready.Ruleset -ne 'mania' -or $ready.KeyCount -ne 7) { throw 'Wrong game/ruleset.' }
 if ($ExpectedSkin -and $ready.Skin -notlike ('*' + $ExpectedSkin + '*')) { throw ('Wrong skin: ' + $ready.Skin) }

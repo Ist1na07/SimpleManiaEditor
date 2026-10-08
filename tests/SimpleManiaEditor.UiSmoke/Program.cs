@@ -273,6 +273,14 @@ internal static class Program
             PumpUntil(() => recorder.Request != null);
             Require(Math.Abs(recorder.Request!.StartMilliseconds - 2000) < .01, "official playtest did not receive the current timeline position");
             Require(window.OwnedWindows.OfType<PlaytestWindow>().Count() == 0, "custom playtest renderer is still used");
+            Pump(100);
+            var settingsRecorder = new RecordingOfficialPlaytestProcess();
+            OfficialPlaytestLauncher.ProcessRunner = settingsRecorder;
+            var settingsAction = playtestButton.ContextMenu!.Items.OfType<MenuItem>().Single(item => item.Header?.ToString()?.StartsWith("官方试玩设置") == true);
+            settingsAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            PumpUntil(() => settingsRecorder.Request != null);
+            Require(settingsRecorder.Request!.SettingsOnly && settingsRecorder.Request.BeatmapArchive.Length == 0,
+                "official settings entry unnecessarily starts gameplay or exports a chart");
         }
         finally { OfficialPlaytestLauncher.ProcessRunner = originalProcessRunner; }
         Pump(200);
@@ -303,6 +311,7 @@ internal static class Program
         public Task RunAsync(string requestPath)
         {
             Request = SimpleManiaEditor.PlaytestBridge.PlaytestRequest.Read(requestPath);
+            if (Request.SettingsOnly) return Task.CompletedTask;
             using var archive = System.IO.Compression.ZipFile.OpenRead(Request.BeatmapArchive);
             Require(archive.GetEntry(Request.ChartEntry) != null, "official handoff does not contain the current chart");
             Require(archive.Entries.Any(e => e.FullName.EndsWith("simulation.wav")), "official handoff omitted the song audio");

@@ -24,6 +24,8 @@ using SixLabors.ImageSharp;
 using osu.Framework.Testing;
 using osu.Game.Overlays.Settings.Sections;
 using osu.Game.Graphics.UserInterfaceV2;
+using osu.Game.Overlays.Settings;
+using osu.Game.Overlays.Settings.Sections.Input;
 
 namespace SimpleManiaEditor.OsuHost;
 
@@ -85,6 +87,42 @@ internal partial class PlaytestGame : OsuGame
                 if (importedSkin != null) skinMap[path] = importedSkin.ID;
             }
             File.WriteAllText(skinMapPath, JsonSerializer.Serialize(skinMap));
+            if (request.SettingsOnly)
+            {
+                Schedule(() =>
+                {
+                    try
+                    {
+                        Ruleset.Value = RulesetStore.GetRuleset("mania")!;
+                        ApplySettingsMigration(skinMap, firstLaunch);
+                        Settings.ShowAtControl<SkinSection>();
+                        File.WriteAllText(requestPath + ".ready.json", JsonSerializer.Serialize(new { Mode = "settings", Engine = "ppy.osu.Game 2026.916.0" }));
+                        if (verify) Scheduler.AddDelayed(async () =>
+                        {
+                            try
+                            {
+                                var bindings = Settings.ChildrenOfType<BindingSettings>().Single();
+                                var configure = bindings.ChildrenOfType<SettingsButtonV2>().Single();
+                                if (!configure.Enabled.Value) throw new InvalidOperationException("Official keyboard configuration is locked in settings-only mode.");
+                                configure.Action.Invoke();
+                                Scheduler.AddDelayed(async () =>
+                                {
+                                    try
+                                    {
+                                        using var shot = await Host.TakeScreenshotAsync();
+                                        await shot.SaveAsPngAsync(requestPath + ".png");
+                                        Host.Exit();
+                                    }
+                                    catch (Exception exception) { Fail(exception); }
+                                }, 1000);
+                            }
+                            catch (Exception exception) { Fail(exception); }
+                        }, 3000);
+                    }
+                    catch (Exception exception) { Fail(exception); }
+                });
+                return;
+            }
             var imported = await Task.Run(() => BeatmapManager.Import(new RetainedImportTask(request.BeatmapArchive), parameters));
             if (imported == null) throw new InvalidDataException("Official beatmap importer rejected the working copy.");
             var beatmapInfo = imported.PerformRead(set => set.Beatmaps.FirstOrDefault(b => (b.Path ?? "").Replace('\\', '/').Equals(request.ChartEntry, StringComparison.OrdinalIgnoreCase))?.Clone())
@@ -95,20 +133,7 @@ internal partial class PlaytestGame : OsuGame
                 {
                     Ruleset.Value = RulesetStore.GetRuleset("mania")!;
                     Beatmap.Value = BeatmapManager.GetWorkingBeatmap(beatmapInfo);
-                    var importedRevisionPath = Path.Combine(request.DataRoot, "editor-settings-import-revision.txt");
-                    var explicitImport = request.SettingsImportRevision.Length > 0 &&
-                        (!File.Exists(importedRevisionPath) || File.ReadAllText(importedRevisionPath) != request.SettingsImportRevision);
-                    if (firstLaunch || explicitImport)
-                    {
-                        MigrateSettings();
-                        if (skinMap.TryGetValue(request.SelectedSkinPath, out var skinId))
-                        {
-                            SkinManager.SetSkinFromConfiguration(skinId.ToString());
-                            LocalConfig.SetValue(OsuSetting.Skin, skinId.ToString());
-                        }
-                        File.WriteAllText(Path.Combine(request.DataRoot, "editor-settings-migrated-v1"), "1");
-                        if (explicitImport) File.WriteAllText(importedRevisionPath, request.SettingsImportRevision);
-                    }
+                    ApplySettingsMigration(skinMap, firstLaunch);
                     var mods = new List<Mod>();
                     if (request.Rate < 1)
                     {
@@ -176,6 +201,22 @@ internal partial class PlaytestGame : OsuGame
                 }
             }
         });
+    }
+
+    private void ApplySettingsMigration(Dictionary<string, Guid> skinMap, bool firstLaunch)
+    {
+        var revisionPath = Path.Combine(request.DataRoot, "editor-settings-import-revision.txt");
+        var explicitImport = request.SettingsImportRevision.Length > 0 &&
+            (!File.Exists(revisionPath) || File.ReadAllText(revisionPath) != request.SettingsImportRevision);
+        if (!firstLaunch && !explicitImport) return;
+        MigrateSettings();
+        if (skinMap.TryGetValue(request.SelectedSkinPath, out var id))
+        {
+            SkinManager.SetSkinFromConfiguration(id.ToString());
+            LocalConfig.SetValue(OsuSetting.Skin, id.ToString());
+        }
+        File.WriteAllText(Path.Combine(request.DataRoot, "editor-settings-migrated-v1"), "1");
+        if (explicitImport) File.WriteAllText(revisionPath, request.SettingsImportRevision);
     }
 
     private static InputKey ParseInputKey(string key) => key switch
