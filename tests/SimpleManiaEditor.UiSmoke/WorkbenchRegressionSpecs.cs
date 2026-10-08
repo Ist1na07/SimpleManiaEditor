@@ -140,6 +140,12 @@ internal static class WorkbenchRegressionSpecs
         hitHost.GetVisualDescendants().OfType<NumericUpDown>().Single().Value = 75;
         Click(hitHost.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "应用")));
         Require(tab.Session.Document.Notes.Single(n => n.Id == noteId).Volume == 75, "hitsound track failed to apply selected-note volume");
+        Program.Stroke(window, Key.Z, RawInputModifiers.Control);
+        Require(tab.Session.Document.Notes.Single(n => n.Id == noteId).Volume == 100,
+            "hitsound undo did not reach the owning main chart history");
+        Program.Stroke(window, Key.Y, RawInputModifiers.Control);
+        Require(tab.Session.Document.Notes.Single(n => n.Id == noteId).Volume == 75,
+            "hitsound redo did not restore the main chart edit");
         Add(window, EditorTrackKind.Density); Add(window, EditorTrackKind.Difficulty);
         var density = Property<EditorMetricTrackSurface>(View(window, workspace.Tracks.Single(t => t.Kind == EditorTrackKind.Density).Id), "Metric");
         Program.PumpUntil(() => !density.Computing);

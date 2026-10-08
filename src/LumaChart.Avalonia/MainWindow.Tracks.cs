@@ -31,6 +31,7 @@ public sealed partial class MainWindow
         public long MainSerial { get; set; } = -1;
         public TimingMap? Timing { get; set; }
         public long TimingSerial { get; set; } = -1;
+        public Action? RefreshHitsoundFields { get; set; }
     }
 
     private readonly Dictionary<string, EditorTrackWorkspace> trackWorkspaces = new(StringComparer.OrdinalIgnoreCase);
@@ -230,19 +231,25 @@ public sealed partial class MainWindow
                 actions.Children.Add(TrackButton("撤销", () => track.Session!.Undo()));
                 actions.Children.Add(TrackButton("重做", () => track.Session!.Redo()));
             }
+            else if (track.Kind == EditorTrackKind.Hitsound)
+            {
+                actions.Children.Add(TrackButton("撤销", () => viewModel.ActiveTab?.Session.Undo()));
+                actions.Children.Add(TrackButton("重做", () => viewModel.ActiveTab?.Session.Redo()));
+            }
             actions.Children.Add(TrackButton("放入主轨", () => { CopyTrackSelection(view); activeSecondaryTrack = null;
                 PasteMixedSelection(); timeline.Focus(); }));
             if (track.Kind == EditorTrackKind.Hitsound)
             {
                 var sound = new TextBox { PlaceholderText = "采样文件相对路径", Width = 130 };
                 var volume = new NumericUpDown { Minimum = 0, Maximum = 100, Value = 100, Width = 72 };
-                surface.SelectionChanged += (_, _) =>
+                view.RefreshHitsoundFields = () =>
                 {
                     var selected = track.Session!.Document.Notes.FirstOrDefault(n => track.Session.Selection.Contains(n.Id));
                     if (selected == null) return;
                     sound.Text = selected.Sound ?? "";
                     volume.Value = selected.Volume;
                 };
+                surface.SelectionChanged += (_, _) => view.RefreshHitsoundFields();
                 var edit = new StackPanel { Spacing = 4, Children = { actions,
                     new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { sound, volume,
                         TrackButton("应用", () => ApplyTrackHitsound(view, sound.Text, (int)(volume.Value ?? 100))),
@@ -314,6 +321,7 @@ public sealed partial class MainWindow
 
     private void ApplyTrackHitsound(TrackView view, string? sound, int volume)
     {
+        activeSecondaryTrack = view;
         var tab = viewModel.ActiveTab!;
         var ids = view.Track.Session!.Selection.ToHashSet();
         if (ids.Count == 0) { viewModel.SetStatus("请先在 hitsound 轨选择按键。"); return; }
@@ -342,6 +350,7 @@ public sealed partial class MainWindow
                 var selected = view.Track.Session!.Selection.ToArray();
                 view.Track.Session.ReplaceDocument(tab.Session.Document.Clone());
                 view.Track.Session.Selection.UnionWith(selected);
+                view.RefreshHitsoundFields?.Invoke();
             }
             if (view.Metric != null)
                 view.Metric.SetSnapshotDocument(snapshot ??= tab.Session.CaptureCommittedDocument(), view.Track.Kind == EditorTrackKind.Difficulty);
@@ -404,8 +413,10 @@ public sealed partial class MainWindow
         SetQuickShortcutEnabled("Copy", selected);
         SetQuickShortcutEnabled("Cut", selected && editable);
         SetQuickShortcutEnabled("Paste", editable && viewModel.HasMixedSelectionClipboard);
-        SetQuickShortcutEnabled("Undo", editable);
-        SetQuickShortcutEnabled("Redo", editable);
+        var historyEditable = activeSecondaryTrack.Track.Kind == EditorTrackKind.Hitsound
+            ? viewModel.ActiveTab?.Session.IsReadOnly == false : editable;
+        SetQuickShortcutEnabled("Undo", historyEditable);
+        SetQuickShortcutEnabled("Redo", historyEditable);
         SetQuickShortcutEnabled("SelectAll", true);
         if (quickMirrorButton != null) quickMirrorButton.IsEnabled = editable;
     }
@@ -426,6 +437,11 @@ public sealed partial class MainWindow
                 else surface.NavigateToBeat(TimelineGridNavigation.Step(surface.CurrentBeat, session.SnapDivision, direction).Value);
             }
             else if (action == "SelectAll") { session.Selection.UnionWith(session.Document.Notes.Select(n => n.Id)); surface.InvalidateVisual(); }
+            else if (view.Track.Kind == EditorTrackKind.Hitsound && action is "Undo" or "Redo")
+            {
+                if (action == "Undo") viewModel.ActiveTab?.Session.Undo();
+                else viewModel.ActiveTab?.Session.Redo();
+            }
             else if (session.IsReadOnly) viewModel.SetStatus("对照和 hitsound 显示轨只读；hitsound 修改请使用轨道中的应用按钮。");
             else if (action == "Undo") session.Undo();
             else if (action == "Redo") session.Redo();
