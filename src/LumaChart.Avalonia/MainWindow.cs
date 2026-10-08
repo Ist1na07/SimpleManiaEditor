@@ -6693,7 +6693,9 @@ public sealed partial class MainWindow : PlatformWindow
                 displayScaleController.CurrentSettings.UiScale,
                 displayScaleController.CurrentSettings.FontScale,
                 WindowState == WindowState.FullScreen,
-                autoStart);
+                autoStart,
+                ChartAssetImportService.ResolveAssetPath(tab.WorkingPath, !string.IsNullOrWhiteSpace(tab.SourcePath) ? tab.SourcePath : snapshot.FilePath,
+                    snapshot.Metadata.BackgroundFile));
             StopEditorHighRateFramePump();
             await dialog.ShowDialog(this);
             viewModel.SetStatus(

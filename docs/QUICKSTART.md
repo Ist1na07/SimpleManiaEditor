@@ -44,7 +44,7 @@ Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
 网格默认 osu 记法：1/4 = 音乐全音符的 1/16，120 BPM 下每格 125 ms。可在设置中选 general 记法，只改变显示和输入换算，不移动音符。轨道的编辑、复制、同步和存储边界见包内 `WORKBENCH-TRACKS.md`，或仓库 `docs/WORKBENCH-TRACKS.md`。
 
-编辑播放与内置试玩是不同场景。试玩的默认 7K 键位为 `S D F Space J K L`，`Enter` 控制播放；键位可在试玩设置中调整。默认「osu! stable 兼容」按 OD 提供六档判定、ScoreV1 LN 头尾合并、准确率与无 Mods 分数；旧版自定义方案可在试玩设置中切换。手动体验请关闭 AutoPlay。流速使用 px/s。不是官方成绩；皮肤导入、完整 hitsound 和 HP/Mods 仍待实现。
+编辑播放与内置试玩是不同场景。试玩的默认 7K 键位为 `S D F Space J K L`，`Enter` 控制播放；键位可在试玩设置中调整。默认「osu! stable 兼容」按 OD 提供六档判定、ScoreV1 LN 头尾合并、准确率与无 Mods 分数；旧版自定义方案可在试玩设置中切换。手动体验请关闭 AutoPlay。默认全屏，F1 设置、Esc 暂停、F11 切换全屏；可导入 osu!mania 皮肤与 osu!.用户.cfg 键位。落速按 lazer 的 1–40 设置，F3/F4 调整。不是官方成绩；完整 hitsound 和 HP/Mods 仍待实现。详细说明见包内 PLAYTEST.md。
 
 ## 保存和恢复
 

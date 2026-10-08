@@ -2,12 +2,12 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前为 0.1.8 Windows 体验版，基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端改造。默认 osu!mania 操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前为 0.1.9 Windows 体验版，基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端改造。默认 osu!mania 操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
-关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.8/`，已包含运行时。
+关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.9/`，已包含运行时。
 
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
-- [0.1.8 stable 兼容试玩](docs/RELEASE-0.1.8.md)：OD 六档判定、ScoreV1 LN/准确率/分数、连续滚动和即时反馈。
+- [0.1.9 全屏试玩与皮肤](docs/RELEASE-0.1.9.md)：osu!mania 皮肤、用户键位导入、lazer 落速与游戏界面。
 - [0.1.7 绘制工具](docs/RELEASE-0.1.7.md)：绘制与移动分离、鼠标按键预览、LN 尾部重叠校验。
 - [0.1.6 交互修正](docs/RELEASE-0.1.6.md)：最近格线吸附、底边时间锚点、空白取消选择与底板滚轮、常驻横向滚动条。
 - [0.1.5 底板与精确交互](docs/RELEASE-0.1.5.md)：Songs 隔离、保音高、同等轨道和同步投影。

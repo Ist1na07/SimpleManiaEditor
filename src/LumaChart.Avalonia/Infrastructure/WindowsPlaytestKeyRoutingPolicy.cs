@@ -9,13 +9,13 @@ internal static class WindowsPlaytestKeyRoutingPolicy
         IReadOnlyList<string> laneBindings)
     {
         ArgumentNullException.ThrowIfNull(laneBindings);
-        if (key == Key.Enter) return true;
-        if (key != Key.Space) return false;
+        if (key is not (Key.Enter or Key.Space)) return false;
         for (var index = 0; index < laneBindings.Count; index++)
             if (laneBindings[index].Equals(
-                    nameof(Key.Space),
+                    key == Key.Space ? nameof(Key.Space) : nameof(Key.Enter),
                     StringComparison.OrdinalIgnoreCase))
                 return false;
+            else if (key == Key.Enter && laneBindings[index].Equals("Return", StringComparison.OrdinalIgnoreCase)) return false;
         return true;
     }
 }

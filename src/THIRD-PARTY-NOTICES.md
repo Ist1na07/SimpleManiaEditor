@@ -8,7 +8,7 @@ and place obligations on anyone who distributes a build of this software — see
 | Component | Licence |
 | --- | --- |
 | NAudio, NAudio.Vorbis | MIT |
-| ppy/osu mania Classic hit-window formulas (adapted) | MIT — `licenses/osu-MIT.txt` |
+| ppy/osu mania Classic hit windows and lazer scroll-time formulas (adapted) | MIT — `licenses/osu-MIT.txt` |
 | NLayer, NLayer.NAudioSupport | MIT |
 | OggVorbisEncoder | MIT |
 | WanaKana-net | MIT |

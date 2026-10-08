@@ -10,6 +10,11 @@ namespace LumaChart.Avalonia.Infrastructure;
 /// </summary>
 public static class WindowsPlaytestScrollVelocityPolicy
 {
+    // Adapted from ppy/osu DrawableManiaRuleset.ComputeScrollTime (MIT),
+    // commit 7e25f111466f1b5648d86856e5737d852402effe. See licenses/osu-MIT.txt.
+    public static double ScrollTimeMilliseconds(double maniaSpeed) => 11485 / Math.Clamp(double.IsFinite(maniaSpeed) ? maniaSpeed : 20, 1, 40);
+    public static double LazerPixelsPerSecond(double maniaSpeed, double viewportHeight) =>
+        Math.Max(1, viewportHeight) * (402d / 480) * 1000 / ScrollTimeMilliseconds(maniaSpeed);
     public const double DefaultBaseBpm = 120;
 
     public static double ResolveBaseBpm(ChartDocument document)

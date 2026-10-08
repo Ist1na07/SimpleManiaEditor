@@ -16,10 +16,12 @@ internal static class StablePlaytestUiSpecs
     public static void Run(string screenshots)
     {
         var source = new ChartDocument { KeyCount=7, Notes=[new ChartNote {Lane=3,Beat=new(2,0,1),EndBeat=new(3,0,1)}] };
-        var settings = new WindowsPlaytestSettings(autoPlay:false, inputOffsetMilliseconds:50);
+        var settings = new WindowsPlaytestSettings(autoPlay:false, inputOffsetMilliseconds:50, fullScreen:false);
         var window = new PlaytestWindow(source,null,Path.Combine(Path.GetTempPath(),"stable-preview.mc"),0,settings,
             new WindowsKeySoundSettings(),1,true,.8f,60,1,1,false);
         window.Show(); Program.Pump(100);
+        window.KeyPress(Key.F1, RawInputModifiers.None, PhysicalKey.F1, "F1");
+        window.KeyRelease(Key.F1, RawInputModifiers.None, PhysicalKey.F1, "F1"); Program.Pump(20);
         var session = Field<PlaytestSession>(window,"session");
         Require(session.UsesStableRules && settings.Ruleset == PlaytestRuleset.OsuStable,"default profile did not reach gameplay");
         var profile = window.GetVisualDescendants().OfType<ComboBox>().Single(c=>AutomationProperties.GetAutomationId(c)=="Playtest.Ruleset");

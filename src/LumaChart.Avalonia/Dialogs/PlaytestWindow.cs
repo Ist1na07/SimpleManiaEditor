@@ -14,6 +14,7 @@ using LumaChart.Avalonia.Audio;
 using LumaChart.Avalonia.Controls;
 using LumaChart.Avalonia.Infrastructure;
 using LumaChart.Core.Models;
+using LumaChart.Application.Workspaces;
 
 namespace LumaChart.Avalonia.Dialogs;
 
@@ -55,7 +56,7 @@ internal sealed record PlaytestWindowDiagnostics(
     PlaytestSurfaceDiagnostics Surface);
 
 /// <summary>Windows Avalonia replica of WPF's modal test-play window.</summary>
-internal sealed class PlaytestWindow : PlatformWindow
+internal sealed partial class PlaytestWindow : PlatformWindow
 {
     private static readonly IBrush WindowBrush = Brush("#101315");
     private static readonly IBrush HeaderBrush = Brush("#191D20");
@@ -68,6 +69,7 @@ internal sealed class PlaytestWindow : PlatformWindow
 
     private readonly PlaytestSession session;
     private readonly string? audioPath;
+    private readonly string? backgroundPath;
     private readonly string workingCopyPath;
     private readonly double playbackRate;
     private readonly bool preservePitch;
@@ -128,9 +130,8 @@ internal sealed class PlaytestWindow : PlatformWindow
     private TextBlock? stableWindowsText;
     private TextBlock? stableScoreText;
     private Button? settingsToggle;
-    private ColumnDefinition? settingsColumn;
     private Border? settingsSide;
-    private bool settingsPanelCollapsed;
+    private bool settingsPanelCollapsed = true;
     private readonly bool liveAutomationDiagnostics =
         string.Equals(
             Environment.GetEnvironmentVariable("LUMACHART_AVALONIA_LIVE_AUTOMATION_DIAGNOSTICS"),
@@ -189,13 +190,15 @@ internal sealed class PlaytestWindow : PlatformWindow
         double effectiveUiScale,
         double effectiveFontScale,
         bool inheritFullscreen,
-        bool autoStart = false)
+        bool autoStart = false,
+        string? resolvedBackgroundPath = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheWorkingCopyPath);
         settings = playtestSettings ?? throw new ArgumentNullException(nameof(playtestSettings));
         keySoundSettings = currentKeySoundSettings ?? throw new ArgumentNullException(nameof(currentKeySoundSettings));
         audioPath = string.IsNullOrWhiteSpace(resolvedAudioPath) ? null : resolvedAudioPath;
+        backgroundPath = resolvedBackgroundPath;
         workingCopyPath = Path.GetFullPath(cacheWorkingCopyPath);
         playbackRate = double.IsFinite(currentPlaybackRate)
             ? Math.Clamp(currentPlaybackRate, .2, 2)
@@ -285,9 +288,11 @@ internal sealed class PlaytestWindow : PlatformWindow
         AddHandler(KeyUpEvent, WindowKeyUp, RoutingStrategies.Tunnel);
         Opened += async (_, _) =>
         {
-            if (inheritedFullscreen) WindowState = WindowState.FullScreen;
+            if (inheritedFullscreen || settings.FullScreen) WindowState = WindowState.FullScreen;
             UpdateMaximizeButton();
             Focus();
+            await LoadSkinAsync(settings.SkinPath);
+            await LoadBackgroundAsync();
             audioReadyTask = PrepareAudioAsync();
             await audioReadyTask;
             // Closing during the load disposes the audio and frame pump; the
@@ -320,7 +325,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         // here. Without this its lane stays lit and the next real press of that
         // key is swallowed as an auto-repeat. (The SingleView surface of the
         // mobile hosts has no window activation to lose.)
-        Deactivated += (_, _) => ReleaseAllKeyLanes();
+        Deactivated += (_, _) => { presentationKeysDown.Clear(); ReleaseAllKeyLanes(); if (playing) _ = PausePlaybackAsync(); };
 #endif
         Closing += (_, _) =>
         {
@@ -407,11 +412,13 @@ internal sealed class PlaytestWindow : PlatformWindow
             Background = WindowBrush,
             BorderBrush = Brush("#3B4347"),
             BorderThickness = new Thickness(1),
-            Child = new Grid { RowDefinitions = new RowDefinitions("44,*") }
+            Child = new Grid { RowDefinitions = new RowDefinitions("*") }
         };
         var root = (Grid)border.Child;
         var header = new Border
         {
+            Height = 44,
+            VerticalAlignment = VerticalAlignment.Top,
             Background = HeaderBrush,
             BorderBrush = StrokeBrush,
             BorderThickness = new Thickness(0, 0, 0, 1),
@@ -486,16 +493,18 @@ internal sealed class PlaytestWindow : PlatformWindow
         Grid.SetColumn(close, 5);
         headerGrid.Children.Add(close);
         root.Children.Add(header);
+        header.SetValue(Panel.ZIndexProperty, 20);
 
         var body = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions($"*,{SettingsColumnWidth}")
+            ColumnDefinitions = new ColumnDefinitions("*")
         };
         var playfieldHost = new Grid { ClipToBounds = true };
         AttachLaneTouchInput(playfieldHost);
         playfieldHost.Children.Add(playfield);
         combo.SetValue(Panel.ZIndexProperty, 10);
         accuracy.SetValue(Panel.ZIndexProperty, 10);
+        combo.IsVisible = accuracy.IsVisible = false;
         playfieldHost.Children.Add(combo);
         playfieldHost.Children.Add(accuracy);
         body.Children.Add(playfieldHost);
@@ -508,6 +517,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             Foreground = Brush("#F0F2F2"),
             Margin = new Thickness(0, 0, 0, 13)
         });
+        AddPresentationSettings(settingsPanel);
         autoPlay = new CheckBox
         {
             Content = "AutoPlay",
@@ -541,7 +551,9 @@ internal sealed class PlaytestWindow : PlatformWindow
         settingsPanel.Children.Add(fieldWidth);
         scrollSpeedText = Label("流速");
         settingsPanel.Children.Add(scrollSpeedText);
-        scrollSpeed = Slider(120, 2600, "Playtest.ScrollSpeed");
+        scrollSpeed = Slider(1, 40, "Playtest.ScrollSpeed");
+        scrollSpeed.TickFrequency = .1;
+        scrollSpeed.IsSnapToTickEnabled = true;
         settingsPanel.Children.Add(scrollSpeed);
         judgementLineText = Label("判定线位置");
         settingsPanel.Children.Add(judgementLineText);
@@ -641,18 +653,21 @@ internal sealed class PlaytestWindow : PlatformWindow
         };
         var side = new Border
         {
+            Width = SettingsColumnWidth,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 44, 0, 0),
             Background = SideBrush,
             BorderBrush = StrokeBrush,
             BorderThickness = new Thickness(1, 0, 0, 0),
             Child = settingsScroll
         };
-        settingsColumn = body.ColumnDefinitions[1];
         settingsSide = side;
-        Grid.SetColumn(side, 1);
+        side.SetValue(Panel.ZIndexProperty, 20);
         body.Children.Add(side);
         ApplySettingsPanelVisibility();
-        Grid.SetRow(body, 1);
+        Grid.SetRow(body, 0);
         root.Children.Add(body);
+        BuildPresentationOverlay(root, header);
 
         autoPlay.IsCheckedChanged += (_, _) => SettingsChanged();
         style.SelectionChanged += (_, _) => SettingsChanged();
@@ -733,7 +748,11 @@ internal sealed class PlaytestWindow : PlatformWindow
         noteWidthSlider.Value = settings.NoteWidth * 100;
         noteHeightSlider.Value = settings.NoteHeight;
         fieldWidthSlider.Value = settings.PlayfieldWidth;
-        scrollSpeedSlider.Value = settings.ScrollSpeed;
+        ConfigureSpeedSlider();
+        scrollSpeedSlider.Value = settings.Ruleset == PlaytestRuleset.OsuStable ? settings.ManiaSpeed : settings.ScrollSpeed;
+        if (fullScreenBox != null) fullScreenBox.IsChecked = settings.FullScreen;
+        if (upsideDownBox != null) upsideDownBox.IsChecked = settings.UpsideDown;
+        if (skinSamplesBox != null) skinSamplesBox.IsChecked = settings.UseSkinSamples;
         judgementLineSlider.Value = settings.JudgementLinePosition * 100;
         comboYSlider.Value = settings.ComboYPosition * 100;
         accuracyYSlider.Value = settings.AccuracyYPosition * 100;
@@ -748,6 +767,14 @@ internal sealed class PlaytestWindow : PlatformWindow
         if (suppressSettings || !settingsUiReady || session == null) return;
         var previousAutoPlay = settings.AutoPlay;
         var previousRuleset = settings.Ruleset;
+        var nextRuleset = rulesetPicker?.SelectedIndex == 1 ? PlaytestRuleset.LegacyCustom : PlaytestRuleset.OsuStable;
+        if (previousRuleset != nextRuleset)
+        {
+            suppressSettings = true;
+            ConfigureSpeedSlider(nextRuleset);
+            scrollSpeedSlider.Value = nextRuleset == PlaytestRuleset.OsuStable ? settings.ManiaSpeed : settings.ScrollSpeed;
+            suppressSettings = false;
+        }
         settings = settings.With(
             autoPlay: autoPlayBox.IsChecked == true,
             noteStyle: styleBox.SelectedIndex == 1
@@ -756,7 +783,11 @@ internal sealed class PlaytestWindow : PlatformWindow
             noteWidth: noteWidthSlider.Value / 100d,
             noteHeight: noteHeightSlider.Value,
             playfieldWidth: fieldWidthSlider.Value,
-            scrollSpeed: scrollSpeedSlider.Value,
+            scrollSpeed: nextRuleset == PlaytestRuleset.LegacyCustom ? scrollSpeedSlider.Value : settings.ScrollSpeed,
+            maniaSpeed: nextRuleset == PlaytestRuleset.OsuStable ? scrollSpeedSlider.Value : settings.ManiaSpeed,
+            fullScreen: fullScreenBox?.IsChecked ?? settings.FullScreen,
+            upsideDown: upsideDownBox?.IsChecked ?? settings.UpsideDown,
+            useSkinSamples: skinSamplesBox?.IsChecked ?? settings.UseSkinSamples,
             judgementLinePosition: judgementLineSlider.Value / 100d,
             comboYPosition: comboYSlider.Value / 100d,
             accuracyYPosition: accuracyYSlider.Value / 100d,
@@ -765,7 +796,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             goodWindowMilliseconds: goodWindowSlider.Value,
             missWindowMilliseconds: missWindowSlider.Value,
             inputOffsetMilliseconds: inputOffsetSlider?.Value ?? settings.InputOffsetMilliseconds,
-            ruleset: rulesetPicker?.SelectedIndex == 1 ? PlaytestRuleset.LegacyCustom : PlaytestRuleset.OsuStable);
+            ruleset: nextRuleset);
         suppressSettings = true;
         SyncJudgementWindowSliders();
         suppressSettings = false;
@@ -785,6 +816,8 @@ internal sealed class PlaytestWindow : PlatformWindow
         UpdateScoreOverlayPositions();
         RefreshSettingsLabels();
         RefreshAutomationDiagnostics(CurrentMilliseconds());
+        if (WindowState == WindowState.FullScreen && !settings.FullScreen) WindowState = WindowState.Normal;
+        else if (WindowState != WindowState.FullScreen && settings.FullScreen) WindowState = WindowState.FullScreen;
         settingsSaveTimer.Stop();
         settingsSaveTimer.Start();
     }
@@ -794,7 +827,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         noteWidthLabel.Text = AvaloniaLocalizationCatalog.Format("Note 宽度  {0:P0}", settings.NoteWidth);
         noteHeightLabel.Text = AvaloniaLocalizationCatalog.Format("Note 高度  {0:0}", settings.NoteHeight);
         fieldWidthLabel.Text = AvaloniaLocalizationCatalog.Format("界面宽度  {0:0}", settings.PlayfieldWidth);
-        scrollSpeedLabel.Text = AvaloniaLocalizationCatalog.Format("基准流速  {0:0} px/s", settings.ScrollSpeed);
+        scrollSpeedLabel.Text = settings.Ruleset == PlaytestRuleset.OsuStable ? $"落速  {settings.ManiaSpeed:0.#} · {WindowsPlaytestScrollVelocityPolicy.ScrollTimeMilliseconds(settings.ManiaSpeed):0} ms" : $"旧版流速 {settings.ScrollSpeed:0} px/s";
         judgementLineLabel.Text = AvaloniaLocalizationCatalog.Format("判定线位置  {0:P0}", settings.JudgementLinePosition);
         comboYLabel.Text = AvaloniaLocalizationCatalog.Format("连击 Y 轴位置  {0:P0}", settings.ComboYPosition);
         accuracyYLabel.Text = AvaloniaLocalizationCatalog.Format("准确率 Y 轴位置  {0:P0}", settings.AccuracyYPosition);
@@ -933,12 +966,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             settingsSaveTimer.Start();
             return;
         }
-        if (key == Key.Escape)
-        {
-            eventArgs.Handled = true;
-            Close();
-            return;
-        }
+        if (await HandlePresentationKeyAsync(key, eventArgs)) return;
         if (WindowsPlaytestKeyRoutingPolicy.IsPlaybackToggle(key, bindings))
         {
             eventArgs.Handled = true;
@@ -999,6 +1027,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             PointerPressedEvent,
             (_, eventArgs) =>
             {
+                if (eventArgs.Pointer.Type == PointerType.Mouse) return;
                 var lane = ResolveTouchLane(surface, eventArgs.GetPosition(surface).X);
                 if (lane < 0) return;
                 eventArgs.Handled = true;
@@ -1044,15 +1073,7 @@ internal sealed class PlaytestWindow : PlatformWindow
     /// </summary>
     private int ResolveTouchLane(Control surface, double x)
     {
-        var keyCount = session.KeyCount;
-        if (keyCount <= 0) return -1;
-        var surfaceWidth = surface.Bounds.Width;
-        if (!double.IsFinite(surfaceWidth) || surfaceWidth <= 0) return -1;
-        var width = Math.Min(surfaceWidth, settings.PlayfieldWidth);
-        var origin = (surfaceWidth - width) / 2;
-        var laneWidth = width / keyCount;
-        if (laneWidth <= 0 || x < origin || x >= origin + width) return -1;
-        return Math.Clamp((int)((x - origin) / laneWidth), 0, keyCount - 1);
+        return playfield.LaneAt(x);
     }
 
     /// <summary>
@@ -1062,17 +1083,15 @@ internal sealed class PlaytestWindow : PlatformWindow
     /// </summary>
     private void ToggleSettingsPanel()
     {
+        if (playing) _ = PausePlaybackAsync();
         settingsPanelCollapsed = !settingsPanelCollapsed;
         ApplySettingsPanelVisibility();
     }
 
     private void ApplySettingsPanelVisibility()
     {
-        if (settingsColumn != null)
-            settingsColumn.Width = settingsPanelCollapsed
-                ? new GridLength(0)
-                : new GridLength(SettingsColumnWidth);
         if (settingsSide != null) settingsSide.IsVisible = !settingsPanelCollapsed;
+        UpdatePresentation();
         if (settingsToggle != null)
         {
             settingsToggle.Content = settingsPanelCollapsed ? "设置 ◂" : "设置 ▸";
@@ -1140,6 +1159,7 @@ internal sealed class PlaytestWindow : PlatformWindow
             eventArgs.Key,
             eventArgs.PhysicalKey,
             eventArgs.KeySymbol);
+        if (presentationKeysDown.Remove(key)) { eventArgs.Handled = true; return; }
         keysDown.Remove(key);
         if (WindowsPlaytestKeyRoutingPolicy.IsPlaybackToggle(key, bindings))
         {
@@ -1201,7 +1221,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         scoreUiDirty = true;
         foreach (var judgement in events)
             if (judgement.Completed || judgement.IsHead)
-                playfield.ReportJudgement(judgement.Grade, judgement.OffsetMilliseconds / playbackRate);
+                playfield.ReportJudgement(judgement.Grade, judgement.OffsetMilliseconds / playbackRate, judgement.Note.Note.Lane);
         if (playImmediateSound)
         {
             for (var index = 0; index < events.Count; index++)
@@ -1245,7 +1265,7 @@ internal sealed class PlaytestWindow : PlatformWindow
 
     private void PlayHitSound()
     {
-        if (!keySoundSettings.EnableKeySounds) return;
+        if (!HasPlaytestKeySound) return;
         // A physical hit cannot be scheduled ahead. Keep it on the music
         // transport's low-latency output so Windows never has two competing
         // render clients for one playtest. A rejected shared voice is not
@@ -1254,12 +1274,12 @@ internal sealed class PlaytestWindow : PlatformWindow
         var accepted = route.Output == WindowsPlaytestManualKeySoundOutput.SharedMusic
             ? keySounds.PlayThrough(
                 audio,
-                keySoundSettings.Preset,
-                keySoundSettings.CustomFilePath,
+                PlaytestSoundPreset,
+                PlaytestSoundFile,
                 route.Gain)
             : keySounds.PlayLowLatency(
-                keySoundSettings.Preset,
-                keySoundSettings.CustomFilePath,
+                PlaytestSoundPreset,
+                PlaytestSoundFile,
                 route.Gain);
         if (accepted)
         {
@@ -1275,7 +1295,7 @@ internal sealed class PlaytestWindow : PlatformWindow
 
     private void ScheduleAutoPlaySounds(double currentMilliseconds)
     {
-        if (!keySoundSettings.EnableKeySounds) return;
+        if (!HasPlaytestKeySound) return;
         var notes = session.Notes;
         var outputLatency = audio.IsLoaded
             ? audio.OutputLatencyMilliseconds
@@ -1303,13 +1323,13 @@ internal sealed class PlaytestWindow : PlatformWindow
             var accepted = audio.IsLoaded
                 ? keySounds.PlayThrough(
                     audio,
-                    keySoundSettings.Preset,
-                    keySoundSettings.CustomFilePath,
+                    PlaytestSoundPreset,
+                    PlaytestSoundFile,
                     gain,
                     delay)
                 : keySounds.Play(
-                    keySoundSettings.Preset,
-                    keySoundSettings.CustomFilePath,
+                    PlaytestSoundPreset,
+                    PlaytestSoundFile,
                     gain,
                     delay);
             if (accepted)
@@ -1380,6 +1400,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         finally
         {
             preparing = false;
+            UpdatePresentation();
             RefreshAutomationDiagnostics(session.StartMilliseconds);
         }
     }
@@ -1413,6 +1434,8 @@ internal sealed class PlaytestWindow : PlatformWindow
         }
         playbackTransitioning = true;
         playing = true;
+        settingsPanelCollapsed = true;
+        ApplySettingsPanelVisibility();
         pauseButton.Content = "Ⅱ 暂停";
         AutomationProperties.SetName(pauseButton, "暂停");
         RefreshAutomationDiagnostics(CurrentMilliseconds());
@@ -1438,6 +1461,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         finally
         {
             playbackTransitioning = false;
+            UpdatePresentation();
             RefreshAutomationDiagnostics(CurrentMilliseconds());
         }
     }
@@ -1465,6 +1489,8 @@ internal sealed class PlaytestWindow : PlatformWindow
         }
         playing = false;
         ReleaseAllTouchLanes();
+        ReleaseAllKeyLanes();
+        UpdatePresentation();
         pauseButton.Content = "▶ 继续";
         AutomationProperties.SetName(pauseButton, "继续");
         UpdateScoreUi();
@@ -1635,6 +1661,9 @@ internal sealed class PlaytestWindow : PlatformWindow
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         lifetime.Cancel();
+        playfield.SetSkin(null);
+        activeSkin?.Dispose(); activeSkin = null;
+        playfield.SetBackground(null); backgroundImage?.Dispose(); backgroundImage = null;
         highRateFramePump.Dispose();
         try { await audio.DisposeAsync(); } catch { }
         try { await keySounds.DisposeAsync(); } catch { }

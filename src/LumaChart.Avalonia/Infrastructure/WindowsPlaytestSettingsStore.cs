@@ -30,9 +30,27 @@ public sealed class WindowsPlaytestSettings
         double goodWindowMilliseconds = 130,
         double missWindowMilliseconds = 170,
         double inputOffsetMilliseconds = 0,
-        PlaytestRuleset ruleset = PlaytestRuleset.OsuStable)
+        PlaytestRuleset ruleset = PlaytestRuleset.OsuStable,
+        double maniaSpeed = 20,
+        string? skinPath = null,
+        bool fullScreen = true,
+        bool upsideDown = false,
+        string increaseSpeedKey = "F3",
+        string decreaseSpeedKey = "F4",
+        string pauseKey = "Escape",
+        string retryKey = "OemTilde",
+        bool useSkinSamples = true)
     {
         AutoPlay = autoPlay;
+        ManiaSpeed = double.IsFinite(maniaSpeed) ? Math.Clamp(maniaSpeed, 1, 40) : 20;
+        SkinPath = skinPath ?? string.Empty;
+        FullScreen = fullScreen;
+        UpsideDown = upsideDown;
+        IncreaseSpeedKey = increaseSpeedKey;
+        DecreaseSpeedKey = decreaseSpeedKey;
+        PauseKey = pauseKey;
+        RetryKey = retryKey;
+        UseSkinSamples = useSkinSamples;
         Ruleset = Enum.IsDefined(ruleset) ? ruleset : PlaytestRuleset.OsuStable;
         NoteStyle = Enum.IsDefined(noteStyle) ? noteStyle : WindowsPlaytestNoteStyle.Brick;
         NoteWidth = double.IsFinite(noteWidth) ? Math.Clamp(noteWidth, .25, 1) : .82;
@@ -62,6 +80,15 @@ public sealed class WindowsPlaytestSettings
     public static WindowsPlaytestSettings Default { get; } = new();
 
     public bool AutoPlay { get; }
+    public double ManiaSpeed { get; }
+    public string SkinPath { get; }
+    public bool FullScreen { get; }
+    public bool UpsideDown { get; }
+    public string IncreaseSpeedKey { get; }
+    public string DecreaseSpeedKey { get; }
+    public string PauseKey { get; }
+    public string RetryKey { get; }
+    public bool UseSkinSamples { get; }
     public PlaytestRuleset Ruleset { get; }
     public WindowsPlaytestNoteStyle NoteStyle { get; }
     public double NoteWidth { get; }
@@ -76,8 +103,8 @@ public sealed class WindowsPlaytestSettings
     /// <summary>
     /// Shifts the moment a press is judged at. Devices differ in how long audio
     /// takes to reach the speaker, so a player who hears the beat late presses
-    /// late through no fault of their own; a negative value pulls judgement
-    /// earlier to compensate, a positive value pushes it later.
+    /// late through no fault of their own; a positive value pulls judgement
+    /// earlier to compensate, a negative value pushes it later.
     /// </summary>
     public double InputOffsetMilliseconds { get; }
     public double BestWindowMilliseconds => JudgementWindows.BestMilliseconds;
@@ -108,7 +135,16 @@ public sealed class WindowsPlaytestSettings
         double? inputOffsetMilliseconds = null,
         int? bindingKeyCount = null,
         string[]? bindings = null,
-        PlaytestRuleset? ruleset = null)
+        PlaytestRuleset? ruleset = null,
+        double? maniaSpeed = null,
+        string? skinPath = null,
+        bool? fullScreen = null,
+        bool? upsideDown = null,
+        string? increaseSpeedKey = null,
+        string? decreaseSpeedKey = null,
+        string? pauseKey = null,
+        string? retryKey = null,
+        bool? useSkinSamples = null)
     {
         var next = keyBindings.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
         if (bindingKeyCount.HasValue && bindings != null)
@@ -128,7 +164,9 @@ public sealed class WindowsPlaytestSettings
             greatWindowMilliseconds ?? GreatWindowMilliseconds,
             goodWindowMilliseconds ?? GoodWindowMilliseconds,
             missWindowMilliseconds ?? MissWindowMilliseconds,
-            inputOffsetMilliseconds ?? InputOffsetMilliseconds, ruleset ?? Ruleset);
+            inputOffsetMilliseconds ?? InputOffsetMilliseconds, ruleset ?? Ruleset,
+            maniaSpeed ?? ManiaSpeed, skinPath ?? SkinPath, fullScreen ?? FullScreen, upsideDown ?? UpsideDown,
+            increaseSpeedKey ?? IncreaseSpeedKey, decreaseSpeedKey ?? DecreaseSpeedKey, pauseKey ?? PauseKey, retryKey ?? RetryKey, useSkinSamples ?? UseSkinSamples);
     }
 
     public static string[] CreateDefaultBindings(int keyCount)
@@ -237,7 +275,9 @@ public static class WindowsPlaytestSettingsStore
                 persisted.GoodWindowMilliseconds,
                 persisted.MissWindowMilliseconds,
                 persisted.InputOffsetMilliseconds,
-                Enum.TryParse<PlaytestRuleset>(persisted.Ruleset, out var ruleset) ? ruleset : PlaytestRuleset.OsuStable);
+                Enum.TryParse<PlaytestRuleset>(persisted.Ruleset, out var ruleset) ? ruleset : PlaytestRuleset.OsuStable,
+                persisted.ManiaSpeed, persisted.SkinPath, persisted.FullScreen, persisted.UpsideDown,
+                persisted.IncreaseSpeedKey, persisted.DecreaseSpeedKey, persisted.PauseKey, persisted.RetryKey, persisted.UseSkinSamples);
         }
         catch (Exception exception)
         {
@@ -279,6 +319,15 @@ public static class WindowsPlaytestSettingsStore
                     SchemaVersion = SchemaVersion,
                     AutoPlay = settings.AutoPlay,
                     Ruleset = settings.Ruleset.ToString(),
+                    ManiaSpeed = settings.ManiaSpeed,
+                    SkinPath = settings.SkinPath,
+                    FullScreen = settings.FullScreen,
+                    UpsideDown = settings.UpsideDown,
+                    IncreaseSpeedKey = settings.IncreaseSpeedKey,
+                    DecreaseSpeedKey = settings.DecreaseSpeedKey,
+                    PauseKey = settings.PauseKey,
+                    RetryKey = settings.RetryKey,
+                    UseSkinSamples = settings.UseSkinSamples,
                     NoteStyle = settings.NoteStyle.ToString(),
                     NoteWidth = settings.NoteWidth,
                     NoteHeight = settings.NoteHeight,
@@ -330,6 +379,15 @@ public static class WindowsPlaytestSettingsStore
     {
         public int SchemaVersion { get; set; }
         public bool AutoPlay { get; set; } = true;
+        public double ManiaSpeed { get; set; } = 20;
+        public string SkinPath { get; set; } = string.Empty;
+        public bool FullScreen { get; set; } = true;
+        public bool UpsideDown { get; set; }
+        public string IncreaseSpeedKey { get; set; } = "F3";
+        public string DecreaseSpeedKey { get; set; } = "F4";
+        public string PauseKey { get; set; } = "Escape";
+        public string RetryKey { get; set; } = "OemTilde";
+        public bool UseSkinSamples { get; set; } = true;
         public string Ruleset { get; set; } = nameof(PlaytestRuleset.OsuStable);
         public string NoteStyle { get; set; } = nameof(WindowsPlaytestNoteStyle.Brick);
         public double NoteWidth { get; set; } = .82;

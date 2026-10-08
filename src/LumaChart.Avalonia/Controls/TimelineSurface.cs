@@ -4275,7 +4275,7 @@ public sealed class TimelineSurface : Control
     {
         if (InteractionProfile != EditorInteractionProfile.OsuMania || session == null || session.IsReadOnly || !session.CanEditNotes ||
             Tool is not (TimelineTool.Tap or TimelineTool.Hold) || placementHoverPoint is not { } point ||
-            placingNote || dragging || resizingHoldTail || movingTiming || marqueeSelecting) return;
+            movingTiming || marqueeSelecting) return;
         if (WorkspaceColumnAtX(point.X, geometry) == NoWorkspaceColumn || !new Rect(Bounds.Size).Contains(point)) return;
         var width = GetRenderedNoteWidth(geometry.LaneWidth);
         using (context.PushOpacity(.65))

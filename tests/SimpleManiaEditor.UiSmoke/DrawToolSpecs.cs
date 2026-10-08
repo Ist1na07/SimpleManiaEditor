@@ -88,6 +88,11 @@ internal static class DrawToolSpecs
         Require(before.GetPixel(x, (int)mouse.Y - 5) != after.GetPixel(x, (int)mouse.Y - 5) &&
             before.GetPixel(x, (int)mouse.Y + 3) == after.GetPixel(x, (int)mouse.Y + 3), "hover note did not follow pointer with its bottom at pointer tip");
         Require(session.Document.Notes.Count == 0, "hover preview committed a note");
+        window.MouseDown(mouse, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
+        using var pressedPreview = Capture(window);
+        Require(pressedPreview.GetPixel(x + 22, (int)mouse.Y - 5) != before.GetPixel(x + 22, (int)mouse.Y - 5), "pointer preview disappeared while placing with button held");
+        window.MouseUp(mouse, MouseButton.Left);
         surface.Tool = TimelineTool.Select;
         Drag(At(4), At(5), MouseButton.Middle);
         Require(surface.CurrentBeat != 4, "middle viewport pan disappeared for selection tool");

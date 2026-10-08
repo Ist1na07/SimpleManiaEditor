@@ -109,6 +109,8 @@ public sealed partial class PlaytestSession
     private int judged;
     private int completed;
     private double earnedAccuracy;
+    public double EndMilliseconds { get; private set; }
+    public bool IsLaneHolding(int lane) => lane >= 0 && lane < activeHolds.Length && activeHolds[lane] is { Holding: true, Completed: false };
 
     public PlaytestSession(
         ChartDocument source,
@@ -148,6 +150,7 @@ public sealed partial class PlaytestSession
         JudgementWindows = judgementWindows ?? PlaytestJudgementWindows.Default;
         StableRules = new StableManiaRules(Document.Metadata.OverallDifficulty, playbackRate);
         StableScrollMap = new ManiaScrollMap(Document, TimingMap, ScrollMap);
+        EndMilliseconds = notes.Select(n => n.EndMilliseconds).DefaultIfEmpty(0).Max();
         stableHoldsByEnd = notes.Where(n => n.Note.IsHold).OrderBy(n => n.EndMilliseconds).ToArray();
         SetRuleset(ruleset);
     }

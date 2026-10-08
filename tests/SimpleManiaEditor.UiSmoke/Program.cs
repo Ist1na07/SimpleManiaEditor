@@ -46,6 +46,7 @@ internal static class Program
             DrawToolSpecs.Run();
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
+            OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
             RunApplicationSmoke(screenshotRoot);
             Console.WriteLine("PASS headless pointer workflow, shortcuts, profile persistence, application startup and rendering");
             return 0;
