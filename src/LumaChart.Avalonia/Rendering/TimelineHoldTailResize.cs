@@ -10,7 +10,7 @@ namespace LumaChart.Avalonia.Rendering;
 public static class TimelineHoldTailResize
 {
     public static double HitTolerance(double renderedNoteHeight) =>
-        Math.Clamp(renderedNoteHeight * 1.15, 18, 40);
+        Math.Clamp(renderedNoteHeight * .16, 3, 6);
 
     public static bool IsHit(
         Point point,
@@ -21,8 +21,8 @@ public static class TimelineHoldTailResize
         double renderedNoteHeight)
     {
         var tailDistance = Math.Abs(point.Y - tailY);
-        return point.X >= noteLeft - 12 &&
-            point.X <= noteRight + 12 &&
+        return point.X >= noteLeft &&
+            point.X <= noteRight &&
             tailDistance <= HitTolerance(renderedNoteHeight) &&
             tailDistance <= Math.Abs(point.Y - headY);
     }

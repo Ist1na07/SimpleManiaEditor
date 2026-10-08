@@ -5415,12 +5415,9 @@ public sealed partial class MainWindow : PlatformWindow
 
         var workbench = editorWorkbench;
         workbench.ColumnDefinitions = new ColumnDefinitions(
-            tabletLayout ? "74,36,*,28,350" : "94,48,*,34,350");
+            tabletLayout ? "0,0,*,28,350" : "0,0,*,34,350");
         workbench.Margin = new Thickness(tabletLayout ? 4 : 8);
-        workbench.Children.Add(BuildOverviewPanel());
-        var difficultyOverviewPanel = BuildDifficultyOverviewPanel();
-        Grid.SetColumn(difficultyOverviewPanel, 1);
-        workbench.Children.Add(difficultyOverviewPanel);
+
 
         timeline.Margin = new Thickness(5);
         AutomationProperties.SetAutomationId(timeline, "Timeline.Surface");
@@ -5612,18 +5609,16 @@ public sealed partial class MainWindow : PlatformWindow
         workbench.Children.Add(extension);
         // Commands, presets and adjustments each get a fixed layout row.
         // Track bodies and remaining palettes stay below the fixed controls.
-        workbench.RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*");
-        foreach (var child in workbench.Children) Grid.SetRow(child, 3);
-        Grid.SetRow(quickValues, 2);
+        workbench.RowDefinitions = new RowDefinitions("Auto,Auto,*");
+        foreach (var child in workbench.Children) Grid.SetRow(child, 2);
+        Grid.SetRow(quickValues, 1);
         Grid.SetColumn(quickValues, 0);
         Grid.SetColumnSpan(quickValues, 5);
         commandMenuButton.IsVisible = false;
-        Grid.SetRow(commandMenu, 0);
-        commandMenu.IsVisible = true;
-        commandMenu.Margin = new Thickness(0, 0, 0, 0);
-        var fixedToolbar = BuildFixedGridToolbar();
+        workbench.Children.Remove(commandMenu);
+        var fixedToolbar = BuildUnifiedTopToolbar(commandMenu, BuildFixedGridToolbar());
         Grid.SetColumnSpan(fixedToolbar, 5);
-        Grid.SetRow(fixedToolbar, 1);
+        Grid.SetRow(fixedToolbar, 0);
         workbench.Children.Add(fixedToolbar);
         editorView.Children.Add(workbench);
     }
@@ -7328,10 +7323,10 @@ public sealed partial class MainWindow : PlatformWindow
         };
         var content = new Grid
         {
-            Width = 84,
+            Width = double.NaN,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            ColumnDefinitions = new ColumnDefinitions("24,*")
+            ColumnDefinitions = new ColumnDefinitions("18,*"), ColumnSpacing = 4
         };
         content.Children.Add(iconViewport);
         Grid.SetColumn(label, 1);
@@ -7339,8 +7334,8 @@ public sealed partial class MainWindow : PlatformWindow
         var button = new Button
         {
             Height = 35,
-            Padding = new Thickness(4, 7),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Padding = new Thickness(4, 2),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Center,
             Background = Brushes.Transparent,
             Foreground = Brushes.White,
@@ -9635,6 +9630,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void ApplyAudioPanelLayout()
     {
+        if (boardFrames.Count > 0) { waveformPanel.IsVisible = false; spectrogramPanel.IsVisible = false; SyncBoardAudioViewports(); return; }
         if (timelineHost.Bounds.Width <= 0 || timelineHost.Bounds.Height <= 0) return;
         var track = timeline.GetActiveTrackBounds();
         var left = timeline.TranslatePoint(new Point(track.Left, 0), timelineHost);
@@ -9702,6 +9698,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void UpdateAudioPanelViewports()
     {
+        if (boardFrames.Count > 0) { SyncBoardAudioViewports(); return; }
         UpdateAudioPanelViewport(waveformSideSurface);
         UpdateAudioPanelViewport(spectrogramSideSurface);
     }

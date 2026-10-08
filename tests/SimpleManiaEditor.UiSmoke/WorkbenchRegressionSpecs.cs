@@ -25,6 +25,7 @@ internal static class WorkbenchRegressionSpecs
         var model = Field<MainWindowViewModel>(window, "viewModel");
         var tab = model.ActiveTab!;
         var transport = Field<WindowsAudioTransportViewModel>(window, "audioTransport");
+        Require(transport.PreservePitch, "upgraded/default editor speed did not preserve pitch");
         var grid = Field<ComboBox>(window, "fixedGridPicker");
         var notation = window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetAutomationId(c) == "Editor.GridNotation");
         grid.SelectedItem = 4;
@@ -78,26 +79,50 @@ internal static class WorkbenchRegressionSpecs
         window.Width = 1920; window.Height = 1080;
         Program.Pump(100);
         timeline.NavigateToBeat(8);
-        point = timeline.TranslatePoint(new Point(timeline.Bounds.Width - 4, timeline.Bounds.Height / 2), window)!.Value;
+        var scroller = Field<ScrollViewer>(window, "trackScroller");
+        var board = Field<Grid>(window, "trackBoardCanvas");
+        scroller.Offset = new Vector(Math.Max(0, board.Width - scroller.Viewport.Width), 0);
+        Program.Pump(50);
+        point = board.TranslatePoint(new Point(board.Width - 35, board.Bounds.Height / 2), window)!.Value;
         window.MouseDown(point, MouseButton.Right);
         window.MouseUp(point, MouseButton.Right);
         var menu = Field<ContextMenu>(window, "addTrackContextMenu");
         Require(menu.IsOpen, "right-click blank space did not open track menu");
+        scroller.Offset = new Vector(0, 0); Program.Pump(50);
+        var beforeDismiss = tab.Session.Document.Notes.Count;
+        timeline.Tool = TimelineTool.Tap;
+        var dismissProbe = timeline.GetPlacementEvidenceProbe()!;
+        var dismissPoint = timeline.TranslatePoint(dismissProbe.TapTarget.SurfacePoint, window)!.Value;
+        window.MouseDown(dismissPoint, MouseButton.Left); window.MouseUp(dismissPoint, MouseButton.Left);
+        Require(!menu.IsOpen && tab.Session.Document.Notes.Count == beforeDismiss, "closing the track menu also placed a note");
+        window.MouseDown(dismissPoint, MouseButton.Right); window.MouseUp(dismissPoint, MouseButton.Right);
+        Require(!menu.IsOpen, "right-click inside a note track opened the board menu");
+        scroller.Offset = new Vector(Math.Max(0, board.Width - scroller.Viewport.Width), 0); Program.Pump(50);
+        point = board.TranslatePoint(new Point(board.Width - 35, board.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(point, MouseButton.Right); window.MouseUp(point, MouseButton.Right);
+        menu = Field<ContextMenu>(window, "addTrackContextMenu");
+        var offsetBeforeAdd = scroller.Offset.X;
+        var mainWidthBeforeAdd = Field<Control>(window, "mainTrackFrame").Width;
         var draftItem = menu.ItemsSource!.OfType<MenuItem>().Single(i => AutomationProperties.GetAutomationId(i) == "Editor.AddTrack.Draft");
         draftItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         menu.Close();
         Program.PumpUntil(() => Field<EditorTrackWorkspace>(window, "activeTrackWorkspace").Tracks.Count == 1);
         Program.Pump(100);
+        Require(scroller.Offset.X == offsetBeforeAdd && Field<Control>(window, "mainTrackFrame").Width == mainWidthBeforeAdd,
+            "adding a track resized/repositioned the board");
         var workspace = Field<EditorTrackWorkspace>(window, "activeTrackWorkspace");
         var draft = workspace.Tracks.Single();
         var draftView = View(window, draft.Id);
         var surface = Property<TimelineSurface>(draftView, "Surface");
+        var draftFrame = Property<Border>(draftView, "Host");
+        scroller.Offset = new Vector(Math.Max(0, draftFrame.Bounds.Right + draftFrame.TranslatePoint(new Point(), Field<StackPanel>(window, "trackPanels"))!.Value.X - scroller.Viewport.Width), 0);
+        Program.Pump(50);
         surface.Tool = TimelineTool.Tap;
         surface.SetCurrentBeat(8);
         var probe = surface.GetPlacementEvidenceProbe()!;
         var mainAnchor = timeline.TranslatePoint(new Point(0, timeline.Bounds.Height * timeline.JudgementLinePosition), window)!.Value.Y;
         var draftAnchor = surface.TranslatePoint(new Point(0, surface.Bounds.Height * surface.JudgementLinePosition), window)!.Value.Y;
-        Require(Math.Abs(mainAnchor - draftAnchor) < 1, "track headers shifted synchronized cursor lines out of alignment");
+        Require(Math.Abs(mainAnchor - draftAnchor) < 1, $"track headers shifted synchronized cursor lines: main={mainAnchor}, draft={draftAnchor}, height={surface.Bounds.Height}, ratio={surface.JudgementLinePosition}");
         var target = surface.TranslatePoint(probe.TapTarget.SurfacePoint, window)!.Value;
         var officialCount = tab.Session.Document.Notes.Count;
         window.MouseDown(target, MouseButton.Left); window.MouseUp(target, MouseButton.Left);
@@ -107,6 +132,20 @@ internal static class WorkbenchRegressionSpecs
         Program.Stroke(window, Key.Y, RawInputModifiers.Control);
         Require(draft.Session.Document.Notes.Count == 1, "draft redo failed");
         Wait(workspace.SaveAsync());
+        var panelList = Field<StackPanel>(window, "trackPanels");
+        var waveform = panelList.Children.OfType<EditorTrackPanel>().Single(p => p.TrackKey == "waveform");
+        var dragStart = waveform.TranslatePoint(new Point(9, 16), window)!.Value;
+        var oldOrder = panelList.Children.OfType<EditorTrackPanel>().Select(p => p.TrackKey).ToArray();
+        scroller.Offset = new Vector(Math.Max(0, waveform.TranslatePoint(new Point(), panelList)!.Value.X - 10), 0);
+        Program.Pump(50);
+        dragStart = waveform.TranslatePoint(new Point(9, 16), window)!.Value;
+        window.MouseDown(dragStart, MouseButton.Left);
+        window.MouseMove(dragStart + new Vector(130, 0), RawInputModifiers.LeftMouseButton);
+        window.MouseUp(dragStart + new Vector(130, 0), MouseButton.Left);
+        Require(!panelList.Children.OfType<EditorTrackPanel>().Select(p => p.TrackKey).SequenceEqual(oldOrder), "compact audio track could not be moved by dragging its header");
+        Wait(workspace.SaveAsync());
+        Require(new EditorTrackWorkspace(tab.SourcePath, Path.GetDirectoryName(workspace.DirectoryPath)!).BoardOrder.Count >= 6,
+            "board order did not persist");
         var reopened = new EditorTrackWorkspace(tab.SourcePath, Path.GetDirectoryName(workspace.DirectoryPath)!);
         Require(reopened.Tracks.Single().Session!.Document.Notes.Count == 1, "draft workspace could not reopen placed note");
         var mainSave = model.SaveAndVerifyAsync(tab.Id);
@@ -126,6 +165,13 @@ internal static class WorkbenchRegressionSpecs
         timeline.NavigateToBeat(4);
         Require(reference.Session!.IsReadOnly && Math.Abs(referenceSurface.CurrentBeat - 8) < .0001,
             "reference synchronization used beat equality instead of song time across BPMs");
+        timeline.SetZoom(1920); Program.Pump(50);
+        var mainY = AxisY(timeline, 6);
+        var refY = AxisY(referenceSurface, 12);
+        Require(Math.Abs(mainY - refY) < .1, "equal song times rendered at different positions across BPMs/high zoom");
+        var wave = Field<AudioVisualizationSideSurface>(window, "waveformSideSurface");
+        Require(Field<double>(wave, "pixelsPerBeat") == 1920, "waveform retained the old 480 zoom clamp");
+        timeline.SetZoom(zoom);
         reference.SyncScroll = false; workspace.MarkLayoutChanged();
         referenceSurface.NavigateToBeat(6);
         Require(timeline.CurrentBeat == 4, "independent reference navigation moved main chart");
@@ -177,4 +223,10 @@ internal static class WorkbenchRegressionSpecs
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(global::Avalonia.Controls.Button.ClickEvent));
     private static void Wait(Task task) { Program.PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private static double AxisY(TimelineSurface surface, double beat)
+    {
+        var geometry = typeof(TimelineSurface).GetMethod("GetGeometry", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(surface, [surface.Session!.Document.KeyCount]);
+        var y = (double)typeof(TimelineSurface).GetMethod("YAtBeat", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(surface, [beat, geometry])!;
+        return surface.TranslatePoint(new Point(0, y), TopLevel.GetTopLevel(surface)!)!.Value.Y;
+    }
 }

@@ -36,11 +36,13 @@ internal static class Program
         try
         {
             TrackWorkspaceSpecs.Run(root);
+            SongsProtectionSpecs.Run(root);
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
             RunPointerWorkflow(screenshotRoot);
             InteractionRegressionSpecs.Run();
+            PlacementPrecisionSpecs.Run();
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             RunApplicationSmoke(screenshotRoot);
             Console.WriteLine("PASS headless pointer workflow, shortcuts, profile persistence, application startup and rendering");
@@ -169,8 +171,9 @@ internal static class Program
         var commandMenu = (Border)typeof(MainWindow).GetField("commandMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         commandMenu.IsVisible = true;
         Dispatcher.UIThread.RunJobs();
-        Require(commandMenu.TranslatePoint(new Point(0, commandMenu.Bounds.Height), window)!.Value.Y <= gridPicker.TranslatePoint(new Point(), window)!.Value.Y,
-            "expanded gear menu overlaps fixed toolbar");
+        var unifiedBar = window.GetVisualDescendants().OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Toolbar.Fixed");
+        Require(commandMenu.GetVisualAncestors().Contains(unifiedBar) && gridPicker.GetVisualAncestors().Contains(unifiedBar),
+            "commands and presets were not merged into the same fixed bar");
         Require(timeline.TranslatePoint(new Point(), window)!.Value.Y >= commandMenu.TranslatePoint(new Point(0, commandMenu.Bounds.Height), window)!.Value.Y,
             "expanded gear menu overlaps the chart/tools row");
         using (var menuFrame = window.CaptureRenderedFrame()!) menuFrame.Save(Path.Combine(screenshots, "editor-menu.png"), PngBitmapEncoderOptions.Default);

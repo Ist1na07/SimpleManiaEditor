@@ -25,7 +25,7 @@ public sealed class WindowsEditorViewSettings
     public const double DefaultGridLaneWidth = 84;
     public const double DefaultGridBeatHeight = 280;
     public const double DefaultNoteWidth = 77;
-    public const double DefaultNoteHeight = 41;
+    public const double DefaultNoteHeight = 32;
     public const double DefaultJudgementLinePosition = .79;
     public const double DefaultJudgementLineThickness = 1.5;
     public const double DefaultJudgementLineOpacity = .85;
@@ -65,7 +65,7 @@ public sealed class WindowsEditorViewSettings
         int frameRateLimit = DefaultFrameRateLimit,
         WindowsNoteAnchorMode noteAnchor = WindowsNoteAnchorMode.CellBottom,
         double musicVolume = DefaultMusicVolume,
-        bool preservePitch = false,
+        bool preservePitch = true,
         WindowsFullscreenMode fullscreenMode = WindowsFullscreenMode.Windowed,
         double barLineThickness = DefaultBarLineThickness,
         double subdivisionLineThickness = DefaultSubdivisionLineThickness,
@@ -953,7 +953,7 @@ public static class WindowsEditorViewSettingsStore
         public WindowsNoteAnchorMode NoteAnchor { get; set; } =
             WindowsNoteAnchorMode.CellBottom;
         public double MusicVolume { get; set; } = WindowsEditorViewSettings.DefaultMusicVolume;
-        public bool PreservePitch { get; set; }
+        public bool PreservePitch { get; set; } = true;
         public WindowsFullscreenMode FullscreenMode { get; set; } =
             WindowsFullscreenMode.Windowed;
         public double BarLineThickness { get; set; } =

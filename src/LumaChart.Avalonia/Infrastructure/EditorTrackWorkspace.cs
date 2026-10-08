@@ -29,6 +29,7 @@ public sealed class EditorTrackWorkspace
     public string DirectoryPath { get; }
     public string PrimarySourcePath { get; }
     public List<EditorTrack> Tracks { get; } = [];
+    public List<string> BoardOrder { get; } = [];
     public bool LoadFailed { get; private set; }
     public bool HasPendingChanges => layoutDirty || Tracks.Any(t => t.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference &&
         t.Session != null && t.Session.ChangeSerial != t.SavedSerial);
@@ -48,6 +49,7 @@ public sealed class EditorTrackWorkspace
             var persisted = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifest), JsonOptions)
                 ?? throw new InvalidDataException("轨道清单为空。");
             if (persisted.Version != 1) throw new InvalidDataException("轨道清单版本不受支持。");
+            BoardOrder.AddRange(persisted.BoardOrder.Distinct());
             foreach (var item in persisted.Tracks)
             {
                 if (item.Id == Guid.Empty || !Enum.IsDefined(item.Kind) || Tracks.Any(t => t.Id == item.Id))
@@ -115,6 +117,7 @@ public sealed class EditorTrackWorkspace
             }
             destination.Tracks.Add(copy);
         }
+        destination.BoardOrder.AddRange(BoardOrder);
         destination.layoutDirty = true;
         return destination;
     }
@@ -129,7 +132,7 @@ public sealed class EditorTrackWorkspace
                 t.Session != null && t.Session.ChangeSerial != t.SavedSerial)
                 .Select(t => (Track: t, Serial: t.Session!.ChangeSerial, Document: t.Session.CaptureCommittedDocument())).ToArray();
             if (!layoutDirty && documents.Length == 0) return;
-            var layout = new Manifest { PrimarySourcePath = PrimarySourcePath, Tracks = Tracks.Select(t => new Descriptor { Id = t.Id, Kind = t.Kind, Name = t.Name,
+            var layout = new Manifest { PrimarySourcePath = PrimarySourcePath, BoardOrder = BoardOrder.ToArray(), Tracks = Tracks.Select(t => new Descriptor { Id = t.Id, Kind = t.Kind, Name = t.Name,
                 Visible = t.Visible, SyncScroll = t.SyncScroll, ViewBeat = t.ViewBeat, SourcePath = t.SourcePath }).ToArray() };
             layoutDirty = false;
             try
@@ -166,6 +169,7 @@ public sealed class EditorTrackWorkspace
     {
         public int Version { get; set; } = 1;
         public string PrimarySourcePath { get; set; } = "";
+        public string[] BoardOrder { get; set; } = [];
         public Descriptor[] Tracks { get; set; } = [];
     }
     private sealed class Descriptor

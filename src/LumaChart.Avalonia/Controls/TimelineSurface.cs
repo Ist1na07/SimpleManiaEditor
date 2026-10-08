@@ -364,6 +364,22 @@ public sealed class TimelineSurface : Control
     private double backgroundOpacity =
         1 - WindowsEditorBackgroundSettings.DefaultDarkness;
     private WindowsNoteAnchorMode noteAnchor = WindowsNoteAnchorMode.CellBottom;
+    private WindowsNoteAnchorMode EffectiveNoteAnchor => InteractionProfile == EditorInteractionProfile.OsuMania ? WindowsNoteAnchorMode.GridLine : noteAnchor;
+    private TimingMap? sourceAxisMap;
+    private TimingMap? displayAxisMap;
+
+    public void SetTimeAxisProjection(TimingMap? sourceMap, TimingMap? displayMap)
+    {
+        if (ReferenceEquals(sourceAxisMap, sourceMap) && ReferenceEquals(displayAxisMap, displayMap)) return;
+        sourceAxisMap = sourceMap; displayAxisMap = displayMap;
+        InvalidateAudioScene(); InvalidateVisual();
+    }
+
+    private double ProjectBeat(double beat) => sourceAxisMap == null || displayAxisMap == null ? beat :
+        displayAxisMap.MillisecondsToBeat(sourceAxisMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000))).Value;
+
+    private double UnprojectBeat(double beat) => sourceAxisMap == null || displayAxisMap == null ? beat :
+        sourceAxisMap.MillisecondsToBeat(displayAxisMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000))).Value;
     private double judgementLinePosition =
         WindowsEditorViewSettings.DefaultJudgementLinePosition;
     private double judgementLineThickness =
@@ -4480,21 +4496,21 @@ public sealed class TimelineSurface : Control
     }
 
     private double YAtBeat(double beat, TimelineGeometry geometry) =>
-        geometry.JudgementY - (beat - CurrentBeat) * PixelsPerBeat;
+        geometry.JudgementY - (ProjectBeat(beat) - ProjectBeat(CurrentBeat)) * PixelsPerBeat;
 
     private double BeatAtY(double y, TimelineGeometry geometry) =>
-        CurrentBeat + (geometry.JudgementY - y) / PixelsPerBeat;
+        UnprojectBeat(ProjectBeat(CurrentBeat) + (geometry.JudgementY - y) / PixelsPerBeat);
 
     private double GetNoteAnchorBeatOffset(double pixelsPerBeat) =>
         TimelinePlacementGeometry.NoteAnchorBeatOffset(
-            noteAnchor,
+            EffectiveNoteAnchor,
             session?.SnapDivision ?? WindowsEditorViewSettings.DefaultSnapDivision,
             noteHeight,
             pixelsPerBeat);
 
     private double GetMaximumStoredRenderBeatAdjustment() =>
         TimelinePlacementGeometry.MaximumStoredRenderBeatAdjustment(
-            noteAnchor,
+            EffectiveNoteAnchor,
             session?.SnapDivision ?? WindowsEditorViewSettings.DefaultSnapDivision);
 
     private ChartNote? HitTestDisplayedNote(
@@ -4582,7 +4598,7 @@ public sealed class TimelineSurface : Control
     private double PointerToRawNoteBeat(double y, TimelineGeometry geometry) =>
         TimelinePlacementGeometry.PointerToRawStoredBeat(
             BeatAtY(y, geometry),
-            noteAnchor,
+            EffectiveNoteAnchor,
             session?.SnapDivision ?? WindowsEditorViewSettings.DefaultSnapDivision,
             noteHeight,
             PixelsPerBeat);
@@ -4591,9 +4607,11 @@ public sealed class TimelineSurface : Control
     {
         if (session == null) return BeatPosition.Zero;
         var geometry = GetGeometry(session.Document.KeyCount);
+        if (InteractionProfile == EditorInteractionProfile.OsuMania)
+            return TimelinePlacementGeometry.FloorToGrid(BeatAtY(y, geometry), session.SnapDivision);
         return TimelinePlacementGeometry.PointerToStoredBeat(
             BeatAtY(y, geometry),
-            noteAnchor,
+            EffectiveNoteAnchor,
             session.SnapDivision,
             noteHeight,
             PixelsPerBeat);
@@ -4605,12 +4623,12 @@ public sealed class TimelineSurface : Control
         double pixelsPerBeat,
         double currentBeat) =>
         geometry.JudgementY -
-        (TimelinePlacementGeometry.StoredToRenderBeat(
+        (ProjectBeat(TimelinePlacementGeometry.StoredToRenderBeat(
              beat,
-             noteAnchor,
+             EffectiveNoteAnchor,
              session?.SnapDivision ?? WindowsEditorViewSettings.DefaultSnapDivision,
              noteHeight,
-             pixelsPerBeat) - currentBeat) *
+             pixelsPerBeat)) - ProjectBeat(currentBeat)) *
         pixelsPerBeat;
 
     private double NoteYAtBeat(BeatPosition beat, TimelineGeometry geometry) =>

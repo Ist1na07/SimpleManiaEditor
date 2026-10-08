@@ -14,6 +14,10 @@ try {
     & (Join-Path $PSScriptRoot 'New-Demo.ps1') -OutputDirectory (Join-Path $publishRoot 'examples/7K-Sandbox')
     Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/QUICKSTART.md') -Destination (Join-Path $publishRoot 'QuickStart.md')
     Copy-Item -LiteralPath $releaseNotes -Destination (Join-Path $publishRoot 'ReleaseNotes.md')
+    $handoffNotes = Join-Path $taskRoot 'docs/DEVELOPMENT-HANDOFF.md'
+    if (Test-Path -LiteralPath $handoffNotes) {
+        Copy-Item -LiteralPath $handoffNotes -Destination (Join-Path $publishRoot 'DEVELOPMENT-HANDOFF.md')
+    }
     $trackNotes = Join-Path $taskRoot 'docs/WORKBENCH-TRACKS.md'
     if (Test-Path -LiteralPath $trackNotes) {
         Copy-Item -LiteralPath $trackNotes -Destination (Join-Path $publishRoot 'WORKBENCH-TRACKS.md')

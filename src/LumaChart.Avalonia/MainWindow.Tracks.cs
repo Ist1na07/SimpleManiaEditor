@@ -46,35 +46,8 @@ public sealed partial class MainWindow
     private bool synchronizingTrackViewport;
     private Control? mainTrackFrame;
 
-    private Control BuildTrackWorkbench(Control frame)
-    {
-        mainTrackFrame = frame;
-        trackPanels.Children.Add(frame);
-        trackScroller.Content = trackPanels;
-        trackScroller.SizeChanged += (_, _) => UpdateMainTrackWidth();
-        timeline.SizeChanged += (_, _) => SyncTrackViewports();
-        timeline.BlankContextRequested += (_, _) => OpenAddTrackMenu(timeline);
-        timeline.AddHandler(InputElement.PointerPressedEvent, (_, _) =>
-        {
-            activeSecondaryTrack = null;
-            RefreshFixedTools();
-            UpdateEditorAvailability();
-        }, RoutingStrategies.Tunnel);
-        trackPanels.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
-        {
-            if (e.Source == trackPanels && e.GetCurrentPoint(trackPanels).Properties.IsRightButtonPressed) OpenAddTrackMenu(trackPanels);
-        });
-        return trackScroller;
-    }
-
-    private void UpdateMainTrackWidth()
-    {
-        if (mainTrackFrame == null) return;
-        if (trackScroller.Bounds.Width <= 0) return;
-        mainTrackFrame.Width = Math.Max(320, secondaryTrackViews.Count > 0
-            ? Math.Min(640, trackScroller.Bounds.Width) : trackScroller.Bounds.Width);
-    }
-
+    private Control BuildTrackWorkbench(Control frame) => CreateUnifiedBoard(frame);
+    private void UpdateMainTrackWidth() => UpdateBoardScrollState();
     private void OpenAddTrackMenu(Control anchor)
     {
         if (viewModel.ActiveTab == null) return;
@@ -87,6 +60,7 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(item, $"Editor.AddTrack.{kind}");
             item.Click += async (_, _) =>
             {
+                dismissTrackMenuClick = false;
                 try { await AddEditorTrackAsync(kind); }
                 catch (Exception exception) { viewModel.SetStatus($"添加轨道失败：{exception.Message}"); }
             };
@@ -100,6 +74,7 @@ public sealed partial class MainWindow
         }
         addTrackContextMenu = new ContextMenu { ItemsSource = items };
         AutomationProperties.SetAutomationId(addTrackContextMenu, "Editor.TrackMenu");
+        dismissTrackMenuClick = true;
         addTrackContextMenu.Open(anchor);
     }
 
@@ -128,7 +103,7 @@ public sealed partial class MainWindow
         RebuildTrackViews();
         await workspace.SaveAsync();
         if (!ReferenceEquals(workspace, activeTrackWorkspace)) return;
-        Dispatcher.UIThread.Post(() => trackScroller.Offset = new Vector(Math.Max(0, trackScroller.Extent.Width - trackScroller.Viewport.Width), 0), DispatcherPriority.Loaded);
+
         viewModel.SetStatus($"已添加{track.Name}；轨道资料保存在 {workspace.DirectoryPath}");
     }
 
@@ -164,7 +139,8 @@ public sealed partial class MainWindow
             view.Metric?.CancelPendingAnalysis();
         }
         secondaryTrackViews.Clear();
-        while (trackPanels.Children.Count > 1) trackPanels.Children.RemoveAt(1);
+        foreach (var frame in trackPanels.Children.OfType<EditorTrackPanel>().Where(p => p.TrackKey.StartsWith("track:", StringComparison.Ordinal)).ToArray())
+        { trackPanels.Children.Remove(frame); boardFrames.Remove(frame.TrackKey); }
         if (activeTrackWorkspace != null)
             foreach (var track in activeTrackWorkspace.Tracks.Where(t => t.Visible))
             {
@@ -201,12 +177,12 @@ public sealed partial class MainWindow
             }
             var surface = new TimelineSurface { Session = track.Session, NoteStyle = timeline.NoteStyle,
                 InteractionProfile = shortcutSettings.Profile, ReverseTimeWheel = timeline.ReverseTimeWheel };
-            surface.ConfigureView(42, timeline.PixelsPerBeat, 37, 26, 1, .79, 1.5, .85,
+            surface.ConfigureView(editorViewSettings.GridLaneWidth, timeline.PixelsPerBeat, editorViewSettings.NoteWidth, editorViewSettings.NoteHeight, 1, .79, 1.5, .85,
                 editorViewSettings.NoteAnchor);
             surface.Tool = track.Kind == EditorTrackKind.Draft ? timeline.Tool : TimelineTool.Select;
             surface.SetCurrentBeat(track.ViewBeat);
             surface.StatusChanged += (_, text) => viewModel.SetStatus(text);
-            surface.BlankContextRequested += (_, _) => OpenAddTrackMenu(surface);
+
             surface.AddHandler(InputElement.PointerPressedEvent, (_, _) => { activeSecondaryTrack = view; RefreshFixedTools(); }, RoutingStrategies.Tunnel);
             surface.SelectionChanged += (_, _) => RefreshTrackCommandButtons();
             surface.CurrentBeatChanged += (_, beat) =>
@@ -284,10 +260,18 @@ public sealed partial class MainWindow
                 }
             };
             metric.PointerPressed += (_, e) => { activeSecondaryTrack = null; RefreshFixedTools();
-                if (e.GetCurrentPoint(metric).Properties.IsRightButtonPressed) OpenAddTrackMenu(metric); };
+ };
         }
-        view.Host = new Border { Width = view.Surface == null ? 190 : 390, Background = PanelBrush,
-            BorderBrush = StrokeBrush, BorderThickness = new Thickness(1), Child = body };
+        var frameKey = "track:" + track.Id.ToString("N");
+        var frame = new EditorTrackPanel(frameKey, track.Name, view.Surface == null ? 96 : 640, compact: view.Surface == null);
+        frame.TitleBox.LostFocus += (_, _) => { track.Name = frame.TitleBox.Text ?? track.Name; activeTrackWorkspace?.MarkLayoutChanged(); };
+        header.Children.Remove(sync); header.Children.Remove(hide);
+        frame.HeaderActions.Children.Add(sync); frame.HeaderActions.Children.Add(hide);
+        body.Children.Remove(header);
+        frame.SetContent(body);
+        frame.MoveRequested += (_, delta) => MoveBoardFrame(frameKey, delta);
+        boardFrames[frameKey] = frame;
+        view.Host = frame;
         AutomationProperties.SetAutomationId(view.Host, $"Editor.Track.{track.Kind}.{track.Id:N}");
         return view.Host;
     }
@@ -375,9 +359,10 @@ public sealed partial class MainWindow
                     surface.Session!.SnapDivision = tab.Session.SnapDivision;
                     if (anchor.HasValue && surface.Bounds.Height > 0 && surface.TranslatePoint(new Point(), trackPanels) is { } origin)
                         surface.SetViewportAnchor((anchor.Value.Y - origin.Y) / surface.Bounds.Height);
-                    if (!view.Track.SyncScroll) continue;
+                    if (!view.Track.SyncScroll) { surface.SetTimeAxisProjection(null, null); continue; }
                     if (view.TimingSerial != surface.Session.ChangeSerial)
                     { view.Timing = new TimingMap(surface.Session.Document.Timing); view.TimingSerial = surface.Session.ChangeSerial; }
+                    surface.SetTimeAxisProjection(view.Timing, GetAudioTimingMap(tab));
                     surface.SetCurrentBeat(Math.Max(0, view.Timing!.MillisecondsToBeat(milliseconds).Value));
                     surface.SetZoom(timeline.PixelsPerBeat);
                     surface.SetPlaybackActive(timeline.IsPlaybackActive);
@@ -392,6 +377,7 @@ public sealed partial class MainWindow
             }
         }
         finally { synchronizingTrackViewport = false; }
+        SyncBoardAudioViewports();
     }
 
     private async Task SaveTrackWorkspacesAsync()

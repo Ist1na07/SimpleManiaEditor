@@ -52,7 +52,17 @@ public sealed partial class MainWindow
 
     private void InitializeSimpleMania()
     {
-        if (EditorPresentationSettingsStore.LoadLayoutRevision() < 2)
+        var layoutRevision = EditorPresentationSettingsStore.LoadLayoutRevision();
+        if (layoutRevision < 3)
+        {
+            editorViewSettings = editorViewSettings.WithPreservePitch(true).WithView(editorViewSettings.GridLaneWidth,
+                editorViewSettings.GridBeatHeight, editorViewSettings.MainEditorHorizontalOffset, editorViewSettings.NoteWidth,
+                editorViewSettings.NoteHeight == 41 ? 32 : editorViewSettings.NoteHeight, editorViewSettings.NoteOpacity,
+                editorViewSettings.JudgementLinePosition, editorViewSettings.JudgementLineThickness, editorViewSettings.JudgementLineOpacity);
+            WindowsEditorViewSettingsStore.Save(editorViewSettings);
+            EditorPresentationSettingsStore.SaveLayoutRevision(3);
+        }
+        if (layoutRevision < 2)
         {
             editorViewSettings = editorViewSettings.WithQuickPalette(0, 0, collapsed: false)
                 .WithQuickValuesPalette(0, 0, collapsed: false).WithDifficultyCard(0, 0, collapsed: false);
@@ -60,7 +70,7 @@ public sealed partial class MainWindow
                 audioPanelSettings.Spectrogram.WithCollapsed(false));
             WindowsEditorViewSettingsStore.Save(editorViewSettings);
             WindowsAudioPanelSettingsStore.Save(audioPanelSettings);
-            EditorPresentationSettingsStore.SaveLayoutRevision(2);
+            EditorPresentationSettingsStore.SaveLayoutRevision(3);
         }
         gridNotation = EditorPresentationSettingsStore.LoadGridNotation();
         timeline.InteractionProfile = shortcutSettings.Profile;

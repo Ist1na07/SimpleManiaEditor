@@ -17,6 +17,21 @@ public sealed partial class MainWindow
     private Grid? adjustmentGridTicks;
     private Control? timingMetadataSection;
 
+    private Control BuildUnifiedTopToolbar(Border commands, Control presets)
+    {
+        commands.IsVisible = true; commands.Margin = new Thickness(0); commands.Padding = new Thickness(0);
+        commands.HorizontalAlignment = HorizontalAlignment.Stretch; commands.MinWidth = 0; commands.ClipToBounds = true;
+        Grid.SetColumn(commands, 0); Grid.SetColumnSpan(commands, 1); Grid.SetRow(commands, 0); Grid.SetRowSpan(commands, 1);
+        commands.Background = Brushes.Transparent; commands.BorderThickness = new Thickness(0);
+        if (commands.Child is ScrollViewer scroll) scroll.MaxWidth = double.PositiveInfinity;
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        content.Children.Add(commands); Grid.SetColumn(presets, 1); content.Children.Add(presets);
+        var bar = new Border { Background = RaisedBrush, Padding = new Thickness(8, 4), MinHeight = 48,
+            BorderBrush = StrokeBrush, BorderThickness = new Thickness(0, 0, 0, 1), Child = content };
+        AutomationProperties.SetAutomationId(bar, "Editor.Toolbar.Fixed");
+        return bar;
+    }
+
     private void ApplyMetadataCategory()
     {
         var bpm = metadataBpmBox.Text;

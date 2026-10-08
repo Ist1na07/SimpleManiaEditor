@@ -52,6 +52,7 @@ public sealed class DesktopDocumentWorkspace
     private Guid? suspendedActiveTabId;
     private string libraryRoot;
     private string resolvedLibraryRoot;
+    private readonly Func<string>? creationRootFallback;
     private long documentSnapshotTicket;
     // Set while an existing manifest could not be verified as readable. Until
     // it is readable again or has been quarantined, the manifest must not be
@@ -69,6 +70,7 @@ public sealed class DesktopDocumentWorkspace
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(persistentEditingRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(defaultCreator);
+        creationRootFallback = fallbackLibraryRoot;
 
         try
         {
@@ -322,6 +324,7 @@ public sealed class DesktopDocumentWorkspace
         if (!Enum.IsDefined(osuTimingImportMode))
             throw new ArgumentOutOfRangeException(nameof(osuTimingImportMode));
         sourcePath = NormalizeSourcePath(sourcePath, requireExisting: true);
+        sourcePath = await OsuSongsWorkspacePolicy.GetEditableCopyAsync(sourcePath, SafeCreationRoot(), cancellationToken).ConfigureAwait(false);
 
         var snapshots = CaptureDocumentSnapshots();
         DesktopChartTab tab;
@@ -613,6 +616,11 @@ public sealed class DesktopDocumentWorkspace
         // first await. After that the workspace runs on the thread pool, where a
         // clone could observe a half-applied in-place edit.
         var requestedTab = Tabs.FirstOrDefault(candidate => candidate.Id == tabId);
+        if (requestedTab != null && OsuSongsWorkspacePolicy.IsSongsPath(requestedTab.SourcePath))
+        {
+            var editable = await OsuSongsWorkspacePolicy.GetEditableCopyAsync(requestedTab.SourcePath, SafeCreationRoot(), cancellationToken).ConfigureAwait(false);
+            return await SaveAsAsync(tabId, editable, cancellationToken).ConfigureAwait(false);
+        }
         // Serial first, then the clone: an edit racing between the two leaves
         // the tab dirty instead of wrongly marking newer content as saved.
         var requestedChangeSerial = requestedTab?.Session.ChangeSerial ?? 0;
@@ -677,6 +685,8 @@ public sealed class DesktopDocumentWorkspace
         CancellationToken cancellationToken = default)
     {
         destination = NormalizeSourcePath(destination, requireExisting: false);
+        if (OsuSongsWorkspacePolicy.IsSongsPath(destination))
+            throw new InvalidOperationException("Songs 是游戏谱面库，请另存到独立创作目录；发布到游戏库应使用明确的导出流程。");
         var destinationFormat = GetFormat(destination);
 
         var requestedTab = Tabs.FirstOrDefault(candidate => candidate.Id == tabId);
@@ -1791,7 +1801,7 @@ public sealed class DesktopDocumentWorkspace
         var now = timeProvider.GetLocalNow();
         var timestamp = now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         var stem = CreateSafeBaseName(suggestedName);
-        var preferredFolder = Path.Combine(libraryRoot, $"{stem}_{timestamp}");
+        var preferredFolder = Path.Combine(SafeCreationRoot(), $"{stem}_{timestamp}");
         var folder = AllocateUniqueDirectory(preferredFolder);
         Directory.CreateDirectory(folder);
         var chartPath = Path.Combine(folder, $"{now.ToUnixTimeSeconds()}.mc");
@@ -1811,13 +1821,13 @@ public sealed class DesktopDocumentWorkspace
         if (stem.Length > 80) stem = stem[..80].Trim();
         if (string.IsNullOrWhiteSpace(stem)) stem = timestamp;
 
-        var folder = Path.Combine(libraryRoot, stem);
+        var folder = Path.Combine(SafeCreationRoot(), stem);
         if (Directory.Exists(folder) || File.Exists(folder))
         {
             for (var suffix = 1; suffix < int.MaxValue; suffix++)
             {
                 var candidateName = $"{stem}_{suffix}";
-                var candidate = Path.Combine(libraryRoot, candidateName);
+                var candidate = Path.Combine(SafeCreationRoot(), candidateName);
                 if (Directory.Exists(candidate) || File.Exists(candidate)) continue;
                 stem = candidateName;
                 folder = candidate;
@@ -1933,6 +1943,14 @@ public sealed class DesktopDocumentWorkspace
 
     private static bool IsCommunityAscii(string value) =>
         value.All(character => character is >= ' ' and <= '~');
+
+    private string SafeCreationRoot()
+    {
+        if (!OsuSongsWorkspacePolicy.IsSongsPath(libraryRoot)) return libraryRoot;
+        var fallback = creationRootFallback?.Invoke();
+        return !string.IsNullOrWhiteSpace(fallback) && !OsuSongsWorkspacePolicy.IsSongsPath(fallback)
+            ? fallback : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SimpleManiaEditor Maps");
+    }
 
     private static (string Requested, string Resolved) PrepareLibraryRoot(string root)
     {
