@@ -93,25 +93,12 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     private readonly TextBlock offsetText;
     private readonly TextBlock fpsText;
     private readonly CheckBox autoPlayBox;
-    private readonly ComboBox styleBox;
-    private readonly Slider noteWidthSlider;
-    private readonly Slider noteHeightSlider;
-    private readonly Slider fieldWidthSlider;
     private readonly Slider scrollSpeedSlider;
-    private readonly Slider judgementLineSlider;
-    private readonly Slider comboYSlider;
-    private readonly Slider accuracyYSlider;
     private readonly Slider bestWindowSlider;
     private readonly Slider greatWindowSlider;
     private readonly Slider goodWindowSlider;
     private readonly Slider missWindowSlider;
-    private readonly TextBlock noteWidthLabel;
-    private readonly TextBlock noteHeightLabel;
-    private readonly TextBlock fieldWidthLabel;
     private readonly TextBlock scrollSpeedLabel;
-    private readonly TextBlock judgementLineLabel;
-    private readonly TextBlock comboYLabel;
-    private readonly TextBlock accuracyYLabel;
     private readonly TextBlock bestWindowLabel;
     private readonly TextBlock greatWindowLabel;
     private readonly TextBlock goodWindowLabel;
@@ -123,11 +110,12 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     private readonly double fontScale;
     private readonly int frameRateLimit;
     private readonly Dictionary<int, int> touchLanes = [];
-    private const double SettingsColumnWidth = 286;
+    private const double SettingsColumnWidth = 350;
     private Slider? inputOffsetSlider;
     private TextBlock? inputOffsetText;
     private ComboBox? rulesetPicker;
     private TextBlock? stableWindowsText;
+    private StackPanel? legacyWindowsPanel;
     private TextBlock? stableScoreText;
     private Button? settingsToggle;
     private Border? settingsSide;
@@ -149,7 +137,6 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     private bool scoreUiDirty = true;
     private bool offsetUiDirty = true;
     private string? highRateClockStartError;
-    private bool inheritedFullscreen;
     private int capturingLane = -1;
     private int autoSoundIndex;
     private string pendingOffsetText = "— ms";
@@ -207,7 +194,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         musicVolume = Math.Clamp(currentMusicVolume, 0, 1);
         uiScale = double.IsFinite(effectiveUiScale) ? Math.Clamp(effectiveUiScale, .75, 2) : 1;
         fontScale = double.IsFinite(effectiveFontScale) ? Math.Clamp(effectiveFontScale, .75, 2) : 1;
-        inheritedFullscreen = inheritFullscreen;
+        _ = inheritFullscreen; // The player's saved window preference takes precedence.
         bindings = settings.BindingsFor(document.KeyCount);
         session = new PlaytestSession(
             document,
@@ -240,15 +227,10 @@ internal sealed partial class PlaytestWindow : PlatformWindow
 
         var rootScale = new ScaleTransform(uiScale, uiScale);
         var built = BuildContent(out pauseButton, out maximizeButton, out comboText, out accuracyText,
-            out offsetText, out fpsText, out autoPlayBox, out styleBox, out noteWidthSlider,
-            out noteHeightSlider, out fieldWidthSlider, out scrollSpeedSlider,
-            out judgementLineSlider, out comboYSlider, out accuracyYSlider,
+            out offsetText, out fpsText, out autoPlayBox, out scrollSpeedSlider,
             out bestWindowSlider, out greatWindowSlider, out goodWindowSlider,
             out missWindowSlider,
-            out noteWidthLabel, out noteHeightLabel,
-            out fieldWidthLabel, out scrollSpeedLabel, out judgementLineLabel,
-            out comboYLabel, out accuracyYLabel,
-            out bestWindowLabel, out greatWindowLabel, out goodWindowLabel,
+            out scrollSpeedLabel, out bestWindowLabel, out greatWindowLabel, out goodWindowLabel,
             out missWindowLabel,
             out keyBindingPanel);
         Content = new LayoutTransformControl
@@ -282,16 +264,18 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         BuildKeyBindings();
         playfield.SetSession(session);
         playfield.Configure(settings);
+        settingsUiReady = true;
         Prepare();
         RefreshAutomationDiagnostics(session.StartMilliseconds);
         AddHandler(KeyDownEvent, WindowKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, WindowKeyUp, RoutingStrategies.Tunnel);
         Opened += async (_, _) =>
         {
-            if (inheritedFullscreen || settings.FullScreen) WindowState = WindowState.FullScreen;
+            if (settings.FullScreen) WindowState = WindowState.FullScreen;
             UpdateMaximizeButton();
             Focus();
-            await LoadSkinAsync(settings.SkinPath);
+            skinLoadTask = LoadSkinAsync(settings.SkinPath);
+            await skinLoadTask;
             await LoadBackgroundAsync();
             audioReadyTask = PrepareAudioAsync();
             await audioReadyTask;
@@ -382,25 +366,12 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         out TextBlock offset,
         out TextBlock fps,
         out CheckBox autoPlay,
-        out ComboBox style,
-        out Slider noteWidth,
-        out Slider noteHeight,
-        out Slider fieldWidth,
         out Slider scrollSpeed,
-        out Slider judgementLine,
-        out Slider comboY,
-        out Slider accuracyY,
         out Slider bestWindow,
         out Slider greatWindow,
         out Slider goodWindow,
         out Slider missWindow,
-        out TextBlock noteWidthText,
-        out TextBlock noteHeightText,
-        out TextBlock fieldWidthText,
         out TextBlock scrollSpeedText,
-        out TextBlock judgementLineText,
-        out TextBlock comboYText,
-        out TextBlock accuracyYText,
         out TextBlock bestWindowText,
         out TextBlock greatWindowText,
         out TextBlock goodWindowText,
@@ -508,16 +479,10 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         playfieldHost.Children.Add(combo);
         playfieldHost.Children.Add(accuracy);
         body.Children.Add(playfieldHost);
-        var settingsPanel = new StackPanel { Margin = new Thickness(16, 14), Spacing = 3 };
-        settingsPanel.Children.Add(new TextBlock
-        {
-            Text = "测试演奏设置",
-            FontSize = 18 * fontScale,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brush("#F0F2F2"),
-            Margin = new Thickness(0, 0, 0, 13)
-        });
-        AddPresentationSettings(settingsPanel);
+        var skinPanel = new StackPanel { Margin = new Thickness(14), Spacing = 8 };
+        AddPresentationSettings(skinPanel);
+        var settingsPanel = new StackPanel { Margin = new Thickness(14), Spacing = 8 };
+        AddGameSettings(settingsPanel);
         autoPlay = new CheckBox
         {
             Content = "AutoPlay",
@@ -529,44 +494,12 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         AutomationProperties.SetName(autoPlay, "AutoPlay");
         ToolTip.SetTip(autoPlay, "自动以 BEST 判定演奏谱面；关闭后使用按键手动测试");
         settingsPanel.Children.Add(autoPlay);
-        settingsPanel.Children.Add(Label("Note 样式"));
-        style = new ComboBox
-        {
-            ItemsSource = new[] { "砖", "球" },
-            Margin = new Thickness(0, 3, 0, 9)
-        };
-        AutomationProperties.SetAutomationId(style, "Playtest.NoteStyle");
-        settingsPanel.Children.Add(style);
-        noteWidthText = Label("Note 宽度");
-        settingsPanel.Children.Add(noteWidthText);
-        noteWidth = Slider(25, 100, "Playtest.NoteWidth");
-        settingsPanel.Children.Add(noteWidth);
-        noteHeightText = Label("Note 高度");
-        settingsPanel.Children.Add(noteHeightText);
-        noteHeight = Slider(10, 120, "Playtest.NoteHeight");
-        settingsPanel.Children.Add(noteHeight);
-        fieldWidthText = Label("界面宽度");
-        settingsPanel.Children.Add(fieldWidthText);
-        fieldWidth = Slider(220, 1400, "Playtest.FieldWidth");
-        settingsPanel.Children.Add(fieldWidth);
         scrollSpeedText = Label("流速");
         settingsPanel.Children.Add(scrollSpeedText);
         scrollSpeed = Slider(1, 40, "Playtest.ScrollSpeed");
         scrollSpeed.TickFrequency = .1;
         scrollSpeed.IsSnapToTickEnabled = true;
         settingsPanel.Children.Add(scrollSpeed);
-        judgementLineText = Label("判定线位置");
-        settingsPanel.Children.Add(judgementLineText);
-        judgementLine = Slider(55, 94, "Playtest.JudgementLine");
-        settingsPanel.Children.Add(judgementLine);
-        comboYText = Label("连击 Y 轴位置");
-        settingsPanel.Children.Add(comboYText);
-        comboY = Slider(4, 45, "Playtest.ComboY");
-        settingsPanel.Children.Add(comboY);
-        accuracyYText = Label("准确率 Y 轴位置");
-        settingsPanel.Children.Add(accuracyYText);
-        accuracyY = Slider(4, 45, "Playtest.AccuracyY");
-        settingsPanel.Children.Add(accuracyY);
         settingsPanel.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 12) });
         rulesetPicker = new ComboBox { ItemsSource = new[] { "osu! stable 兼容", "旧版自定义判定" },
             SelectedIndex = settings.Ruleset == PlaytestRuleset.OsuStable ? 0 : 1 };
@@ -576,6 +509,10 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         AutomationProperties.SetAutomationId(stableWindowsText, "Playtest.StableWindows");
         settingsPanel.Children.Add(stableWindowsText);
         rulesetPicker.SelectionChanged += (_, _) => SettingsChanged();
+        var gameplaySettings = settingsPanel;
+        legacyWindowsPanel = new StackPanel { Spacing = 8 };
+        gameplaySettings.Children.Add(legacyWindowsPanel);
+        settingsPanel = legacyWindowsPanel;
         settingsPanel.Children.Add(new TextBlock
         {
             Text = "自定义判定范围（1–200 ms）",
@@ -614,6 +551,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         missWindow.TickFrequency = 1;
         missWindow.IsSnapToTickEnabled = true;
         settingsPanel.Children.Add(missWindow);
+        settingsPanel = gameplaySettings;
         inputOffsetText = Label("打击偏移");
         settingsPanel.Children.Add(inputOffsetText);
         inputOffsetSlider = Slider(-300, 300, "Playtest.InputOffset");
@@ -629,6 +567,9 @@ internal sealed partial class PlaytestWindow : PlatformWindow
             Margin = new Thickness(0, 2, 0, 8)
         });
         settingsPanel.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 12) });
+        var gamePanel = settingsPanel;
+        settingsPanel = new StackPanel { Margin = new Thickness(14), Spacing = 8 };
+        AddBindingImportSettings(settingsPanel);
         settingsPanel.Children.Add(new TextBlock
         {
             Text = "按键绑定",
@@ -645,12 +586,12 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         });
         bindingsPanel = new StackPanel();
         settingsPanel.Children.Add(bindingsPanel);
-        var settingsScroll = new ScrollViewer
+        var settingsScroll = new TabControl
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = settingsPanel
+            ItemsSource = new[] { SettingsPage("皮肤", skinPanel), SettingsPage("游戏", gamePanel), SettingsPage("按键", settingsPanel) },
+            SelectedIndex = 0
         };
+        AutomationProperties.SetAutomationId(settingsScroll, "Playtest.SettingsTabs");
         var side = new Border
         {
             Width = SettingsColumnWidth,
@@ -670,14 +611,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         BuildPresentationOverlay(root, header);
 
         autoPlay.IsCheckedChanged += (_, _) => SettingsChanged();
-        style.SelectionChanged += (_, _) => SettingsChanged();
-        noteWidth.ValueChanged += (_, _) => SettingsChanged();
-        noteHeight.ValueChanged += (_, _) => SettingsChanged();
-        fieldWidth.ValueChanged += (_, _) => SettingsChanged();
         scrollSpeed.ValueChanged += (_, _) => SettingsChanged();
-        judgementLine.ValueChanged += (_, _) => SettingsChanged();
-        comboY.ValueChanged += (_, _) => SettingsChanged();
-        accuracyY.ValueChanged += (_, _) => SettingsChanged();
         bestWindow.ValueChanged += (_, _) => SettingsChanged();
         greatWindow.ValueChanged += (_, _) => SettingsChanged();
         goodWindow.ValueChanged += (_, _) => SettingsChanged();
@@ -743,19 +677,12 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     {
         suppressSettings = true;
         autoPlayBox.IsChecked = settings.AutoPlay;
-        styleBox.SelectedIndex = settings.NoteStyle == WindowsPlaytestNoteStyle.Circle ? 1 : 0;
         if (rulesetPicker != null) rulesetPicker.SelectedIndex = settings.Ruleset == PlaytestRuleset.OsuStable ? 0 : 1;
-        noteWidthSlider.Value = settings.NoteWidth * 100;
-        noteHeightSlider.Value = settings.NoteHeight;
-        fieldWidthSlider.Value = settings.PlayfieldWidth;
         ConfigureSpeedSlider();
         scrollSpeedSlider.Value = settings.Ruleset == PlaytestRuleset.OsuStable ? settings.ManiaSpeed : settings.ScrollSpeed;
         if (fullScreenBox != null) fullScreenBox.IsChecked = settings.FullScreen;
         if (upsideDownBox != null) upsideDownBox.IsChecked = settings.UpsideDown;
         if (skinSamplesBox != null) skinSamplesBox.IsChecked = settings.UseSkinSamples;
-        judgementLineSlider.Value = settings.JudgementLinePosition * 100;
-        comboYSlider.Value = settings.ComboYPosition * 100;
-        accuracyYSlider.Value = settings.AccuracyYPosition * 100;
         SyncJudgementWindowSliders();
         suppressSettings = false;
         RefreshSettingsLabels();
@@ -777,20 +704,11 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         }
         settings = settings.With(
             autoPlay: autoPlayBox.IsChecked == true,
-            noteStyle: styleBox.SelectedIndex == 1
-                ? WindowsPlaytestNoteStyle.Circle
-                : WindowsPlaytestNoteStyle.Brick,
-            noteWidth: noteWidthSlider.Value / 100d,
-            noteHeight: noteHeightSlider.Value,
-            playfieldWidth: fieldWidthSlider.Value,
             scrollSpeed: nextRuleset == PlaytestRuleset.LegacyCustom ? scrollSpeedSlider.Value : settings.ScrollSpeed,
             maniaSpeed: nextRuleset == PlaytestRuleset.OsuStable ? scrollSpeedSlider.Value : settings.ManiaSpeed,
             fullScreen: fullScreenBox?.IsChecked ?? settings.FullScreen,
             upsideDown: upsideDownBox?.IsChecked ?? settings.UpsideDown,
             useSkinSamples: skinSamplesBox?.IsChecked ?? settings.UseSkinSamples,
-            judgementLinePosition: judgementLineSlider.Value / 100d,
-            comboYPosition: comboYSlider.Value / 100d,
-            accuracyYPosition: accuracyYSlider.Value / 100d,
             bestWindowMilliseconds: bestWindowSlider.Value,
             greatWindowMilliseconds: greatWindowSlider.Value,
             goodWindowMilliseconds: goodWindowSlider.Value,
@@ -824,13 +742,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
 
     private void RefreshSettingsLabels()
     {
-        noteWidthLabel.Text = AvaloniaLocalizationCatalog.Format("Note 宽度  {0:P0}", settings.NoteWidth);
-        noteHeightLabel.Text = AvaloniaLocalizationCatalog.Format("Note 高度  {0:0}", settings.NoteHeight);
-        fieldWidthLabel.Text = AvaloniaLocalizationCatalog.Format("界面宽度  {0:0}", settings.PlayfieldWidth);
         scrollSpeedLabel.Text = settings.Ruleset == PlaytestRuleset.OsuStable ? $"落速  {settings.ManiaSpeed:0.#} · {WindowsPlaytestScrollVelocityPolicy.ScrollTimeMilliseconds(settings.ManiaSpeed):0} ms" : $"旧版流速 {settings.ScrollSpeed:0} px/s";
-        judgementLineLabel.Text = AvaloniaLocalizationCatalog.Format("判定线位置  {0:P0}", settings.JudgementLinePosition);
-        comboYLabel.Text = AvaloniaLocalizationCatalog.Format("连击 Y 轴位置  {0:P0}", settings.ComboYPosition);
-        accuracyYLabel.Text = AvaloniaLocalizationCatalog.Format("准确率 Y 轴位置  {0:P0}", settings.AccuracyYPosition);
         bestWindowLabel.Text = AvaloniaLocalizationCatalog.Format("Best 范围  ±{0:0} ms", settings.BestWindowMilliseconds);
         greatWindowLabel.Text = AvaloniaLocalizationCatalog.Format("Great 范围  ±{0:0} ms", settings.GreatWindowMilliseconds);
         goodWindowLabel.Text = AvaloniaLocalizationCatalog.Format("Good 范围  ±{0:0} ms", settings.GoodWindowMilliseconds);
@@ -844,6 +756,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     private void SyncJudgementWindowSliders()
     {
         var stable = settings.Ruleset == PlaytestRuleset.OsuStable;
+        if (legacyWindowsPanel != null) legacyWindowsPanel.IsVisible = !stable;
         if (stableScoreText != null) stableScoreText.IsVisible = stable;
         bestWindowSlider.IsEnabled = greatWindowSlider.IsEnabled = goodWindowSlider.IsEnabled = missWindowSlider.IsEnabled = !stable;
         if (stableWindowsText != null)
@@ -1136,7 +1049,9 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     {
         try
         {
-            WindowsPlaytestSettingsStore.Save(settings);
+            preferencesSaveFailed = !WindowsPlaytestSettingsStore.Save(settings);
+            if (preferencesSaveFailed && importStatus != null)
+                importStatus.Text = "设置无法保存，请检查本地数据目录权限；本次选择仍然有效。";
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or
@@ -1420,7 +1335,8 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         try
         {
             await prepareTask;
-            await audioReadyTask;
+        await audioReadyTask;
+        await skinLoadTask;
         }
         finally
         {
@@ -1639,7 +1555,6 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     {
         if (WindowState == WindowState.FullScreen)
         {
-            inheritedFullscreen = false;
             WindowState = WindowState.Normal;
         }
         else
@@ -1662,6 +1577,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         lifetime.Cancel();
         playfield.SetSkin(null);
+        skinPreview.SetSkin(null);
         activeSkin?.Dispose(); activeSkin = null;
         playfield.SetBackground(null); backgroundImage?.Dispose(); backgroundImage = null;
         highRateFramePump.Dispose();

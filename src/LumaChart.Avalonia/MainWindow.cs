@@ -5283,21 +5283,6 @@ public sealed partial class MainWindow : PlatformWindow
         ToolTip.SetTip(extensionMenuButton, "打开可移动的谱面拓展工具");
         editCommands.Children.Add(extensionMenuButton);
 
-        var playtestFromStartButton = CommandButton(
-            "测试",
-            async (_, _) => await StartPlaytestAsync(0));
-        AutomationProperties.SetAutomationId(playtestFromStartButton, "Editor.Playtest.FromStart");
-        AutomationProperties.SetHelpText(playtestFromStartButton, "从谱面开头开始测试演奏");
-        ToolTip.SetTip(playtestFromStartButton, "从谱面开头开始测试演奏");
-        editCommands.Children.Add(playtestFromStartButton);
-
-        var playtestFromHereButton = CommandButton(
-            "从此处",
-            async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat));
-        AutomationProperties.SetAutomationId(playtestFromHereButton, "Editor.Playtest.FromHere");
-        AutomationProperties.SetHelpText(playtestFromHereButton, "从当前红线位置开始测试演奏");
-        ToolTip.SetTip(playtestFromHereButton, "从当前红线位置开始测试演奏");
-        editCommands.Children.Add(playtestFromHereButton);
         Grid.SetColumn(editCommands, 2);
         commandLayout.Children.Add(editCommands);
 
@@ -5591,14 +5576,10 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetColumnSpan(commandMenuButton, 5);
         workbench.Children.Add(commandMenuButton);
         var quickPalette = BuildQuickEditPalette();
-        var quickValues = BuildAdjustmentToolbar();
         var roomCollaboration = BuildRoomCollaborationPanel();
         Grid.SetColumn(quickPalette, 2);
         Grid.SetColumnSpan(quickPalette, WindowsInspectorParityPolicy.FloatingPaletteColumnSpan);
         MergeQuickPaletteIntoToolRail();
-        Grid.SetColumn(quickValues, 2);
-        Grid.SetColumnSpan(quickValues, WindowsInspectorParityPolicy.FloatingPaletteColumnSpan);
-        workbench.Children.Add(quickValues);
         Grid.SetColumn(roomCollaboration, 2);
         Grid.SetColumnSpan(
             roomCollaboration,
@@ -5607,13 +5588,10 @@ public sealed partial class MainWindow : PlatformWindow
         var extension = BuildExtensionPalette();
         Grid.SetColumn(extension, 2);
         workbench.Children.Add(extension);
-        // Commands, presets and adjustments each get a fixed layout row.
-        // Track bodies and remaining palettes stay below the fixed controls.
-        workbench.RowDefinitions = new RowDefinitions("Auto,Auto,*");
-        foreach (var child in workbench.Children) Grid.SetRow(child, 2);
-        Grid.SetRow(quickValues, 1);
-        Grid.SetColumn(quickValues, 0);
-        Grid.SetColumnSpan(quickValues, 5);
+        // One fixed toolbar owns commands, presets and adjustments.
+        // Track bodies and remaining palettes stay below that toolbar.
+        workbench.RowDefinitions = new RowDefinitions("Auto,*");
+        foreach (var child in workbench.Children) Grid.SetRow(child, 1);
         commandMenuButton.IsVisible = false;
         workbench.Children.Remove(commandMenu);
         var fixedToolbar = BuildUnifiedTopToolbar(commandMenu, BuildFixedGridToolbar());

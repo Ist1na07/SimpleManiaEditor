@@ -1,5 +1,7 @@
 # osu!mania rules reference
 
+0.1.10 additionally retains the pinned `LegacyManiaSkinDecoder.cs`, `LegacyNotePiece.cs`, and `LegacyHoldNoteTailPiece.cs` for auditable skin parsing and tail-anchor compatibility. OsuIniDocument adapts the repeated-Keys configuration flow; PlaytestSurface uses the official opposite direction for the hold tail. This remains an Avalonia adaptation, not a complete osu.Framework host.
+
 - Repository: https://github.com/ppy/osu
 - Commit: `7e25f111466f1b5648d86856e5737d852402effe` (2026-10-08 retrieval).
 - Source: `osu.Game.Rulesets.Mania/Scoring/ManiaHitWindows.cs`.

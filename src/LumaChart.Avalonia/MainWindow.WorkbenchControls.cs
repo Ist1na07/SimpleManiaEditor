@@ -24,8 +24,12 @@ public sealed partial class MainWindow
         Grid.SetColumn(commands, 0); Grid.SetColumnSpan(commands, 1); Grid.SetRow(commands, 0); Grid.SetRowSpan(commands, 1);
         commands.Background = Brushes.Transparent; commands.BorderThickness = new Thickness(0);
         if (commands.Child is ScrollViewer scroll) scroll.MaxWidth = double.PositiveInfinity;
-        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto"), ColumnSpacing = 8 };
         content.Children.Add(commands); Grid.SetColumn(presets, 1); content.Children.Add(presets);
+        var adjustments = new ScrollViewer { Content = BuildAdjustmentSliders(),
+            HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+        Grid.SetRow(adjustments, 1); Grid.SetColumnSpan(adjustments, 2); content.Children.Add(adjustments);
         var bar = new Border { Background = RaisedBrush, Padding = new Thickness(8, 4), MinHeight = 48,
             BorderBrush = StrokeBrush, BorderThickness = new Thickness(0, 0, 0, 1), Child = content };
         AutomationProperties.SetAutomationId(bar, "Editor.Toolbar.Fixed");
@@ -159,14 +163,6 @@ public sealed partial class MainWindow
 
     private static int NearestPreset(IReadOnlyList<double> presets, double value) =>
         Enumerable.Range(0, presets.Count).MinBy(index => Math.Abs(presets[index] - value));
-
-    private Control BuildAdjustmentToolbar() => new Expander
-    {
-        Header = "调整", IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch,
-        Background = PanelBrush, Content = new ScrollViewer { Content = BuildAdjustmentSliders(),
-            HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }
-    };
 
     private void MergeQuickPaletteIntoToolRail()
     {

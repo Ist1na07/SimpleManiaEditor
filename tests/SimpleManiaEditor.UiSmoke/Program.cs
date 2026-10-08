@@ -47,6 +47,7 @@ internal static class Program
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
             OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
+            SkinWorkflowSpecs.Run(root, screenshotRoot);
             RunApplicationSmoke(screenshotRoot);
             Console.WriteLine("PASS headless pointer workflow, shortcuts, profile persistence, application startup and rendering");
             return 0;
@@ -177,6 +178,11 @@ internal static class Program
         var unifiedBar = window.GetVisualDescendants().OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Toolbar.Fixed");
         Require(commandMenu.GetVisualAncestors().Contains(unifiedBar) && gridPicker.GetVisualAncestors().Contains(unifiedBar),
             "commands and presets were not merged into the same fixed bar");
+        foreach (var id in new[] { "Editor.Adjustment.Grid", "Editor.Adjustment.Zoom", "Editor.Adjustment.Rate" })
+            Require(window.GetVisualDescendants().OfType<Slider>().Single(c => AutomationProperties.GetAutomationId(c) == id).GetVisualAncestors().Contains(unifiedBar), "adjustment control is outside the unified top bar");
+        Require(!window.GetVisualDescendants().OfType<Expander>().Any(e => e.Header?.ToString() == "调整"), "standalone adjustment expander remains");
+        Require(window.GetVisualDescendants().OfType<Button>().Count(b => AutomationProperties.GetAutomationId(b)?.StartsWith("Editor.Toolbar.Playtest") == true) == 1 &&
+            !window.GetVisualDescendants().OfType<Button>().Any(b => AutomationProperties.GetAutomationId(b)?.StartsWith("Editor.Playtest.From") == true), "duplicate playtest actions remain");
         Require(timeline.TranslatePoint(new Point(), window)!.Value.Y >= commandMenu.TranslatePoint(new Point(0, commandMenu.Bounds.Height), window)!.Value.Y,
             "expanded gear menu overlaps the chart/tools row");
         using (var menuFrame = window.CaptureRenderedFrame()!) menuFrame.Save(Path.Combine(screenshots, "editor-menu.png"), PngBitmapEncoderOptions.Default);

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace LumaChart.Avalonia.Infrastructure;
 
@@ -20,11 +21,25 @@ internal sealed class OsuIniDocument
             var value = line[(split + 1)..].Trim();
             var comment = value.IndexOf("//", StringComparison.Ordinal);
             if (comment >= 0) value = value[..comment].Trim();
-            current.Values[line[..split].Trim()] = value;
+            var key = line[..split].Trim();
+            // Official LegacyManiaSkinDecoder starts a new configuration at every Keys,
+            // including multiple key counts beneath one [Mania] header.
+            if (current.Name.Equals("Mania", StringComparison.OrdinalIgnoreCase) && key.Equals("Keys", StringComparison.OrdinalIgnoreCase) && current.Values.ContainsKey("Keys"))
+            { current = new Section("Mania"); Sections.Add(current); }
+            current.Values[key] = value.Trim('"');
         }
     }
     public Section? Find(string name) => Sections.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
     public Section Mania(int keys) => Sections.FirstOrDefault(s => s.Name.Equals("Mania", StringComparison.OrdinalIgnoreCase) && s.Number("Keys", 0) == keys) ?? new Section("Mania");
+    public static OsuIniDocument ReadSkin(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.Length > 2 * 1024 * 1024) throw new InvalidDataException("skin.ini 过大。");
+        using var stream = new MemoryStream(bytes);
+        try { using var reader = new StreamReader(stream, new UTF8Encoding(false, true), true); return new(reader.ReadToEnd()); }
+        catch (DecoderFallbackException)
+        { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); return new(Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.ANSICodePage).GetString(bytes)); }
+    }
     internal sealed class Section(string name)
     {
         public string Name { get; } = name;

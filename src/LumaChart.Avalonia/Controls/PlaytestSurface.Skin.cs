@@ -10,6 +10,7 @@ namespace LumaChart.Avalonia.Controls;
 
 public sealed partial class PlaytestSurface
 {
+    internal bool PreviewOnly { get; set; }
     private OsuManiaSkin? skin;
     private double maniaSpeed = 20;
     private bool upsideDown;
@@ -34,7 +35,7 @@ public sealed partial class PlaytestSurface
 
     private double CullingMargin(double height, double pixelsPerUnit)
     {
-        var capHeight = skin == null ? noteHeight : Math.Max(noteHeight, skin.Notes.Concat(skin.Heads).Concat(skin.Tails)
+        var capHeight = skin == null ? 18 * height / 480 : Math.Max(18 * height / 480, skin.Notes.Concat(skin.Heads).Concat(skin.Tails)
             .Where(t => t != null).Select(t => t!.LogicalHeight / t.LogicalWidth * skin.HeightScaleWidth * height / 480).DefaultIfEmpty(noteHeight).Max());
         return session?.UsesStableRules == true ? capHeight / pixelsPerUnit + .02 : Math.Max(1, capHeight / pixelsPerUnit + .5);
     }
@@ -48,7 +49,7 @@ public sealed partial class PlaytestSurface
         if (session == null) return -1;
         if (skin != null)
         { var layout = SkinLayout(Bounds.Size); for (var lane = 0; lane < layout.X.Length; lane++) if (x >= layout.X[lane] && x <= layout.X[lane] + skin.Widths[lane] * layout.Scale) return lane; return -1; }
-        var width = Math.Min(Bounds.Width, playfieldWidth); var offset = (Bounds.Width - width) / 2;
+        var width = Math.Min(Bounds.Width, session.KeyCount * 30 * Bounds.Height / 480); var offset = (Bounds.Width - width) / 2;
         return x < offset || x >= offset + width ? -1 : Math.Clamp((int)((x - offset) / (width / session.KeyCount)), 0, session.KeyCount - 1);
     }
 
@@ -165,10 +166,12 @@ public sealed partial class PlaytestSurface
             if (tail != null)
             {
                 var tailHeight = tail.LogicalHeight / tail.LogicalWidth * skin.HeightScaleWidth * scale;
-                DrawSprite(context, tail, new Rect(x, tailY - tailHeight, width, tailHeight), currentMilliseconds / 1000,
+                // Official LegacyHoldNoteTailPiece reverses the note direction:
+                // a downscroll tail is top-anchored at its timestamp.
+                DrawSprite(context, tail, new Rect(x, tailY, width, tailHeight), currentMilliseconds / 1000,
                     flipY: skin.Flip("NoteFlipWhenUpsideDown", lane, "T", true) ^ up);
             }
-            else DrawHead(context, new Rect(x, tailY - imageHeight, width, imageHeight), NoteFillBrush, NotePen);
+            else DrawHead(context, new Rect(x, tailY, width, imageHeight), NoteFillBrush, NotePen);
         }
         if (!note.HeadJudged || note.Holding || !note.Note.IsHold)
         {

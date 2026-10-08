@@ -103,6 +103,15 @@ internal static class OsuSkinPlaytestSpecs
         Program.Pump(30);
         using (var frame = host.CaptureRenderedFrame()!) frame.Save(Path.Combine(screenshots,"playtest-osu-skin.png"), PngBitmapEncoderOptions.Default);
         Require(surface.Diagnostics.LastVisitedNotes <= 2 && surface.LaneAt(0) == -1, "skin render culling/lane hit regions failed");
+        surface.SetCurrentTime(2850); Program.Pump(20);
+        using (var frame = host.CaptureRenderedFrame()!)
+        using (var bytes = new MemoryStream())
+        {
+            frame.Save(bytes, PngBitmapEncoderOptions.Default); bytes.Position = 0; using var pixels = SKBitmap.Decode(bytes);
+            var center = (int)Enumerable.Range(0,(int)surface.Bounds.Width).Where(x => surface.LaneAt(x) == 3).Average();
+            var tailY = surface.Bounds.Height * 420 / 480 - 150 * (surface.Bounds.Height * 402 / 480) * 26 / 11485;
+            Require(pixels.GetPixel(center,(int)tailY + 3) == SKColors.Gold,"LN tail did not use official top anchor at its timestamp");
+        }
         var fieldSize = surface.Bounds.Size;
         surface.Configure(imported.Settings.With(upsideDown:true)); Program.Pump(20);
         using (var frame = host.CaptureRenderedFrame()!) frame.Save(Path.Combine(screenshots,"playtest-osu-skin-upscroll.png"), PngBitmapEncoderOptions.Default);

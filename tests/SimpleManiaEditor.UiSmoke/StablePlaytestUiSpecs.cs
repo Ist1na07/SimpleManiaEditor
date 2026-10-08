@@ -22,6 +22,8 @@ internal static class StablePlaytestUiSpecs
         window.Show(); Program.Pump(100);
         window.KeyPress(Key.F1, RawInputModifiers.None, PhysicalKey.F1, "F1");
         window.KeyRelease(Key.F1, RawInputModifiers.None, PhysicalKey.F1, "F1"); Program.Pump(20);
+        window.GetVisualDescendants().OfType<TabControl>().Single(c => AutomationProperties.GetAutomationId(c) == "Playtest.SettingsTabs").SelectedIndex = 1;
+        Program.Pump(20);
         var session = Field<PlaytestSession>(window,"session");
         Require(session.UsesStableRules && settings.Ruleset == PlaytestRuleset.OsuStable,"default profile did not reach gameplay");
         var profile = window.GetVisualDescendants().OfType<ComboBox>().Single(c=>AutomationProperties.GetAutomationId(c)=="Playtest.Ruleset");

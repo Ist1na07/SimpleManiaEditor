@@ -115,12 +115,11 @@ public sealed partial class PlaytestSurface : Control
     public void Configure(WindowsPlaytestSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        style = settings.NoteStyle;
-        noteWidth = settings.NoteWidth;
-        noteHeight = settings.NoteHeight;
-        playfieldWidth = settings.PlayfieldWidth;
+        style = WindowsPlaytestNoteStyle.Brick;
+        noteWidth = 1;
+        noteHeight = 18;
         scrollSpeed = settings.ScrollSpeed;
-        judgementLinePosition = settings.JudgementLinePosition;
+        judgementLinePosition = 402d / 480;
         maniaSpeed = settings.ManiaSpeed;
         upsideDown = settings.UpsideDown;
         InvalidateVisual();
@@ -173,14 +172,15 @@ public sealed partial class PlaytestSurface : Control
         base.Render(context);
         var size = Bounds.Size;
         if (size.Width <= 0 || size.Height <= 0) return;
+        noteHeight = 18 * size.Height / 480;
+        playfieldWidth = (session?.KeyCount ?? 7) * 30 * size.Height / 480;
         using var clip = context.PushClip(new Rect(size));
         context.FillRectangle(BackgroundBrush, new Rect(size));
         DrawBackground(context, size);
         if (skin != null)
         {
             DrawSkinStage(context, size);
-            DrawHitFeedback(context, size);
-            DrawGameplayHud(context, size);
+            if (!PreviewOnly) { DrawHitFeedback(context, size); DrawGameplayHud(context, size); }
             return;
         }
         var keyCount = session?.KeyCount ?? 4;
@@ -199,8 +199,7 @@ public sealed partial class PlaytestSurface : Control
             DrawSlots(context, keyCount, origin, laneWidth, judgementY);
             DrawNotes(context, size.Height, origin, laneWidth, judgementY);
         }
-        DrawHitFeedback(context, size);
-        DrawGameplayHud(context, size);
+        if (!PreviewOnly) { DrawHitFeedback(context, size); DrawGameplayHud(context, size); }
     }
 
     private void DrawSlots(

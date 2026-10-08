@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.9；0.1.8 基线提交 `3fbc7ba`。源码位于 `src/`。
+- 最新交付 0.1.10；0.1.9 基线提交 `9805572`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -33,6 +33,10 @@
 - 精确面尾拖动命中以实际时间底边为入口；空白右键取消 Note/Timing 选择，底板空白也取消各轨选择。
 - 底板未处理滚轮交给主时间轴；横向条 Visibility=Visible、AllowAutoHide=false、高 24 DIP、柄 12 DIP。
 - ZCode 窗口可发现，但两次 Computer Use 捕获返回 FrameArrived/window capture timed out；本轮未提交外部模型任务。
+
+## 0.1.10 皮肤工作流
+
+调整控件并入唯一 Editor.Toolbar.Fixed，移除独立调整 Expander，保留一个 Editor.Toolbar.Playtest。新增 OsuSkinLibrary 明文持久化目录；SkinSelector/Preview 与皮肤、游戏、按键三页，移除 Note 外观控件与旧外观值对渲染的影响。SelectSkinAsync 先持久化选择再异步加载；generation 只允许最后选择应用；图像不依赖声音解码成功；settingsUiReady 在初始化完成即打开，不丢音频等待期间设置。父窗口全屏不覆盖已保存的试玩窗口选择。OsuIniDocument 支持同一 Mania 多 Keys、扩展名动画与旧 K.ini；按官方顶部锚定 LN 尾。SkinWorkflowSpecs 测关闭加载、反复重进、快速切换、损坏声音与失效目录；固定工具栏与 LN 像素检查补齐。没有收到异常皮肤实际路径，不声称已对其验收。
 
 ## 0.1.9 试玩与皮肤
 

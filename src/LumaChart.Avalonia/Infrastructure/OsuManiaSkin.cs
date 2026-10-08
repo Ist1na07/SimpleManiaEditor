@@ -15,6 +15,7 @@ internal sealed class OsuManiaSkin : IDisposable
     private long pixelBudget;
     public string Root { get; }
     public string Name { get; }
+    public int LoadedImageCount => owned.Count;
     public OsuIniDocument.Section Config { get; }
     public OsuIniDocument.Section Fonts { get; }
     public string[] Warnings => warnings.ToArray();
@@ -32,7 +33,7 @@ internal sealed class OsuManiaSkin : IDisposable
     public SkinAnimation?[] StageLights { get; }
     public double HeightScaleWidth { get; }
     public bool UpsideDown => Config.Flag("UpsideDown", false);
-    public double HitPosition => Math.Clamp(Config.Number("HitPosition", 402), 1, 479);
+    public double HitPosition => Math.Clamp(Config.Number("HitPosition", 402), 240, 480);
     public double ComboPosition => Math.Clamp(Config.Number("ComboPosition", 111), 0, 480);
     public double ScorePosition => Math.Clamp(Config.Number("ScorePosition", 300), 0, 480);
     public double ColumnStart => Math.Clamp(Config.Number("ColumnStart", 136), 0, 1500);
@@ -48,8 +49,15 @@ internal sealed class OsuManiaSkin : IDisposable
         Root = Path.GetFullPath(root);
         var iniPath = Path.Combine(Root, "skin.ini");
         if (File.Exists(iniPath) && new FileInfo(iniPath).Length > 2 * 1024 * 1024) throw new InvalidDataException("skin.ini 过大。");
-        var ini = new OsuIniDocument(File.Exists(iniPath) ? File.ReadAllText(iniPath) : "");
+        var ini = File.Exists(iniPath) ? OsuIniDocument.ReadSkin(iniPath) : new OsuIniDocument("");
         Config = ini.Mania(count);
+        var legacyPath = Path.Combine(Root, $"{count}K.ini");
+        if (Config.Values.Count == 0 && File.Exists(legacyPath))
+        {
+            var legacy = OsuIniDocument.ReadSkin(legacyPath);
+            Config = legacy.Mania(count);
+            if (Config.Values.Count == 0) Config = legacy.Sections.FirstOrDefault(s => s.Values.Count > 0) ?? Config;
+        }
         Fonts = ini.Find("Fonts") ?? new OsuIniDocument.Section("Fonts");
         var general = ini.Find("General");
         Name = general?.Text("Name", Path.GetFileName(Root)) ?? Path.GetFileName(Root);
@@ -84,6 +92,7 @@ internal sealed class OsuManiaSkin : IDisposable
         StageLights = Enumerable.Range(1, count).Select(i => Tint(stageLight, ((ISolidColorBrush)Colour("ColourLight" + i, Color.FromRgb(55, 255, 255))).Color)).ToArray();
         HitSoundPath = new[] { "normal-hitnormal.wav", "normal-hitnormal.ogg", "normal-hitnormal.mp3" }.Select(SafePath).FirstOrDefault(p => p != null && File.Exists(p));
         if (Config.Values.Count == 0) warnings.Add($"没有 {count}K 的 [Mania] 配置，使用默认布局和可用素材。");
+        if (Notes.All(n => n == null) && Heads.All(n => n == null)) warnings.Add("没有找到 mania 按键图片，使用内置按键；检查是否选择了正确的皮肤目录。");
     }
 
     public static Task<OsuManiaSkin> LoadAsync(string path, int count, CancellationToken token) => Task.Run(() =>
@@ -117,17 +126,21 @@ internal sealed class OsuManiaSkin : IDisposable
     {
         name = name.Trim();
         if (textures.TryGetValue(name, out var existing)) return existing;
+        var fileName = name;
+        foreach (var extension in new[] { ".png", ".jpg", ".jpeg" })
+            if (fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) { fileName = fileName[..^extension.Length]; break; }
+        if (fileName.EndsWith("@2x", StringComparison.OrdinalIgnoreCase)) fileName = fileName[..^3];
         var frames = new List<Bitmap>(); var density = 1;
         for (var i = 0; i < 120; i++)
         {
-            var file = ImagePath(name + "-" + i, out var d);
+            var file = ImagePath(fileName + "-" + i, out var d);
             if (file == null) break;
             var image = Decode(file); if (image == null) break;
             density = d; frames.Add(image);
         }
         if (frames.Count == 0)
         {
-            var file = ImagePath(name, out density); if (file != null && Decode(file) is { } bitmap) frames.Add(bitmap);
+            var file = ImagePath(fileName, out density); if (file != null && Decode(file) is { } bitmap) frames.Add(bitmap);
         }
         var result = frames.Count > 0 ? new SkinAnimation(frames.ToArray(), density) : null;
         textures[name] = result; return result;
