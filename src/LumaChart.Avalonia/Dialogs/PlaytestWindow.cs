@@ -124,6 +124,9 @@ internal sealed class PlaytestWindow : PlatformWindow
     private const double SettingsColumnWidth = 286;
     private Slider? inputOffsetSlider;
     private TextBlock? inputOffsetText;
+    private ComboBox? rulesetPicker;
+    private TextBlock? stableWindowsText;
+    private TextBlock? stableScoreText;
     private Button? settingsToggle;
     private ColumnDefinition? settingsColumn;
     private Border? settingsSide;
@@ -207,12 +210,12 @@ internal sealed class PlaytestWindow : PlatformWindow
             document,
             startBeat,
             settings.AutoPlay,
-            settings.JudgementWindows);
+            settings.JudgementWindows, settings.Ruleset, playbackRate);
         silentAnchorMilliseconds = session.StartMilliseconds;
         sampledMillisecondsBits = BitConverter.DoubleToInt64Bits(session.StartMilliseconds);
         RebuildLaneMap();
 
-        Title = "测试演奏 — LumaChart Studio";
+        Title = "测试演奏 — SimpleManiaEditor";
         // Desktop sizes belong behind the platform seam. Setting them directly
         // made the window 760 DIP tall on a tablet whose whole viewport is
         // shorter than that, which pushed the header off the top of the screen.
@@ -458,6 +461,8 @@ internal sealed class PlaytestWindow : PlatformWindow
         fps.Foreground = Brush("#758187");
         fps.FontFamily = new FontFamily("Cascadia Mono,Consolas");
         scorePanel.Children.Add(offset);
+        stableScoreText = ScoreText("0000000", 15, "Playtest.Score", new Thickness(0,0,12,0));
+        scorePanel.Children.Add(stableScoreText);
         scorePanel.Children.Add(fps);
         Grid.SetColumn(scorePanel, 2);
         headerGrid.Children.Add(scorePanel);
@@ -551,9 +556,17 @@ internal sealed class PlaytestWindow : PlatformWindow
         accuracyY = Slider(4, 45, "Playtest.AccuracyY");
         settingsPanel.Children.Add(accuracyY);
         settingsPanel.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 12) });
+        rulesetPicker = new ComboBox { ItemsSource = new[] { "osu! stable 兼容", "旧版自定义判定" },
+            SelectedIndex = settings.Ruleset == PlaytestRuleset.OsuStable ? 0 : 1 };
+        AutomationProperties.SetAutomationId(rulesetPicker, "Playtest.Ruleset");
+        settingsPanel.Children.Add(rulesetPicker);
+        stableWindowsText = Label(""); stableWindowsText.TextWrapping = TextWrapping.Wrap;
+        AutomationProperties.SetAutomationId(stableWindowsText, "Playtest.StableWindows");
+        settingsPanel.Children.Add(stableWindowsText);
+        rulesetPicker.SelectionChanged += (_, _) => SettingsChanged();
         settingsPanel.Children.Add(new TextBlock
         {
-            Text = "判定范围（1–200 ms）",
+            Text = "自定义判定范围（1–200 ms）",
             FontSize = 15 * fontScale,
             FontWeight = FontWeight.SemiBold,
             Foreground = Brush("#E4E8E9")
@@ -597,7 +610,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         settingsPanel.Children.Add(inputOffsetSlider);
         settingsPanel.Children.Add(new TextBlock
         {
-            Text = "设备输出越慢，听到的节拍越晚、按键也越晚。负数让判定提前，正数让判定延后。",
+            Text = "正数将输入时间前移（补偿偏晚的打击），负数将输入时间后移。单位为实际毫秒；仅影响手动判定。",
             Foreground = MutedBrush,
             FontSize = 11 * fontScale,
             TextWrapping = TextWrapping.Wrap,
@@ -716,6 +729,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         suppressSettings = true;
         autoPlayBox.IsChecked = settings.AutoPlay;
         styleBox.SelectedIndex = settings.NoteStyle == WindowsPlaytestNoteStyle.Circle ? 1 : 0;
+        if (rulesetPicker != null) rulesetPicker.SelectedIndex = settings.Ruleset == PlaytestRuleset.OsuStable ? 0 : 1;
         noteWidthSlider.Value = settings.NoteWidth * 100;
         noteHeightSlider.Value = settings.NoteHeight;
         fieldWidthSlider.Value = settings.PlayfieldWidth;
@@ -733,6 +747,7 @@ internal sealed class PlaytestWindow : PlatformWindow
     {
         if (suppressSettings || !settingsUiReady || session == null) return;
         var previousAutoPlay = settings.AutoPlay;
+        var previousRuleset = settings.Ruleset;
         settings = settings.With(
             autoPlay: autoPlayBox.IsChecked == true,
             noteStyle: styleBox.SelectedIndex == 1
@@ -749,12 +764,19 @@ internal sealed class PlaytestWindow : PlatformWindow
             greatWindowMilliseconds: greatWindowSlider.Value,
             goodWindowMilliseconds: goodWindowSlider.Value,
             missWindowMilliseconds: missWindowSlider.Value,
-            inputOffsetMilliseconds: inputOffsetSlider?.Value ?? settings.InputOffsetMilliseconds);
+            inputOffsetMilliseconds: inputOffsetSlider?.Value ?? settings.InputOffsetMilliseconds,
+            ruleset: rulesetPicker?.SelectedIndex == 1 ? PlaytestRuleset.LegacyCustom : PlaytestRuleset.OsuStable);
         suppressSettings = true;
         SyncJudgementWindowSliders();
         suppressSettings = false;
         session.SetAutoPlay(settings.AutoPlay, CurrentMilliseconds());
         session.SetJudgementWindows(settings.JudgementWindows);
+        if (previousRuleset != settings.Ruleset)
+        {
+            session.SetRuleset(settings.Ruleset);
+            playfield.SetSession(session);
+            Prepare();
+        }
         if (!previousAutoPlay && settings.AutoPlay) ResetAutoSoundCursor(CurrentMilliseconds());
         if (previousAutoPlay && !settings.AutoPlay)
             for (var lane = 0; lane < session.KeyCount; lane++)
@@ -788,6 +810,15 @@ internal sealed class PlaytestWindow : PlatformWindow
 
     private void SyncJudgementWindowSliders()
     {
+        var stable = settings.Ruleset == PlaytestRuleset.OsuStable;
+        if (stableScoreText != null) stableScoreText.IsVisible = stable;
+        bestWindowSlider.IsEnabled = greatWindowSlider.IsEnabled = goodWindowSlider.IsEnabled = missWindowSlider.IsEnabled = !stable;
+        if (stableWindowsText != null)
+        {
+            stableWindowsText.IsVisible = stable;
+            var w = session.StableRules; var rate = w.PlaybackRate;
+            stableWindowsText.Text = $"OD {w.OverallDifficulty:0.##} · ScoreV1\nMAX ±{w.Best / rate:0.##} / 300 ±{w.Great / rate:0.##}\n200 ±{w.Good / rate:0.##} / 100 ±{w.Ok / rate:0.##}\n50（早） {w.Meh / rate:0.##} ms · 迟侧超过 100 范围为 MISS\nLN 头尾联合判定；中断后最高 50";
+        }
         bestWindowSlider.Value = settings.BestWindowMilliseconds;
         greatWindowSlider.Value = settings.GreatWindowMilliseconds;
         goodWindowSlider.Value = settings.GoodWindowMilliseconds;
@@ -1101,7 +1132,7 @@ internal sealed class PlaytestWindow : PlatformWindow
     /// the offset moves the judgement window rather than the chart.
     /// </summary>
     private double JudgedMilliseconds() =>
-        CurrentMilliseconds() - settings.InputOffsetMilliseconds;
+        CurrentMilliseconds() - settings.InputOffsetMilliseconds * playbackRate;
 
     private void WindowKeyUp(object? sender, KeyEventArgs eventArgs)
     {
@@ -1143,13 +1174,11 @@ internal sealed class PlaytestWindow : PlatformWindow
         }
         if (!playing) return;
         var audioClock = audio.SampleClock();
-        var current = frameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate
-            ? BitConverter.Int64BitsToDouble(Interlocked.Read(ref sampledMillisecondsBits))
-            : audioClock.IsLoaded
+        var current = audioClock.IsLoaded
                 ? audioClock.Position.TotalMilliseconds
                 : SilentMilliseconds();
         if (settings.AutoPlay) ScheduleAutoPlaySounds(current);
-        ProcessEvents(session.Advance(current), playImmediateSound: false);
+        ProcessEvents(session.Advance(settings.AutoPlay ? current : current - settings.InputOffsetMilliseconds * playbackRate), playImmediateSound: false);
         for (var lane = 0; lane < session.KeyCount; lane++)
             playfield.SetLanePressed(lane, session.IsAutoLanePressed(lane) || IsManualLaneDown(lane));
         playfield.SetCurrentTime(current);
@@ -1167,9 +1196,12 @@ internal sealed class PlaytestWindow : PlatformWindow
         if (events.Count == 0) return;
         var last = events[^1];
         pendingOffsetText =
-            $"{last.OffsetMilliseconds:+0;-0;0} ms  {PlaytestSession.GradeText(last.Grade)}";
+            $"{last.OffsetMilliseconds / playbackRate:+0;-0;0} ms  {session.JudgementText(last.Grade)}";
         offsetUiDirty = true;
         scoreUiDirty = true;
+        foreach (var judgement in events)
+            if (judgement.Completed || judgement.IsHead)
+                playfield.ReportJudgement(judgement.Grade, judgement.OffsetMilliseconds / playbackRate);
         if (playImmediateSound)
         {
             for (var index = 0; index < events.Count; index++)
@@ -1191,6 +1223,7 @@ internal sealed class PlaytestWindow : PlatformWindow
         {
             scoreUiDirty = false;
             SetScoreText(comboText, $"{session.Combo} COMBO", force);
+            if (stableScoreText != null) SetScoreText(stableScoreText, session.Score.ToString("D7", CultureInfo.InvariantCulture), force);
             SetScoreText(
                 accuracyText,
                 session.Accuracy.ToString("P2", CultureInfo.InvariantCulture),
@@ -1310,6 +1343,7 @@ internal sealed class PlaytestWindow : PlatformWindow
                 ref sampledMillisecondsBits,
                 BitConverter.DoubleToInt64Bits(session.StartMilliseconds));
             session.Prepare();
+            playfield.SetSession(session);
             keysDown.Clear();
             for (var lane = 0; lane < session.KeyCount; lane++) playfield.SetLanePressed(lane, false);
             autoSoundIndex = 0;

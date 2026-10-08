@@ -29,9 +29,11 @@ public sealed class WindowsPlaytestSettings
         double greatWindowMilliseconds = 85,
         double goodWindowMilliseconds = 130,
         double missWindowMilliseconds = 170,
-        double inputOffsetMilliseconds = 0)
+        double inputOffsetMilliseconds = 0,
+        PlaytestRuleset ruleset = PlaytestRuleset.OsuStable)
     {
         AutoPlay = autoPlay;
+        Ruleset = Enum.IsDefined(ruleset) ? ruleset : PlaytestRuleset.OsuStable;
         NoteStyle = Enum.IsDefined(noteStyle) ? noteStyle : WindowsPlaytestNoteStyle.Brick;
         NoteWidth = double.IsFinite(noteWidth) ? Math.Clamp(noteWidth, .25, 1) : .82;
         NoteHeight = double.IsFinite(noteHeight) ? Math.Clamp(noteHeight, 10, 120) : 28;
@@ -60,6 +62,7 @@ public sealed class WindowsPlaytestSettings
     public static WindowsPlaytestSettings Default { get; } = new();
 
     public bool AutoPlay { get; }
+    public PlaytestRuleset Ruleset { get; }
     public WindowsPlaytestNoteStyle NoteStyle { get; }
     public double NoteWidth { get; }
     public double NoteHeight { get; }
@@ -104,7 +107,8 @@ public sealed class WindowsPlaytestSettings
         double? missWindowMilliseconds = null,
         double? inputOffsetMilliseconds = null,
         int? bindingKeyCount = null,
-        string[]? bindings = null)
+        string[]? bindings = null,
+        PlaytestRuleset? ruleset = null)
     {
         var next = keyBindings.ToDictionary(pair => pair.Key, pair => pair.Value.ToArray());
         if (bindingKeyCount.HasValue && bindings != null)
@@ -124,7 +128,7 @@ public sealed class WindowsPlaytestSettings
             greatWindowMilliseconds ?? GreatWindowMilliseconds,
             goodWindowMilliseconds ?? GoodWindowMilliseconds,
             missWindowMilliseconds ?? MissWindowMilliseconds,
-            inputOffsetMilliseconds ?? InputOffsetMilliseconds);
+            inputOffsetMilliseconds ?? InputOffsetMilliseconds, ruleset ?? Ruleset);
     }
 
     public static string[] CreateDefaultBindings(int keyCount)
@@ -232,7 +236,8 @@ public static class WindowsPlaytestSettingsStore
                 persisted.GreatWindowMilliseconds,
                 persisted.GoodWindowMilliseconds,
                 persisted.MissWindowMilliseconds,
-                persisted.InputOffsetMilliseconds);
+                persisted.InputOffsetMilliseconds,
+                Enum.TryParse<PlaytestRuleset>(persisted.Ruleset, out var ruleset) ? ruleset : PlaytestRuleset.OsuStable);
         }
         catch (Exception exception)
         {
@@ -273,6 +278,7 @@ public static class WindowsPlaytestSettingsStore
                 {
                     SchemaVersion = SchemaVersion,
                     AutoPlay = settings.AutoPlay,
+                    Ruleset = settings.Ruleset.ToString(),
                     NoteStyle = settings.NoteStyle.ToString(),
                     NoteWidth = settings.NoteWidth,
                     NoteHeight = settings.NoteHeight,
@@ -324,6 +330,7 @@ public static class WindowsPlaytestSettingsStore
     {
         public int SchemaVersion { get; set; }
         public bool AutoPlay { get; set; } = true;
+        public string Ruleset { get; set; } = nameof(PlaytestRuleset.OsuStable);
         public string NoteStyle { get; set; } = nameof(WindowsPlaytestNoteStyle.Brick);
         public double NoteWidth { get; set; } = .82;
         public double NoteHeight { get; set; } = 28;

@@ -48,6 +48,7 @@ var tests = new (string Name, Action Body)[]
     ("Beat position parsing and snapping", TestBeatPosition),
     ("Timing map round-trip", TestTimingMap),
     ("Playtest Scroll distance is piecewise and BPM-aware", TestScrollSpeedMap),
+    ("Stable mania OD/rate windows, ScoreV1 LN, accuracy and continuous SV scrolling", StableManiaSpecs.Run),
     ("Malody delay aligns the audio timeline", TestMalodyDelayAlignment),
     ("Malody .mc compatibility", TestMalody),
     ("Malody game-index export envelope stays compact and type-safe", TestMalodyGameIndexCompatibility),

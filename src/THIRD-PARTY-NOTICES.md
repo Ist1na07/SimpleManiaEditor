@@ -8,6 +8,7 @@ and place obligations on anyone who distributes a build of this software — see
 | Component | Licence |
 | --- | --- |
 | NAudio, NAudio.Vorbis | MIT |
+| ppy/osu mania Classic hit-window formulas (adapted) | MIT — `licenses/osu-MIT.txt` |
 | NLayer, NLayer.NAudioSupport | MIT |
 | OggVorbisEncoder | MIT |
 | WanaKana-net | MIT |
@@ -29,6 +30,11 @@ it at the source rather than from the package metadata.
 
 No visual assets from Malody or osu! are distributed with this project. Product
 names are used only to describe compatible chart formats.
+
+The native-mania Classic hit-window calculation is adapted from ppy/osu commit
+`7e25f111466f1b5648d86856e5737d852402effe`. The upstream reference and provenance
+are retained under `third_party/osu` in the source repository. This package does
+not embed the osu! client or osu.Framework, or claim official gameplay results.
 
 ## Copyleft components
 

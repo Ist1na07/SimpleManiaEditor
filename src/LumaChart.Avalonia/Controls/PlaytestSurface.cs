@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Media;
+using System.Diagnostics;
+using System.Globalization;
 using LumaChart.Application.Playtest;
 using LumaChart.Avalonia.Infrastructure;
 
@@ -25,6 +27,8 @@ public sealed class PlaytestSurface : Control
     private static readonly IBrush LaneABrush = Brush("#171B1E");
     private static readonly IBrush LaneBBrush = Brush("#1B2023");
     private static readonly IBrush NoteFillBrush = Brush("#D7E0E2");
+    private static readonly IBrush CenterNoteFillBrush = Brush("#F2C56A");
+    private static readonly IBrush LaneLightBrush = Brush("#2035C8FE");
     private static readonly IBrush HoldHeadFillBrush = Brush("#35C8FE");
     private static readonly IBrush HoldFillBrush = Brush("#8C6BA3F9");
     private static readonly IBrush HoldActiveFillBrush = Brush("#C46BA3F9");
@@ -53,6 +57,24 @@ public sealed class PlaytestSurface : Control
     private double judgementLinePosition = .84;
     private int lastVisitedNotes;
     private int maximumVisitedNotes;
+    private readonly Queue<(double Error, long Tick)> hitErrors = new();
+    private FormattedText? judgementText;
+    private long lastJudgementTick;
+
+    public void ReportJudgement(PlaytestHitGrade grade, double errorMilliseconds)
+    {
+        if (session == null) return;
+        lastJudgementTick = Stopwatch.GetTimestamp();
+        if (double.IsFinite(errorMilliseconds) && grade != PlaytestHitGrade.Miss)
+        {
+            if (hitErrors.Count == 32) hitErrors.Dequeue();
+            hitErrors.Enqueue((errorMilliseconds, lastJudgementTick));
+        }
+        judgementText = new FormattedText(session.JudgementText(grade), CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight, new Typeface("Segoe UI", FontStyle.Normal, FontWeight.Bold), 28,
+            grade == PlaytestHitGrade.Miss ? Brush("#FF7373") : grade == PlaytestHitGrade.Best ? HoldHeadFillBrush : NoteFillBrush);
+        InvalidateVisual();
+    }
 
     public PlaytestSurface()
     {
@@ -80,10 +102,10 @@ public sealed class PlaytestSurface : Control
         var holds = notes.Where(note => note.Note.IsHold).ToArray();
         holdIntervals = BuildHoldIntervals(holds, 0, holds.Length);
         pressed = new bool[session.KeyCount];
+        hitErrors.Clear(); judgementText = null;
         baseBpm = WindowsPlaytestScrollVelocityPolicy.ResolveBaseBpm(session.Document);
         currentMilliseconds = session.StartMilliseconds;
-        currentScrollPosition = session.ScrollMap.PositionAt(
-            session.TimingMap.MillisecondsToBeat(currentMilliseconds));
+        currentScrollPosition = session.ScrollPositionAtMilliseconds(currentMilliseconds);
         InvalidateVisual();
     }
 
@@ -104,8 +126,7 @@ public sealed class PlaytestSurface : Control
         if (session == null || !double.IsFinite(milliseconds)) return;
         if (Math.Abs(currentMilliseconds - milliseconds) < .01) return;
         currentMilliseconds = milliseconds;
-        currentScrollPosition = session.ScrollMap.PositionAt(
-            session.TimingMap.MillisecondsToBeat(milliseconds));
+        currentScrollPosition = session.ScrollPositionAtMilliseconds(milliseconds);
         InvalidateVisual();
     }
 
@@ -125,10 +146,9 @@ public sealed class PlaytestSurface : Control
     {
         if (session == null || !double.IsFinite(viewportHeight) || viewportHeight <= 0)
             return Diagnostics;
-        var pixelsPerBeat =
-            WindowsPlaytestScrollVelocityPolicy.PixelsPerScrollBeat(scrollSpeed, baseBpm);
+        var pixelsPerBeat = PixelsPerScrollUnit;
         var judgementY = viewportHeight * judgementLinePosition;
-        var margin = Math.Max(1, noteHeight / pixelsPerBeat + .5);
+        var margin = session.UsesStableRules ? noteHeight / pixelsPerBeat + .02 : Math.Max(1, noteHeight / pixelsPerBeat + .5);
         var minimumStart = currentScrollPosition -
                            (viewportHeight - judgementY) / pixelsPerBeat - margin;
         var maximumStart = currentScrollPosition + judgementY / pixelsPerBeat + margin;
@@ -163,6 +183,7 @@ public sealed class PlaytestSurface : Control
         var judgementY = size.Height * judgementLinePosition;
         DrawSlots(context, keyCount, origin, laneWidth, judgementY);
         DrawNotes(context, size.Height, origin, laneWidth, judgementY);
+        DrawHitFeedback(context, size);
     }
 
     private void DrawSlots(
@@ -176,6 +197,7 @@ public sealed class PlaytestSurface : Control
         for (var lane = 0; lane < keyCount; lane++)
         {
             var active = lane < pressed.Length && pressed[lane];
+            if (active) context.FillRectangle(LaneLightBrush, new Rect(origin + lane * laneWidth, 0, laneWidth, judgementY));
             var fill = active ? SlotPressedFillBrush : SlotFillBrush;
             var pen = active ? SlotPressedPen : SlotPen;
             var center = new Point(origin + (lane + .5) * laneWidth, judgementY);
@@ -201,9 +223,9 @@ public sealed class PlaytestSurface : Control
         double laneWidth,
         double judgementY)
     {
-        var pixelsPerBeat =
-            WindowsPlaytestScrollVelocityPolicy.PixelsPerScrollBeat(scrollSpeed, baseBpm);
-        var margin = Math.Max(1, noteHeight / pixelsPerBeat + .5);
+        if (session == null) return;
+        var pixelsPerBeat = PixelsPerScrollUnit;
+        var margin = session.UsesStableRules ? noteHeight / pixelsPerBeat + .02 : Math.Max(1, noteHeight / pixelsPerBeat + .5);
         var minimumStart = currentScrollPosition - (height - judgementY) / pixelsPerBeat - margin;
         var maximumStart = currentScrollPosition + judgementY / pixelsPerBeat + margin;
         var visited = 0;
@@ -242,15 +264,18 @@ public sealed class PlaytestSurface : Control
         var x = origin + runtime.Note.Lane * laneWidth + (laneWidth - width) / 2;
         var naturalHeadY = judgementY -
                            (runtime.StartScrollPosition - currentScrollPosition) * pixelsPerBeat;
-        var headY = runtime.Note.IsHold && runtime.HeadJudged ? judgementY : naturalHeadY;
+        var headY = runtime.Note.IsHold && runtime.HeadJudged && runtime.Holding && currentMilliseconds >= runtime.StartMilliseconds
+            ? judgementY : naturalHeadY;
         var tailY = judgementY -
                     (runtime.EndScrollPosition - currentScrollPosition) * pixelsPerBeat;
         var fill = runtime.Grade == PlaytestHitGrade.Miss
             ? MissFillBrush
+            : session.UsesStableRules ? session.KeyCount % 2 == 1 && runtime.Note.Lane == session.KeyCount / 2
+                ? CenterNoteFillBrush : runtime.Note.Lane % 2 == 1 ? HoldHeadFillBrush : NoteFillBrush
             : runtime.Note.IsHold ? HoldHeadFillBrush : NoteFillBrush;
         if (!runtime.Note.IsHold)
         {
-            DrawHead(context, new Rect(x, headY - noteHeight / 2, width, noteHeight), fill, NotePen);
+            DrawHead(context, NoteRectangle(x, headY, width), fill, NotePen);
             return;
         }
 
@@ -270,12 +295,41 @@ public sealed class PlaytestSurface : Control
             body,
             radius,
             radius);
-        if (!runtime.HeadJudged)
+        if (!runtime.HeadJudged || runtime.Holding)
             DrawHead(
                 context,
-                new Rect(x, headY - noteHeight / 2, width, noteHeight),
+                NoteRectangle(x, headY, width),
                 fill,
                 HoldHeadPen);
+        if (session.UsesStableRules)
+            DrawHead(context, NoteRectangle(x, tailY, width), fill, HoldHeadPen);
+    }
+
+    private double PixelsPerScrollUnit => session?.UsesStableRules == true ? scrollSpeed / session.StableRules.PlaybackRate
+        : WindowsPlaytestScrollVelocityPolicy.PixelsPerScrollBeat(scrollSpeed, baseBpm);
+    private Rect NoteRectangle(double x, double y, double width) =>
+        new(x, y - (session?.UsesStableRules == true ? noteHeight : noteHeight / 2), width, noteHeight);
+
+    private void DrawHitFeedback(DrawingContext context, Size size)
+    {
+        if (session?.UsesStableRules != true) return;
+        var elapsed = Stopwatch.GetElapsedTime(lastJudgementTick).TotalSeconds;
+        if (judgementText != null && elapsed < .6)
+            using (context.PushOpacity(Math.Min(1, (.6 - elapsed) * 4)))
+                context.DrawText(judgementText, new Point((size.Width - judgementText.Width) / 2, size.Height * .36));
+        var center = size.Width / 2;
+        var y = size.Height - 20;
+        context.FillRectangle(SlotFillBrush, new Rect(center - 120, y, 240, 4));
+        var perfect = session.StableRules.Best / session.StableRules.PlaybackRate;
+        context.FillRectangle(HoldHeadFillBrush, new Rect(center - perfect, y, perfect * 2, 4));
+        context.DrawLine(NotePen, new Point(center, y - 4), new Point(center, y + 8));
+        foreach (var (error, tick) in hitErrors)
+        {
+            var age = Stopwatch.GetElapsedTime(tick).TotalSeconds;
+            if (age >= 5) continue;
+            using (context.PushOpacity(1 - age / 5))
+                context.DrawLine(NotePen, new Point(center + Math.Clamp(error, -120, 120), y - 4), new Point(center + Math.Clamp(error, -120, 120), y + 8));
+        }
     }
 
     private void DrawHead(DrawingContext context, Rect rect, IBrush fill, Pen pen)

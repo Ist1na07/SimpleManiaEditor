@@ -1,4 +1,4 @@
-# SimpleManiaEditor 0.1.7 体验版
+# SimpleManiaEditor 0.1.8 体验版
 
 Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
@@ -44,7 +44,7 @@ Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
 网格默认 osu 记法：1/4 = 音乐全音符的 1/16，120 BPM 下每格 125 ms。可在设置中选 general 记法，只改变显示和输入换算，不移动音符。轨道的编辑、复制、同步和存储边界见包内 `WORKBENCH-TRACKS.md`，或仓库 `docs/WORKBENCH-TRACKS.md`。
 
-编辑播放与内置试玩是不同场景。试玩的默认 7K 键位为 `S D F Space J K L`，`Enter` 控制播放；键位可在试玩设置中调整。默认玩法判定仍沿用上游，不能当作官方成绩。
+编辑播放与内置试玩是不同场景。试玩的默认 7K 键位为 `S D F Space J K L`，`Enter` 控制播放；键位可在试玩设置中调整。默认「osu! stable 兼容」按 OD 提供六档判定、ScoreV1 LN 头尾合并、准确率与无 Mods 分数；旧版自定义方案可在试玩设置中切换。手动体验请关闭 AutoPlay。流速使用 px/s。不是官方成绩；皮肤导入、完整 hitsound 和 HP/Mods 仍待实现。
 
 ## 保存和恢复
 
@@ -61,7 +61,7 @@ Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
 应用以本地模式运行，不需要账号，不连接原作者的账号或更新服务。更新时保留用户资料目录即可。
 
-当前完成范围与限制见 `ReleaseNotes.md`，或仓库 `docs/RELEASE-0.1.7.md` 和前版发布说明。
+当前完成范围与限制见 `ReleaseNotes.md`，或仓库 `docs/RELEASE-0.1.8.md` 和前版发布说明。
 
 未完成功能以 `BACKLOG.md` 为当前清单，仓库对应 `docs/BACKLOG.md`。
 

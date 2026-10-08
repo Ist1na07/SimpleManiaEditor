@@ -9,6 +9,8 @@ public enum PlaytestHitGrade
     Best,
     Great,
     Good,
+    Ok,
+    Meh,
     Miss
 }
 
@@ -31,8 +33,10 @@ public sealed class PlaytestRuntimeNote
     public ChartNote Note { get; }
     public double StartMilliseconds { get; }
     public double EndMilliseconds { get; }
-    public double StartScrollPosition { get; }
-    public double EndScrollPosition { get; }
+    public double StartScrollPosition { get; internal set; }
+    public double EndScrollPosition { get; internal set; }
+    internal double HeadError { get; set; }
+    internal bool HoldBroken { get; set; }
     public bool HeadJudged { get; internal set; }
     public bool Holding { get; internal set; }
     public bool Completed { get; internal set; }
@@ -83,7 +87,7 @@ public readonly record struct PlaytestJudgementWindows
 /// clocks, audio, keyboard routing and drawing; this type owns strict lane order,
 /// judgement windows, holds, AutoPlay and score state.
 /// </summary>
-public sealed class PlaytestSession
+public sealed partial class PlaytestSession
 {
     private static readonly IReadOnlyList<PlaytestJudgementEvent> EmptyEvents =
         Array.Empty<PlaytestJudgementEvent>();
@@ -110,7 +114,9 @@ public sealed class PlaytestSession
         ChartDocument source,
         double startBeat,
         bool autoPlay,
-        PlaytestJudgementWindows? judgementWindows = null)
+        PlaytestJudgementWindows? judgementWindows = null,
+        PlaytestRuleset ruleset = PlaytestRuleset.LegacyCustom,
+        double playbackRate = 1)
     {
         ArgumentNullException.ThrowIfNull(source);
         Document = source.Clone();
@@ -140,7 +146,10 @@ public sealed class PlaytestSession
         autoReleaseMilliseconds = new double[KeyCount];
         AutoPlay = autoPlay;
         JudgementWindows = judgementWindows ?? PlaytestJudgementWindows.Default;
-        Prepare();
+        StableRules = new StableManiaRules(Document.Metadata.OverallDifficulty, playbackRate);
+        StableScrollMap = new ManiaScrollMap(Document, TimingMap, ScrollMap);
+        stableHoldsByEnd = notes.Where(n => n.Note.IsHold).OrderBy(n => n.EndMilliseconds).ToArray();
+        SetRuleset(ruleset);
     }
 
     public ChartDocument Document { get; }
@@ -161,6 +170,7 @@ public sealed class PlaytestSession
     {
         globalMissIndex = 0;
         autoPlayIndex = 0;
+        stableTailIndex = 0;
         Array.Clear(laneIndexes);
         Array.Clear(activeHolds);
         Array.Clear(autoReleaseMilliseconds);
@@ -169,21 +179,31 @@ public sealed class PlaytestSession
         judged = 0;
         completed = 0;
         earnedAccuracy = 0;
+        stableScore = 0; stableBonus = 100;
         foreach (var note in notes)
         {
             note.HeadJudged = false;
             note.Holding = false;
             note.Completed = false;
             note.Grade = PlaytestHitGrade.None;
+            note.HeadError = double.PositiveInfinity;
+            note.HoldBroken = false;
             var skipBefore = AutoPlay
                 ? StartMilliseconds - .5
-                : StartMilliseconds - JudgementWindows.MissMilliseconds;
+                : StartMilliseconds - (UsesStableRules ? StableRules.Ok : JudgementWindows.MissMilliseconds);
             if (note.StartMilliseconds >= skipBefore) continue;
+            if (UsesStableRules && note.Note.IsHold && note.EndMilliseconds >= StartMilliseconds)
+            {
+                note.HeadJudged = true; note.HoldBroken = true;
+                activeHolds[note.Note.Lane] = note;
+                continue;
+            }
             note.HeadJudged = true;
             note.Completed = true;
             completed++;
         }
         while (globalMissIndex < notes.Count && notes[globalMissIndex].Completed) globalMissIndex++;
+        scoringNoteCount = notes.Count - completed;
         while (autoPlayIndex < notes.Count && notes[autoPlayIndex].Completed) autoPlayIndex++;
         for (var lane = 0; lane < laneQueues.Length; lane++)
         {
@@ -212,6 +232,7 @@ public sealed class PlaytestSession
     {
         if (AutoPlay || lane < 0 || lane >= laneQueues.Length || !double.IsFinite(currentMilliseconds))
             return EmptyEvents;
+        if (UsesStableRules) return PressStable(lane, currentMilliseconds);
         var events = new List<PlaytestJudgementEvent>();
         var queue = laneQueues[lane];
         var index = laneIndexes[lane];
@@ -253,6 +274,7 @@ public sealed class PlaytestSession
     {
         if (AutoPlay || lane < 0 || lane >= activeHolds.Length || !double.IsFinite(currentMilliseconds))
             return EmptyEvents;
+        if (UsesStableRules) return ReleaseStable(lane, currentMilliseconds);
         var hold = activeHolds[lane];
         if (hold == null) return EmptyEvents;
         hold.Holding = false;
@@ -268,6 +290,7 @@ public sealed class PlaytestSession
     public IReadOnlyList<PlaytestJudgementEvent> Advance(double currentMilliseconds)
     {
         if (!double.IsFinite(currentMilliseconds)) return EmptyEvents;
+        if (UsesStableRules) return AdvanceStable(currentMilliseconds);
         List<PlaytestJudgementEvent>? events = null;
         if (AutoPlay) RunAutoPlay(currentMilliseconds, ref events);
         while (globalMissIndex < notes.Count &&
@@ -360,7 +383,8 @@ public sealed class PlaytestSession
         note.Completed = true;
         completed++;
         judged++;
-        earnedAccuracy += note.Grade switch
+        if (UsesStableRules) AddStableScore(note.Grade);
+        earnedAccuracy += UsesStableRules ? StableManiaRules.AccuracyValue(note.Grade) : note.Grade switch
         {
             PlaytestHitGrade.Best => 1,
             PlaytestHitGrade.Great => .8,

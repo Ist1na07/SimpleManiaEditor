@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.7；0.1.6 基线提交 `bb96b0b`。源码位于 `src/`。
+- 最新交付 0.1.8；0.1.7 基线提交 `b8fc904`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -36,6 +36,10 @@
 
 ## 已定位的原因
 
+0.1.8：用户明确要求 playtest 对齐 osu! stable。PlaytestRuleset.OsuStable 为 Windows 设置默认，LegacyCustom 保留。StableManiaRules 轻量移植 ppy/osu 固定提交 Classic/native/ScoreV1 窗口，官方 wiki 的单次 LN 头尾合并（非 lazer 1.5x 松手/双判定）、非对称晚侧截止、准确率及无 Mods base/bonus 分数。PlaytestSession.Stable.cs 持续 hold/regrab/timeout 和单次计分；ManiaScrollMap 连续毫秒积分 BPM/SV、按时长主 BPM 归一化。绘制头尾底边/按住 head/clipping/7K 列色，误差条和判定反馈。Render 与输入读取实时音频时钟，偏移按实际毫秒乘倍率，frame miss 使用相同手动时钟。真实 Avalonia 7K Space、重复、松手和窗口/偏移、profile/persistence、100k 可见区回归；核心 50/50。
+
+上游参考 `third_party/osu/UPSTREAM.md`，源码 `ManiaHitWindows.cs`，完整 MIT 许可 `src/licenses/osu-MIT.txt` 随包复制。不是嵌入完整游戏；HP/Mods/replay/完整 combo tick/外部 skin/native chart hitsound bank 待补，像素流速不是 stable 1–40 值，硬件延迟不能用 headless 结果代替。
+
 0.1.7：TimelinePlacementGeometry 的 Tap 永远返回单键，Hold 零长度也返回单键。osu 绘制工具左键替换（整块尾部优先调整）、中键移动，其他工具中键平移。替换对象按手势仅隐藏预览，release 在 WindowsProEditorCommand 的一次 Mutate 中删旧添新，包含 changeSerial/只读/锁校验。hover 按键按原鼠标位置画、底边中心对尖部，不写文档。默认 NoteHeight=28，layout revision 4 迁移原默认 32。ChartValidator 同轨尾头接触（含 tap）也报重叠。
 
 - `MainWindow.Tracks.cs` 新增后 `UpdateMainTrackWidth` 改主轨宽度，且 `AddEditorTrackAsync` 主动滚到底。
@@ -59,7 +63,7 @@ $env:DOTNET_CLI_HOME = 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-aud
 ./scripts/Test.ps1 -Dotnet 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-audit-bc77d02e8ce44c438d3a7de2e0060cbd\sdk10\dotnet.exe' -RuntimeDotnet 'C:\Program Files\dotnet\dotnet.exe'
 ```
 
-- 49 项核心 specs；自有 `tests/SimpleManiaEditor.UiSmoke` 测试实际 Avalonia 控件、真实解码/DSP、模拟设备和 Skia 截图。
+- 50 项核心 specs；自有 `tests/SimpleManiaEditor.UiSmoke` 测试实际 Avalonia 控件、真实解码/DSP、模拟设备和 Skia 截图。
 - 不运行依赖作者私有 D:\ 数据的全量上游 UI specs。
 - 发布 `scripts/Publish.ps1 -Dotnet <SDK> -Zip`，自包含 Windows x64 包；发布前提交以便内嵌版本 SHA 正确。
 - 最终 ZIP 必须解压到新的 artifacts 子目录，隐藏运行 `--smoke-test`，检查真实 ExitCode、版本 SHA、演示、说明、许可；PowerShell 直接调用 GUI exe 的 LASTEXITCODE 不可信。
