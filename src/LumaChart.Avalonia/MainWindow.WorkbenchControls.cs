@@ -24,12 +24,8 @@ public sealed partial class MainWindow
         Grid.SetColumn(commands, 0); Grid.SetColumnSpan(commands, 1); Grid.SetRow(commands, 0); Grid.SetRowSpan(commands, 1);
         commands.Background = Brushes.Transparent; commands.BorderThickness = new Thickness(0);
         if (commands.Child is ScrollViewer scroll) scroll.MaxWidth = double.PositiveInfinity;
-        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto"), ColumnSpacing = 8 };
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
         content.Children.Add(commands); Grid.SetColumn(presets, 1); content.Children.Add(presets);
-        var adjustments = new ScrollViewer { Content = BuildAdjustmentSliders(),
-            HorizontalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = global::Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
-        Grid.SetRow(adjustments, 1); Grid.SetColumnSpan(adjustments, 2); content.Children.Add(adjustments);
         var bar = new Border { Background = RaisedBrush, Padding = new Thickness(8, 4), MinHeight = 48,
             BorderBrush = StrokeBrush, BorderThickness = new Thickness(0, 0, 0, 1), Child = content };
         AutomationProperties.SetAutomationId(bar, "Editor.Toolbar.Fixed");
@@ -77,7 +73,7 @@ public sealed partial class MainWindow
 
     private Control BuildAdjustmentSliders()
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 22 };
+        var panel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6 };
         panel.Children.Add(PresetAdjustment("网格", QuickSnapDivisions.Length, out fixedGridSlider, out fixedGridText,
             index => GridLabel(QuickSnapDivisions[index]), "Editor.Adjustment.Grid", out adjustmentGridTicks));
         fixedGridSlider!.ValueChanged += (_, e) =>

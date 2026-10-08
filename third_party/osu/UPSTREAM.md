@@ -1,5 +1,23 @@
 # osu!mania rules reference
 
+## 0.1.11 official runtime
+
+Actual playtest now runs `ppy.osu.Game` and four official ruleset packages
+2026.916.0, source `98fb49876c0242fcf649e0250d6f6b3458769a9e`, with
+Framework 2026.914.0 (`59220cc25c394eddd78cdae9d3dfdee0a5caa0b3`) and
+Resources 2026.909.0 (`742ca60d4e7273dce0cac2fced7cd132f26f11c8`).
+`SimpleManiaEditor.OsuHost` runs OsuGame and a thin Player subclass in its own
+SDL/GPU/audio process. `PracticePlayer` follows upstream EditorPlayer's clock,
+autoplay and local practice hooks; it uses the public API, without copied
+rendering, private reflection patches or a hand-written skin decoder. Prior
+objects are removed only from the disposable handoff. The complete official
+skin/UI/gameplay dependencies come from pinned NuGet packages, recorded in the
+host lockfile. Old source references below document the previous adaptation,
+which no longer runs from the editor's playtest button.
+
+Game/framework MIT and resource CC BY-NC/font/native notices travel in the
+package. Read `src/THIRD-PARTY-NOTICES.md` before public distribution.
+
 0.1.10 additionally retains the pinned `LegacyManiaSkinDecoder.cs`, `LegacyNotePiece.cs`, and `LegacyHoldNoteTailPiece.cs` for auditable skin parsing and tail-anchor compatibility. OsuIniDocument adapts the repeated-Keys configuration flow; PlaytestSurface uses the official opposite direction for the hold tail. This remains an Avalonia adaptation, not a complete osu.Framework host.
 
 - Repository: https://github.com/ppy/osu

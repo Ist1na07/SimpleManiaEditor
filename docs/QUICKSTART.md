@@ -40,11 +40,11 @@ Windows x64 便携版，已包含 .NET 运行时，无需安装开发环境。
 
 左侧工具栏可以切换四个基础工具并显示当前快捷键。默认 osu style 的 LN 头、尾和单点相同，面身更窄；设置 → 快捷键中的皮肤选项可换回 malody style。Alt+滚轮缩放范围为 12～3840 DIP/beat。
 
-快捷编辑已合并到左侧；原齿轮功能常驻上方。调整栏默认展开，网格、缩放、倍速刻度可点击。BPM、Offset 与测定工具归入 Timing Edit。
+快捷编辑已合并到左侧；原齿轮功能常驻上方。网格、缩放、倍速刻度在右下角卡片，拖动标题移动并记忆位置。BPM、Offset 与测定工具归入 Timing Edit。
 
 网格默认 osu 记法：1/4 = 音乐全音符的 1/16，120 BPM 下每格 125 ms。可在设置中选 general 记法，只改变显示和输入换算，不移动音符。轨道的编辑、复制、同步和存储边界见包内 `WORKBENCH-TRACKS.md`，或仓库 `docs/WORKBENCH-TRACKS.md`。
 
-编辑播放与内置试玩是不同场景。试玩的默认 7K 键位为 `S D F Space J K L`，`Enter` 控制播放；键位可在试玩设置中调整。默认「osu! stable 兼容」按 OD 提供六档判定、ScoreV1 LN 头尾合并、准确率与无 Mods 分数；旧版自定义方案可在试玩设置中切换。手动体验请关闭 AutoPlay。默认全屏，F1 设置、Esc 暂停、F11 切换全屏；可导入 osu!mania 皮肤与 osu!.用户.cfg 键位。落速按 lazer 的 1–40 设置，F3/F4 调整。不是官方成绩；完整 hitsound 和 HP/Mods 仍待实现。详细说明见包内 PLAYTEST.md。
+试玩直接运行官方 osu! 游戏宿主和 mania 规则集，默认全屏，采用 lazer 的判定、计分、皮肤和 1–40 落速。7K 默认 `S D F Space J K L`，已有键位首次迁移。`Ctrl+O` 打开官方设置，`Tab` 切换自动演奏，`Esc` 暂停，`F3/F4` 减/加落速，`Ctrl+R` 重试。右键顶部试玩按钮可导入皮肤目录、`.osk` 和 osu!.用户.cfg。退出练习回到编辑器；独立数据目录不会覆盖已有 osu!。详细说明见包内 PLAYTEST.md。
 
 ## 保存和恢复
 

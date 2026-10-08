@@ -178,8 +178,26 @@ internal static class Program
         var unifiedBar = window.GetVisualDescendants().OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Toolbar.Fixed");
         Require(commandMenu.GetVisualAncestors().Contains(unifiedBar) && gridPicker.GetVisualAncestors().Contains(unifiedBar),
             "commands and presets were not merged into the same fixed bar");
+        var adjustmentCard = window.GetVisualDescendants().OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.QuickValuesPalette");
         foreach (var id in new[] { "Editor.Adjustment.Grid", "Editor.Adjustment.Zoom", "Editor.Adjustment.Rate" })
-            Require(window.GetVisualDescendants().OfType<Slider>().Single(c => AutomationProperties.GetAutomationId(c) == id).GetVisualAncestors().Contains(unifiedBar), "adjustment control is outside the unified top bar");
+            Require(window.GetVisualDescendants().OfType<Slider>().Single(c => AutomationProperties.GetAutomationId(c) == id).GetVisualAncestors().Contains(adjustmentCard), "adjustment control is outside the movable card");
+        Require(!adjustmentCard.GetVisualAncestors().Contains(unifiedBar), "adjustments remain in the top bar");
+        var cardOrigin = adjustmentCard.TranslatePoint(new Point(), window)!.Value;
+        Require(cardOrigin.X > window.Bounds.Width / 2 && cardOrigin.Y > window.Bounds.Height / 2,
+            "adjustment card is not initially at bottom right");
+        var cardHeader = (Control)((StackPanel)adjustmentCard.Child!).Children[0];
+        var dragOrigin = cardHeader.TranslatePoint(new Point(30, 14), window)!.Value;
+        window.MouseDown(dragOrigin, MouseButton.Left);
+        window.MouseMove(dragOrigin + new Vector(-90, -70), RawInputModifiers.LeftMouseButton);
+        window.MouseUp(dragOrigin + new Vector(-90, -70), MouseButton.Left);
+        Pump(100);
+        var moved = adjustmentCard.TranslatePoint(new Point(), window)!.Value;
+        Require(Math.Abs(moved.X - cardOrigin.X + 90) < 2 && Math.Abs(moved.Y - cardOrigin.Y + 70) < 2, "adjustment card did not follow header drag");
+        var returnOrigin = cardHeader.TranslatePoint(new Point(30, 14), window)!.Value;
+        window.MouseDown(returnOrigin, MouseButton.Left);
+        window.MouseMove(returnOrigin + new Vector(90, 70), RawInputModifiers.LeftMouseButton);
+        window.MouseUp(returnOrigin + new Vector(90, 70), MouseButton.Left);
+        Pump(100);
         Require(!window.GetVisualDescendants().OfType<Expander>().Any(e => e.Header?.ToString() == "调整"), "standalone adjustment expander remains");
         Require(window.GetVisualDescendants().OfType<Button>().Count(b => AutomationProperties.GetAutomationId(b)?.StartsWith("Editor.Toolbar.Playtest") == true) == 1 &&
             !window.GetVisualDescendants().OfType<Button>().Any(b => AutomationProperties.GetAutomationId(b)?.StartsWith("Editor.Playtest.From") == true), "duplicate playtest actions remain");
@@ -246,12 +264,17 @@ internal static class Program
             "Space activated a focused non-text option picker");
         timeline.SetCurrentBeat(4);
         var playtestButton = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Toolbar.Playtest");
-        playtestButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        PumpUntil(() => window.OwnedWindows.OfType<PlaytestWindow>().Any());
-        var playtest = window.OwnedWindows.OfType<PlaytestWindow>().Single();
-        PumpUntil(() => playtest.Diagnostics.Playing);
-        Require(Math.Abs(playtest.Diagnostics.StartMilliseconds - 2000) < .01, "one-click playtest did not start at current time");
-        playtest.Close();
+        var originalProcessRunner = OfficialPlaytestLauncher.ProcessRunner;
+        var recorder = new RecordingOfficialPlaytestProcess();
+        OfficialPlaytestLauncher.ProcessRunner = recorder;
+        try
+        {
+            playtestButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => recorder.Request != null);
+            Require(Math.Abs(recorder.Request!.StartMilliseconds - 2000) < .01, "official playtest did not receive the current timeline position");
+            Require(window.OwnedWindows.OfType<PlaytestWindow>().Count() == 0, "custom playtest renderer is still used");
+        }
+        finally { OfficialPlaytestLauncher.ProcessRunner = originalProcessRunner; }
         Pump(200);
         var settingsTab = (TabItem)typeof(MainWindow).GetField("settingsInspectorTab", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         var inspectorTabs = (TabControl)typeof(MainWindow).GetField("editorInspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
@@ -272,6 +295,19 @@ internal static class Program
         Require(save.GetAwaiter().GetResult()?.StructurallyEqual == true, "final audio workflow save failed");
         window.Close();
         Pump(200);
+    }
+
+    private sealed class RecordingOfficialPlaytestProcess : IOfficialPlaytestProcess
+    {
+        public SimpleManiaEditor.PlaytestBridge.PlaytestRequest? Request { get; private set; }
+        public Task RunAsync(string requestPath)
+        {
+            Request = SimpleManiaEditor.PlaytestBridge.PlaytestRequest.Read(requestPath);
+            using var archive = System.IO.Compression.ZipFile.OpenRead(Request.BeatmapArchive);
+            Require(archive.GetEntry(Request.ChartEntry) != null, "official handoff does not contain the current chart");
+            Require(archive.Entries.Any(e => e.FullName.EndsWith("simulation.wav")), "official handoff omitted the song audio");
+            return Task.CompletedTask;
+        }
     }
 
     private static void Click(Window window, Point point, RawInputModifiers modifiers)

@@ -11,6 +11,9 @@ Push-Location $taskRoot
 try {
     & $Dotnet publish 'src/LumaChart.Avalonia/LumaChart.Avalonia.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -o $publishRoot
     if ($LASTEXITCODE -ne 0) { throw 'Windows portable publish failed.' }
+    & $Dotnet publish 'src/SimpleManiaEditor.OsuHost/SimpleManiaEditor.OsuHost.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -o (Join-Path $publishRoot 'osu-host')
+    if ($LASTEXITCODE -ne 0) { throw 'Official osu! gameplay host publish failed.' }
+    & (Join-Path $PSScriptRoot 'Collect-OsuHostNotices.ps1') -Destination (Join-Path $publishRoot 'osu-host')
     & (Join-Path $PSScriptRoot 'New-Demo.ps1') -OutputDirectory (Join-Path $publishRoot 'examples/7K-Sandbox')
     Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/QUICKSTART.md') -Destination (Join-Path $publishRoot 'QuickStart.md')
     Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/PLAYTEST.md') -Destination (Join-Path $publishRoot 'PLAYTEST.md')

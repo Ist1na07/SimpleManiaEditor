@@ -4,6 +4,8 @@
   <Project Path="src/LumaChart.Online/LumaChart.Online.csproj" />
   <Project Path="src/LumaChart.Storage.Abstractions/LumaChart.Storage.Abstractions.csproj" />
   <Project Path="src/LumaChart.Avalonia/LumaChart.Avalonia.csproj" />
+  <Project Path="src/SimpleManiaEditor.PlaytestBridge/SimpleManiaEditor.PlaytestBridge.csproj" />
+  <Project Path="src/SimpleManiaEditor.OsuHost/SimpleManiaEditor.OsuHost.csproj" />
   <Project Path="src/LumaChart.Specs/LumaChart.Specs.csproj" />
   <Project Path="tests/SimpleManiaEditor.UiSmoke/SimpleManiaEditor.UiSmoke.csproj" />
 </Solution>

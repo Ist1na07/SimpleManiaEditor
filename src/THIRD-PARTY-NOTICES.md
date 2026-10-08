@@ -9,6 +9,9 @@ and place obligations on anyone who distributes a build of this software — see
 | --- | --- |
 | NAudio, NAudio.Vorbis | MIT |
 | ppy/osu mania Classic hit windows, lazer scroll-time and legacy skin rules (adapted) | MIT — `licenses/osu-MIT.txt` |
+| Official osu! Game, mania/osu/taiko/catch rulesets 2026.916.0; osu.Framework 2026.914.0 (playtest host) | MIT — `licenses/osu-MIT.txt` |
+| Official osu.Game.Resources 2026.909.0 (unmodified NuGet resources) | CC BY-NC 4.0 plus asset-specific notices — `licenses/osu-Resources-LICENSE.md` and bundled font notices |
+| Native BASS / FFmpeg distributed by the upstream framework NativeLibs package | BASS non-commercial terms; FFmpeg LGPL/GPL terms, see upstream native library provenance below |
 | NLayer, NLayer.NAudioSupport | MIT |
 | OggVorbisEncoder | MIT |
 | WanaKana-net | MIT |
@@ -28,13 +31,44 @@ repository at https://github.com/Cutano/Kawazu states MIT, and that is the
 grant relied on here. If you fork this project and that matters to you, confirm
 it at the source rather than from the package metadata.
 
-No visual assets from Malody or osu! are distributed with this project. Product
-names are used only to describe compatible chart formats.
+No user-supplied skins or Malody visual assets are distributed. Since 0.1.11,
+the separate playtest host includes the unmodified official osu! resource NuGet
+package. Copyright (c) ppy Pty Ltd and the credited original asset creators.
+Source: https://github.com/ppy/osu-resources/tree/742ca60d4e7273dce0cac2fced7cd132f26f11c8
+These resources are not covered by this repository's MIT grant. Original
+font notices for Torus, Torus Alternate, Venera, Noto and Roboto travel in
+`licenses/`; public redistribution must separately resolve the font distribution
+terms. This local experience build is not a claim of permission to commercially
+redistribute the upstream assets or native audio libraries.
 
 The native-mania Classic hit-window calculation is adapted from ppy/osu commit
 `7e25f111466f1b5648d86856e5737d852402effe`. The upstream reference and provenance
-are retained under `third_party/osu` in the source repository. This package does
-not embed the osu! client or osu.Framework, or claim official gameplay results.
+are retained under `third_party/osu` in the source repository. Since 0.1.11,
+actual playtest uses upstream osu! Game and osu.Framework, with a small local
+practice handoff. It is a third-party host, is not endorsed by ppy, and never
+submits gameplay results. The earlier adapted renderer is not used in this path.
+
+## Official playtest dependency provenance
+
+The game/ruleset packages are pinned to 2026.916.0, source commit
+`98fb49876c0242fcf649e0250d6f6b3458769a9e`; Framework 2026.914.0 comes from
+`59220cc25c394eddd78cdae9d3dfdee0a5caa0b3`. Official resources are unchanged.
+The host and its dependency versions are listed in `packages.lock.json`.
+NativeLibs 2025.806.0 comes from osu-framework commit
+`a7b203bee6289e15d29490ec1d578dbc07257290`, see
+https://github.com/ppy/osu-framework/tree/a7b203bee6289e15d29490ec1d578dbc07257290/osu.Framework.NativeLibs
+BASS terms: https://www.un4seen.com/bass.html
+FFmpeg licensing and source: https://ffmpeg.org/legal.html and https://ffmpeg.org/download.html
+Native DLLs remain replaceable. The host dependency notice generated during
+publish retains package authors, copyrights, licence expressions/links and
+available package licence files. See also the upstream source/build scripts.
+
+NuGet auditing remains enabled. The official dependency graph pins AutoMapper
+13; we use the latest compatible ImageSharp 3.1 release. Six exact upstream
+advisories are suppressed for this compatibility build, not a broad warning
+class: the five ImageSharp GHSA entries and AutoMapper GHSA-rvv3-g6hj-g44x
+listed in the host csproj. They are dependency debt to review with upstream;
+this build does not claim these libraries are vulnerability-free.
 
 ## Copyleft components
 

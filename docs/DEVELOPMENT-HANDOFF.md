@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.10；0.1.9 基线提交 `9805572`。源码位于 `src/`。
+- 最新交付 0.1.11；0.1.10 基线提交 `c1422d0`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -33,6 +33,10 @@
 - 精确面尾拖动命中以实际时间底边为入口；空白右键取消 Note/Timing 选择，底板空白也取消各轨选择。
 - 底板未处理滚轮交给主时间轴；横向条 Visibility=Visible、AllowAutoHide=false、高 24 DIP、柄 12 DIP。
 - ZCode 窗口可发现，但两次 Computer Use 捕获返回 FrameArrived/window capture timed out；本轮未提交外部模型任务。
+
+## 0.1.11 官方宿主
+
+用户要求右下角可拖动滑条卡片，质疑自制皮肤渲染并授权优先官方客户端。MainWindow 唯一顶部行 + BuildQuickValuesPalette 三滑条竖排，旧卡片拖动/保存/夹取复用。OfficialPlaytestLauncher 用独立测试副本 OsuFullPackageExportService 生成 .osz，将音频/资源/起点/倍率和迁移设定写 PlaytestRequest（独立 net8 DTO）。SimpleManiaEditor.OsuHost 为 net10，官方 NuGet 2026.916.0 + Framework 2026.914.0，不与 Avalonia 同进程；OsuGame/Player/官方 skin 与 Ctrl+O 设置真实运行。首次迁移，显式 cfg revision 一次性应用，随后不覆盖官方配置。源皮肤四份包括 Wilben 已实际导入，截图仅在 artifacts，不分发用户图。RetainedImportTask 禁止官方导入后删除归档。PracticePlayer 无失败/上传，时钟当前位置、Tab 自动演奏和 Ctrl+P，回放截取保留空帧避免第一下漏判。旧窗口仍留在源码用于历史测试，实际入口没有降级。新 Test-OfficialPlaytest.ps1 使用真实 GPU、自动退出、隔离数据，可对便携 host exe 验证。官方资源/字体/native 许可与窄范围 NuGet advisory 记录见 notices/UPSTREAM；公开发行前重新核对。
 
 ## 0.1.10 皮肤工作流
 

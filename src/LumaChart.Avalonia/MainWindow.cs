@@ -5588,7 +5588,7 @@ public sealed partial class MainWindow : PlatformWindow
         var extension = BuildExtensionPalette();
         Grid.SetColumn(extension, 2);
         workbench.Children.Add(extension);
-        // One fixed toolbar owns commands, presets and adjustments.
+        // Commands and presets share one row; the movable adjustment card overlays the body.
         // Track bodies and remaining palettes stay below that toolbar.
         workbench.RowDefinitions = new RowDefinitions("Auto,*");
         foreach (var child in workbench.Children) Grid.SetRow(child, 1);
@@ -5598,6 +5598,11 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetColumnSpan(fixedToolbar, 5);
         Grid.SetRow(fixedToolbar, 0);
         workbench.Children.Add(fixedToolbar);
+        var adjustmentCard = BuildQuickValuesPalette();
+        Grid.SetColumnSpan(adjustmentCard, 5);
+        Grid.SetRow(adjustmentCard, 1);
+        workbench.Children.Add(adjustmentCard);
+        ApplyQuickValuesPaletteLayout();
         editorView.Children.Add(workbench);
     }
 
@@ -6653,29 +6658,12 @@ public sealed partial class MainWindow : PlatformWindow
 
             await PauseAllEditorPlaybackAsync();
             var settings = WindowsPlaytestSettingsStore.Load();
-            var audioPath = WindowsAudioTransportViewModel.ResolveDocumentAudioPath(tab);
             var safeStartBeat = double.IsFinite(startBeat) ? Math.Max(0, startBeat) : 0;
-            viewModel.SetStatus(
-                AvaloniaLocalizationCatalog.Format("测试工作副本已保存：{0}", tab.WorkingPath));
-            var dialog = new PlaytestWindow(
-                snapshot,
-                audioPath,
-                tab.WorkingPath,
-                safeStartBeat,
-                settings,
-                keySoundSettings,
-                audioTransport.PlaybackRate,
-                audioTransport.PreservePitch,
-                audioTransport.Volume,
-                editorViewSettings.FrameRateLimit,
-                displayScaleController.CurrentSettings.UiScale,
-                displayScaleController.CurrentSettings.FontScale,
-                WindowState == WindowState.FullScreen,
-                autoStart,
-                ChartAssetImportService.ResolveAssetPath(tab.WorkingPath, !string.IsNullOrWhiteSpace(tab.SourcePath) ? tab.SourcePath : snapshot.FilePath,
-                    snapshot.Metadata.BackgroundFile));
             StopEditorHighRateFramePump();
-            await dialog.ShowDialog(this);
+            viewModel.SetStatus("正在启动官方 osu!mania 试玩…");
+            await OfficialPlaytestLauncher.RunAsync(snapshot,
+                File.Exists(tab.SourcePath) ? tab.SourcePath : tab.WorkingPath, safeStartBeat,
+                settings, audioTransport.PlaybackRate, audioTransport.PreservePitch, audioTransport.Volume);
             viewModel.SetStatus(
                 AvaloniaLocalizationCatalog.Format("测试演奏已退出 · 源谱未写入 · 缓存 {0}", Path.GetFileName(tab.WorkingPath)));
         }
@@ -7600,19 +7588,15 @@ public sealed partial class MainWindow : PlatformWindow
         content.Children.Add(header);
         content.Children.Add(quickValuesPaletteBody);
         quickValuesPalette.Width = 310;
-        quickValuesPalette.Background = new SolidColorBrush(Color.Parse("#F51A1D20"));
+        quickValuesPalette.Background = new SolidColorBrush(Color.Parse("#1A1D20"));
         quickValuesPalette.BorderBrush =
             new SolidColorBrush(Color.Parse("#293135"));
         quickValuesPalette.BorderThickness = new Thickness(.7);
         quickValuesPalette.CornerRadius = new CornerRadius(4);
         quickValuesPalette.Padding = new Thickness(5);
-        quickValuesPalette.Margin = new Thickness(
-            0,
-            54,
-            WindowsInspectorParityPolicy.QuickValuesPaletteDefaultRightMargin,
-            0);
+        quickValuesPalette.Margin = new Thickness(0, 0, 12, 36);
         quickValuesPalette.HorizontalAlignment = HorizontalAlignment.Right;
-        quickValuesPalette.VerticalAlignment = VerticalAlignment.Top;
+        quickValuesPalette.VerticalAlignment = VerticalAlignment.Bottom;
         quickValuesPalette.ZIndex = 31;
         quickValuesPalette.RenderTransform = quickValuesPaletteTransform;
         quickValuesPalette.Child = content;

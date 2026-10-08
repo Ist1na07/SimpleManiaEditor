@@ -187,6 +187,7 @@ public sealed partial class MainWindow
         SyncFixedPlaybackRate();
         var playtest = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat, autoStart: true));
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtest, "Editor.Toolbar.Playtest");
+        ConfigureOfficialPlaytestMenu(playtest);
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right,
             Children = { playtest, ToolbarLabel("倍速"), fixedRatePicker, ToolbarLabel("网格"), fixedGridPicker } };
         return new Border { Background = RaisedBrush, Padding = new Thickness(10, 6), MinHeight = 48,
