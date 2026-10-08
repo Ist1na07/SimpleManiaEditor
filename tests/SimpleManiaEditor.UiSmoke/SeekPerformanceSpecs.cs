@@ -24,7 +24,7 @@ internal static class SeekPerformanceSpecs
             engine.PlaybackRate = 2;
             engine.Play();
             engine.Seek(TimeSpan.FromSeconds(2));
-            Thread.Sleep(30);
+            SpinWait.SpinUntil(() => outputs.Outputs.Any(o => o.BytesRead > 0 || o.ReadFailure != null), TimeSpan.FromSeconds(1));
             if (engine.PlaybackRate != 2 || !engine.IsPlaying || outputs.Outputs.All(o => o.BytesRead == 0) ||
                 outputs.Outputs.Any(o => o.ReadFailure != null))
                 throw new InvalidOperationException("2x pitch-preserving playback did not consume valid audio");
@@ -42,10 +42,10 @@ internal static class SeekPerformanceSpecs
             }
             catch (OperationCanceledException) { }
             var bytes = outputs.Outputs.Sum(o => o.BytesRead);
-            Thread.Sleep(30);
+            SpinWait.SpinUntil(() => outputs.Outputs.Sum(o => o.BytesRead) > bytes || outputs.Outputs.Any(o => o.ReadFailure != null), TimeSpan.FromSeconds(1));
             if (checks != 2 || !engine.IsPlaying || engine.Position >= TimeSpan.FromSeconds(10) ||
                 outputs.Outputs.Sum(o => o.BytesRead) <= bytes || outputs.Outputs.Any(o => o.ReadFailure != null))
-                throw new InvalidOperationException("canceled preparation damaged the active audio pipeline");
+                throw new InvalidOperationException($"canceled preparation damaged the active audio pipeline: checks={checks}, playing={engine.IsPlaying}, position={engine.Position}, bytes={bytes}->{outputs.Outputs.Sum(o => o.BytesRead)}, errors={string.Join(';', outputs.Outputs.Select(o => o.ReadFailure?.Message))}");
         }
         finally { PlatformAudioOutputs.Current = previousOutputs; }
     }
