@@ -74,7 +74,7 @@ internal static class InteractionRegressionSpecs
         var hold = session.Document.Notes.Single();
         Require(hold.IsHold && hold.Beat == probe.HoldStartTarget.Beat && hold.EndBeat == probe.HoldEndTarget.Beat,
             "reverse drag with RC tool did not make LN");
-        var outside = probe.HoldEndTarget.SurfacePoint - new Vector(0, 31);
+        var outside = probe.HoldEndTarget.SurfacePoint - new Vector(0, 41);
         RightClick(window, outside);
         Require(session.Document.Notes.Count == 1, "right click in forgiving LN resize zone deleted LN");
         var neighbor = new ChartNote { Lane = hold.Lane, Beat = BeatPosition.FromDouble(hold.EndBeat!.Value.Value + .125) };

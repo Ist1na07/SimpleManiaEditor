@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.Styling;
 using LumaChart.Avalonia.Controls;
 
 namespace LumaChart.Avalonia;
@@ -14,7 +15,9 @@ namespace LumaChart.Avalonia;
 public sealed partial class MainWindow
 {
     private readonly Grid trackBoardCanvas = new() { Background = new SolidColorBrush(Color.Parse("#111518")) };
-    private readonly ScrollBar trackBoardScrollbar = new() { Orientation = Orientation.Horizontal, Minimum = 0, Height = 16 };
+    private readonly ScrollBar trackBoardScrollbar = new() { Orientation = Orientation.Horizontal, Minimum = 0,
+        Height = 24, AllowAutoHide = false, Visibility = ScrollBarVisibility.Visible,
+        Background = new SolidColorBrush(Color.Parse("#30393D")) };
     private readonly Dictionary<string, EditorTrackPanel> boardFrames = [];
     private bool updatingBoardScroll;
     private bool dismissTrackMenuClick;
@@ -51,11 +54,27 @@ public sealed partial class MainWindow
             if (!updatingBoardScroll) trackScroller.Offset = new Vector(e.NewValue, 0);
         };
         AutomationProperties.SetAutomationId(trackBoardScrollbar, "Editor.Board.Scrollbar");
+        trackBoardScrollbar.Resources["ScrollBarSize"] = 24d;
+        var boardThumb = new Style(selector => selector.OfType<ScrollBar>().Template().OfType<Thumb>());
+        boardThumb.Setters.Add(new Setter(HeightProperty, 12d));
+        boardThumb.Setters.Add(new Setter(MinHeightProperty, 12d));
+        trackBoardScrollbar.Styles.Add(boardThumb);
+        ToolTip.SetTip(trackBoardScrollbar, "左右拖动整个轨道底板");
         AutomationProperties.SetAutomationId(trackBoardCanvas, "Editor.Board.Canvas");
         trackBoardCanvas.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
         {
             if (e.Source == trackBoardCanvas && e.GetCurrentPoint(trackBoardCanvas).Properties.IsRightButtonPressed)
-            { OpenAddTrackMenu(trackBoardCanvas); e.Handled = true; }
+            {
+                timeline.ClearObjectSelection();
+                foreach (var view in secondaryTrackViews.Values) view.Surface?.ClearObjectSelection();
+                OpenAddTrackMenu(trackBoardCanvas); e.Handled = true;
+            }
+        });
+        // Timeline/companion surfaces consume their own wheel. Only gestures
+        // bubbling from unused board space reach this fallback.
+        trackBoardCanvas.AddHandler(InputElement.PointerWheelChangedEvent, (_, e) =>
+        {
+            if (!e.Handled) timeline.HandleCompanionWheel(e);
         });
         AddHandler(InputElement.PointerPressedEvent, (_, e) =>
         {
@@ -71,7 +90,7 @@ public sealed partial class MainWindow
             activeSecondaryTrack = null; RefreshFixedTools(); UpdateEditorAvailability();
         }, RoutingStrategies.Tunnel);
         timeline.SizeChanged += (_, _) => SyncTrackViewports();
-        var root = new Grid { RowDefinitions = new RowDefinitions("*,16") };
+        var root = new Grid { RowDefinitions = new RowDefinitions("*,24") };
         root.Children.Add(trackScroller); Grid.SetRow(trackBoardScrollbar, 1); root.Children.Add(trackBoardScrollbar);
         return root;
     }

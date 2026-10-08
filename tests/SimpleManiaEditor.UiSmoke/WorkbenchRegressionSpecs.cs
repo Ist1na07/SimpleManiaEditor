@@ -2,6 +2,7 @@ using System.Collections;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Automation;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -84,8 +85,19 @@ internal static class WorkbenchRegressionSpecs
         scroller.Offset = new Vector(Math.Max(0, board.Width - scroller.Viewport.Width), 0);
         Program.Pump(50);
         point = board.TranslatePoint(new Point(board.Width - 35, board.Bounds.Height / 2), window)!.Value;
+        var boardBar = Field<ScrollBar>(window, "trackBoardScrollbar");
+        Require(boardBar.IsVisible && boardBar.Bounds.Height >= 24 && !boardBar.AllowAutoHide && boardBar.Visibility == ScrollBarVisibility.Visible,
+            "board scrollbar is hidden/collapsed or auto-hidden");
+        var barPoint = boardBar.TranslatePoint(new Point(10, boardBar.Bounds.Height / 2), window)!.Value;
+        Require(barPoint.Y > scroller.TranslatePoint(new Point(0, scroller.Bounds.Height), window)!.Value.Y && barPoint.Y < window.Bounds.Height,
+            "board scrollbar is not visible beneath the board");
+        var boardBeat = timeline.CurrentBeat;
+        window.MouseWheel(point, new Vector(0, -1));
+        Require(timeline.CurrentBeat > boardBeat, "wheel on blank board did not navigate time");
+        tab.Session.Selection.UnionWith(tab.Session.Document.Notes.Select(n => n.Id));
         window.MouseDown(point, MouseButton.Right);
         window.MouseUp(point, MouseButton.Right);
+        Require(tab.Session.Selection.Count == 0, "blank board right-click did not deselect notes");
         var menu = Field<ContextMenu>(window, "addTrackContextMenu");
         Require(menu.IsOpen, "right-click blank space did not open track menu");
         scroller.Offset = new Vector(0, 0); Program.Pump(50);
@@ -102,6 +114,11 @@ internal static class WorkbenchRegressionSpecs
         window.MouseDown(point, MouseButton.Right); window.MouseUp(point, MouseButton.Right);
         menu = Field<ContextMenu>(window, "addTrackContextMenu");
         var offsetBeforeAdd = scroller.Offset.X;
+        boardBar.Value = 0;
+        Program.Pump(30);
+        Require(scroller.Offset.X == 0, "board scrollbar did not move the board");
+        boardBar.Value = offsetBeforeAdd;
+        Program.Pump(30);
         var mainWidthBeforeAdd = Field<Control>(window, "mainTrackFrame").Width;
         var draftItem = menu.ItemsSource!.OfType<MenuItem>().Single(i => AutomationProperties.GetAutomationId(i) == "Editor.AddTrack.Draft");
         draftItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -110,6 +127,16 @@ internal static class WorkbenchRegressionSpecs
         Program.Pump(100);
         Require(scroller.Offset.X == offsetBeforeAdd && Field<Control>(window, "mainTrackFrame").Width == mainWidthBeforeAdd,
             "adding a track resized/repositioned the board");
+        boardBar.Value = boardBar.Maximum;
+        Program.Pump(50);
+        var boardThumb = boardBar.GetVisualDescendants().OfType<Thumb>().Single(t => t.IsVisible);
+        Require(boardThumb.Bounds.Height >= 10, $"board thumb is still too thin: {boardThumb.Bounds.Height}");
+        var grip = boardThumb.TranslatePoint(new Point(boardThumb.Bounds.Width / 2, boardThumb.Bounds.Height / 2), window)!.Value;
+        var dragOffset = scroller.Offset.X;
+        window.MouseDown(grip, MouseButton.Left);
+        window.MouseMove(grip - new Vector(50, 0), RawInputModifiers.LeftMouseButton);
+        window.MouseUp(grip - new Vector(50, 0), MouseButton.Left);
+        Require(scroller.Offset.X < dragOffset, "dragging board scrollbar failed to pan the board");
         var workspace = Field<EditorTrackWorkspace>(window, "activeTrackWorkspace");
         var draft = workspace.Tracks.Single();
         var draftView = View(window, draft.Id);

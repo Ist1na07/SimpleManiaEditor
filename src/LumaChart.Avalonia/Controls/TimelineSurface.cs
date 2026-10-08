@@ -364,7 +364,7 @@ public sealed class TimelineSurface : Control
     private double backgroundOpacity =
         1 - WindowsEditorBackgroundSettings.DefaultDarkness;
     private WindowsNoteAnchorMode noteAnchor = WindowsNoteAnchorMode.CellBottom;
-    private WindowsNoteAnchorMode EffectiveNoteAnchor => InteractionProfile == EditorInteractionProfile.OsuMania ? WindowsNoteAnchorMode.GridLine : noteAnchor;
+    private WindowsNoteAnchorMode EffectiveNoteAnchor => InteractionProfile == EditorInteractionProfile.OsuMania ? WindowsNoteAnchorMode.LineAbove : noteAnchor;
     private TimingMap? sourceAxisMap;
     private TimingMap? displayAxisMap;
 
@@ -666,7 +666,7 @@ public sealed class TimelineSurface : Control
             endBeat,
             new Point(
                 geometry.TrackLeft + (column + .5) * geometry.LaneWidth,
-                NoteYAtBeat(endBeat, geometry)));
+                EvidencePointerY(endBeat, geometry)));
     }
 
     public TimelinePlacementEvidenceTarget? GetFreeTapEvidenceTarget() =>
@@ -703,7 +703,7 @@ public sealed class TimelineSurface : Control
             return null;
         Point PointAt(int column, BeatPosition beat) => new(
             geometry.TrackLeft + (column + .5) * geometry.LaneWidth,
-            NoteYAtBeat(beat, geometry));
+            EvidencePointerY(beat, geometry));
 
         var draftTap = new TimelinePlacementEvidenceTarget(
             draftColumn,
@@ -790,7 +790,7 @@ public sealed class TimelineSurface : Control
         foreach (var cell in EnumerateEvidenceCells(firstCell, lastCell, cellStride))
         {
             if (!TryCreateEvidenceBeat(cell, division, out var beat)) continue;
-            var y = NoteYAtBeat(beat, geometry);
+            var y = EvidencePointerY(beat, geometry);
             if (!IsEvidencePointSafe(y, safeInset) ||
                 session!.IntersectsOwnerProtectedRegion(beat, beat))
                 continue;
@@ -835,8 +835,8 @@ public sealed class TimelineSurface : Control
             if (!TryCreateEvidenceBeat(startCell, division, out var startBeat) ||
                 !TryCreateEvidenceBeat(endCell, division, out var endBeat))
                 continue;
-            var startY = NoteYAtBeat(startBeat, geometry);
-            var endY = NoteYAtBeat(endBeat, geometry);
+            var startY = EvidencePointerY(startBeat, geometry);
+            var endY = EvidencePointerY(endBeat, geometry);
             if (!IsEvidencePointSafe(startY, safeInset) ||
                 !IsEvidencePointSafe(endY, safeInset) ||
                 session!.IntersectsOwnerProtectedRegion(startBeat, endBeat))
@@ -879,7 +879,7 @@ public sealed class TimelineSurface : Control
         beat = BeatPosition.Zero;
         var whole = Math.DivRem(cell, division, out var subdivision);
         if (whole is < 0 or > int.MaxValue) return false;
-        beat = noteAnchor == WindowsNoteAnchorMode.CellCenter
+        beat = EffectiveNoteAnchor == WindowsNoteAnchorMode.CellCenter
             ? BeatPosition.Preserve(
                 (int)whole,
                 checked((int)(subdivision * 2 + 1)),
@@ -1490,6 +1490,7 @@ public sealed class TimelineSurface : Control
         var hit = tailHit ?? bodyHit;
         if (rightPressed && hit == null && !timingHit.HasValue)
         {
+            ClearObjectSelection();
             BlankContextRequested?.Invoke(this, point);
             eventArgs.Handled = true;
             return;
@@ -2189,6 +2190,19 @@ public sealed class TimelineSurface : Control
         ArgumentNullException.ThrowIfNull(eventArgs);
         if (eventArgs.Handled) return;
         HandleWheel(eventArgs);
+    }
+
+    public void ClearObjectSelection()
+    {
+        if (session == null) return;
+        var hadNotes = session.Selection.Count > 0;
+        var hadTiming = selectedTimingIds.Count > 0;
+        session.Selection.Clear();
+        selectedTimingIds.Clear();
+        PrimarySelectedTimingId = null;
+        if (hadNotes) SelectionChanged?.Invoke(this, EventArgs.Empty);
+        if (hadTiming) TimingSelectionChanged?.Invoke(this, EventArgs.Empty);
+        if (hadNotes || hadTiming) InvalidateVisual();
     }
 
     private void HandleWheel(PointerWheelEventArgs eventArgs)
@@ -3058,7 +3072,8 @@ public sealed class TimelineSurface : Control
 
     private ChartNote? HitTestHoldTail(Point point, TimelineGeometry geometry)
     {
-        var pointerBeat = PointerToRawNoteBeat(point.Y, geometry);
+        var pointerBeat = InteractionProfile == EditorInteractionProfile.OsuMania
+            ? BeatAtY(point.Y, geometry) : PointerToRawNoteBeat(point.Y, geometry);
         var beatRadius = TimelineHoldTailResize.HitTolerance(noteHeight) /
             Math.Max(1, PixelsPerBeat);
         noteIndex.QueryHoldTails(
@@ -3072,12 +3087,14 @@ public sealed class TimelineSurface : Control
         {
             if (hiddenGroups.Contains(note.Group)) continue;
             var bounds = GetNoteBounds(note, geometry);
-            var tailY = NoteYAtBeat(note.EndBeat!.Value, geometry);
+            var tailY = InteractionProfile == EditorInteractionProfile.OsuMania
+                ? YAtBeat(note.EndBeat!.Value.Value, geometry) : NoteYAtBeat(note.EndBeat!.Value, geometry);
             if (!TimelineHoldTailResize.IsHit(
                     point,
                     bounds.Left,
                     bounds.Right,
-                    NoteYAtBeat(note.Beat, geometry),
+                    InteractionProfile == EditorInteractionProfile.OsuMania
+                        ? YAtBeat(note.Beat.Value, geometry) : NoteYAtBeat(note.Beat, geometry),
                     tailY,
                 noteHeight)) continue;
             var distance = Math.Abs(point.Y - tailY);
@@ -4596,7 +4613,9 @@ public sealed class TimelineSurface : Control
     }
 
     private double PointerToRawNoteBeat(double y, TimelineGeometry geometry) =>
-        TimelinePlacementGeometry.PointerToRawStoredBeat(
+        InteractionProfile == EditorInteractionProfile.OsuMania
+        ? BeatAtY(y + noteHeight / 2, geometry)
+        : TimelinePlacementGeometry.PointerToRawStoredBeat(
             BeatAtY(y, geometry),
             EffectiveNoteAnchor,
             session?.SnapDivision ?? WindowsEditorViewSettings.DefaultSnapDivision,
@@ -4608,7 +4627,7 @@ public sealed class TimelineSurface : Control
         if (session == null) return BeatPosition.Zero;
         var geometry = GetGeometry(session.Document.KeyCount);
         if (InteractionProfile == EditorInteractionProfile.OsuMania)
-            return TimelinePlacementGeometry.FloorToGrid(BeatAtY(y, geometry), session.SnapDivision);
+            return TimelinePlacementGeometry.NearestGrid(BeatAtY(y, geometry), session.SnapDivision);
         return TimelinePlacementGeometry.PointerToStoredBeat(
             BeatAtY(y, geometry),
             EffectiveNoteAnchor,
@@ -4622,7 +4641,9 @@ public sealed class TimelineSurface : Control
         TimelineGeometry geometry,
         double pixelsPerBeat,
         double currentBeat) =>
-        geometry.JudgementY -
+        InteractionProfile == EditorInteractionProfile.OsuMania
+        ? geometry.JudgementY - (ProjectBeat(beat.Value) - ProjectBeat(currentBeat)) * pixelsPerBeat - noteHeight / 2
+        : geometry.JudgementY -
         (ProjectBeat(TimelinePlacementGeometry.StoredToRenderBeat(
              beat,
              EffectiveNoteAnchor,
@@ -4633,6 +4654,10 @@ public sealed class TimelineSurface : Control
 
     private double NoteYAtBeat(BeatPosition beat, TimelineGeometry geometry) =>
         NoteYAtBeat(beat, geometry, PixelsPerBeat, CurrentBeat);
+
+    private double EvidencePointerY(BeatPosition beat, TimelineGeometry geometry) =>
+        InteractionProfile == EditorInteractionProfile.OsuMania
+            ? YAtBeat(beat.Value, geometry) - .01 : NoteYAtBeat(beat, geometry);
 
     private static int WorkspaceColumnAtX(double x, TimelineGeometry geometry)
     {

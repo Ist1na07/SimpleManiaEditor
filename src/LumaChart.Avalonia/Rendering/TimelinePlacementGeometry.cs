@@ -22,10 +22,10 @@ public readonly record struct TimelinePlacement(
 /// </summary>
 public static class TimelinePlacementGeometry
 {
-    public static BeatPosition FloorToGrid(double beat, int division)
+    public static BeatPosition NearestGrid(double beat, int division)
     {
         division = Math.Clamp(division, 1, 1920);
-        var units = (long)Math.Floor(Math.Max(0, double.IsFinite(beat) ? beat : 0) * division + 1e-8);
+        var units = (long)Math.Round(Math.Max(0, double.IsFinite(beat) ? beat : 0) * division, MidpointRounding.AwayFromZero);
         return BeatPosition.Preserve(checked((int)(units / division)), checked((int)(units % division)), division);
     }
     public static BeatPosition CellCenterBeat(double rawBeat, int snapDivision) =>
