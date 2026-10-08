@@ -2277,12 +2277,12 @@ internal static class Program
         var retainedTap = TimelinePlacementGeometry.Resolve(TimelineTool.Tap, tapStart, downward, 8);
         Require(
             evidence,
-            promoted.Kind == TimelinePlacementKind.Hold &&
-            promoted.EndBeat.HasValue &&
+            promoted.Kind == TimelinePlacementKind.Tap &&
+            !promoted.EndBeat.HasValue &&
             retainedTap.Kind == TimelinePlacementKind.Tap &&
             !retainedTap.EndBeat.HasValue &&
             HasExactExpression(retainedTap.StartBeat, tapStart),
-            "timeline-tap-drag-promotion-matches-wpf-direction",
+            "timeline-tap-tool-never-promotes-to-hold",
             $"start={tapStart}; upward={promoted.Kind}; downward={retainedTap.Kind}");
 
         var eraseSession = new EditorSession();

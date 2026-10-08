@@ -43,6 +43,7 @@ internal static class Program
             RunPointerWorkflow(screenshotRoot);
             InteractionRegressionSpecs.Run();
             PlacementPrecisionSpecs.Run();
+            DrawToolSpecs.Run();
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             RunApplicationSmoke(screenshotRoot);
             Console.WriteLine("PASS headless pointer workflow, shortcuts, profile persistence, application startup and rendering");

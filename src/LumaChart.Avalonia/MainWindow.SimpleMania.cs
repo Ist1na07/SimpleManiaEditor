@@ -72,6 +72,16 @@ public sealed partial class MainWindow
             WindowsAudioPanelSettingsStore.Save(audioPanelSettings);
             EditorPresentationSettingsStore.SaveLayoutRevision(3);
         }
+        if (layoutRevision < 4)
+        {
+            editorViewSettings = editorViewSettings.WithView(editorViewSettings.GridLaneWidth,
+                editorViewSettings.GridBeatHeight, editorViewSettings.MainEditorHorizontalOffset, editorViewSettings.NoteWidth,
+                editorViewSettings.NoteHeight == 32 ? WindowsEditorViewSettings.DefaultNoteHeight : editorViewSettings.NoteHeight,
+                editorViewSettings.NoteOpacity, editorViewSettings.JudgementLinePosition,
+                editorViewSettings.JudgementLineThickness, editorViewSettings.JudgementLineOpacity);
+            WindowsEditorViewSettingsStore.Save(editorViewSettings);
+            EditorPresentationSettingsStore.SaveLayoutRevision(4);
+        }
         gridNotation = EditorPresentationSettingsStore.LoadGridNotation();
         timeline.InteractionProfile = shortcutSettings.Profile;
         timeline.ReverseTimeWheel = shortcutSettings.ReverseTimeWheel;

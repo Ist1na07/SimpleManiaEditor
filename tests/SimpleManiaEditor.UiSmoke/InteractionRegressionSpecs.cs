@@ -67,6 +67,7 @@ internal static class InteractionRegressionSpecs
         Require(EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Malody, "alternate skin did not persist");
         EditorPresentationSettingsStore.SaveNoteStyle(EditorNoteStyle.Osu);
         session.SnapDivision = 4;
+        timeline.Tool = TimelineTool.Hold;
         var probe = timeline.GetPlacementEvidenceProbe() ?? throw new InvalidOperationException("missing reverse gesture probe");
         window.MouseDown(probe.HoldEndTarget.SurfacePoint, MouseButton.Left);
         window.MouseMove(probe.HoldStartTarget.SurfacePoint, RawInputModifiers.LeftMouseButton);

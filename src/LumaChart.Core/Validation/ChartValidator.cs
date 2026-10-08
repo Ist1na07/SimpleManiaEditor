@@ -46,10 +46,12 @@ public static class ChartValidator
 
                     var rightEnd = right.EndBeat?.Value ?? right.Beat.Value;
                     var sameStart = Math.Abs(left.Beat.Value - right.Beat.Value) <= Epsilon;
+                    var tailMeetsHead = left.IsHold && Math.Abs(leftEnd - right.Beat.Value) <= Epsilon ||
+                                        right.IsHold && Math.Abs(rightEnd - left.Beat.Value) <= Epsilon;
                     var tapInsideHold = (!left.IsHold && right.IsHold &&
-                                         left.Beat.Value > right.Beat.Value + Epsilon && left.Beat.Value < rightEnd - Epsilon) ||
+                                         left.Beat.Value > right.Beat.Value + Epsilon && left.Beat.Value <= rightEnd + Epsilon) ||
                                         (!right.IsHold && left.IsHold &&
-                                         right.Beat.Value > left.Beat.Value + Epsilon && right.Beat.Value < leftEnd - Epsilon);
+                                         right.Beat.Value > left.Beat.Value + Epsilon && right.Beat.Value <= leftEnd + Epsilon);
                     var holdOverlap = left.IsHold && right.IsHold &&
                                       right.Beat.Value < leftEnd - Epsilon && left.Beat.Value < rightEnd - Epsilon;
 
@@ -60,7 +62,7 @@ public static class ChartValidator
                             right.Beat, laneGroup.Key, [left.Id, right.Id],
                             LocalizationCatalog.Format("第 {0} 轨的两个 LN 发生交叉", laneGroup.Key + 1)));
                     }
-                    else if (sameStart || tapInsideHold || holdOverlap)
+                    else if (sameStart || tailMeetsHead || tapInsideHold || holdOverlap)
                     {
                         var beat = left.Beat.Value >= right.Beat.Value ? left.Beat : right.Beat;
                         issues.Add(new ChartIssue(ChartIssueKind.OverlappingNotes,

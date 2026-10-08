@@ -7313,11 +7313,18 @@ static void TestChartValidator()
         Notes = [duplicateA, duplicateB, crossingA, crossingB, boundaryTap, boundaryHold, draftDuplicate]
     };
     var issues = ChartValidator.Validate(chart);
-    Assert(issues.Count == 2, "validator reported false positives or missed structural errors");
+    Assert(issues.Count == 3, "validator reported false positives or missed structural errors");
     Assert(issues[0].Kind == ChartIssueKind.OverlappingNotes && issues[0].NoteIds.Count == 2,
         "same-beat overlap was not reported with both notes");
     Assert(issues[1].Kind == ChartIssueKind.CrossingLongNotes && Math.Abs(issues[1].Beat.Value - 3) < .001,
         "interleaved LN interval was not classified as a crossing");
+    Assert(issues[2].Kind == ChartIssueKind.OverlappingNotes && issues[2].NoteIds.Contains(boundaryTap.Id) && issues[2].NoteIds.Contains(boundaryHold.Id),
+        "tap on the LN tail was not reported as an overlap");
+    boundaryTap.Beat = BeatPosition.FromDouble(7.01);
+    Assert(ChartValidator.Validate(chart).Count == 2, "tap strictly after the tail was falsely reported");
+    chart.Notes.Add(new ChartNote { Lane = 3, Beat = BeatPosition.FromDouble(9), EndBeat = BeatPosition.FromDouble(10) });
+    chart.Notes.Add(new ChartNote { Lane = 3, Beat = BeatPosition.FromDouble(10), EndBeat = BeatPosition.FromDouble(11) });
+    Assert(ChartValidator.Validate(chart).Count == 3, "LN head on another LN tail was not reported");
 }
 
 static void TestReworkDifficulty()

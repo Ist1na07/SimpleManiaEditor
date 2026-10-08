@@ -25,7 +25,7 @@ public sealed class WindowsEditorViewSettings
     public const double DefaultGridLaneWidth = 84;
     public const double DefaultGridBeatHeight = 280;
     public const double DefaultNoteWidth = 77;
-    public const double DefaultNoteHeight = 32;
+    public const double DefaultNoteHeight = 28;
     public const double DefaultJudgementLinePosition = .79;
     public const double DefaultJudgementLineThickness = 1.5;
     public const double DefaultJudgementLineOpacity = .85;

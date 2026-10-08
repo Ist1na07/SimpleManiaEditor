@@ -336,6 +336,9 @@ public sealed class TimelineSurface : Control
     private bool placingNote;
     private int placementLane = NoWorkspaceColumn;
     private BeatPosition placementStartBeat;
+    private Guid? placementReplacedNoteId;
+    private long placementStartChangeSerial;
+    private Point? placementHoverPoint;
     private BeatPosition placementCurrentBeat;
     private TimelineTool placementGestureTool;
     private bool erasingStroke;
@@ -1395,6 +1398,7 @@ public sealed class TimelineSurface : Control
             }
             DrawHoldTailResizePreview(context, geometry);
             DrawPlacementPreview(context, geometry);
+            DrawPlacementHover(context, geometry);
             DrawTiming(context, geometry, minimumBeat, maximumBeat);
         using (context.PushOpacity(judgementLineOpacity))
         {
@@ -1457,7 +1461,8 @@ public sealed class TimelineSurface : Control
         EnsureIndex();
         var point = eventArgs.GetPosition(this);
         var geometry = GetGeometry(session.Document.KeyCount);
-        if (middlePressed || leftPressed && spacePanModifier && proEditorEnabled)
+        var drawingTool = InteractionProfile == EditorInteractionProfile.OsuMania && (Tool is TimelineTool.Tap or TimelineTool.Hold);
+        if (middlePressed && !drawingTool || leftPressed && spacePanModifier && proEditorEnabled)
         {
             workspacePanning = true;
             horizontalPanOnly = !middlePressed;
@@ -1476,10 +1481,15 @@ public sealed class TimelineSurface : Control
 
         var lane = WorkspaceColumnAtX(point.X, geometry);
         var timingHit = HitTestTimingLabel(point, geometry);
+        if (middlePressed && drawingTool && timingHit.HasValue)
+        {
+            eventArgs.Handled = true;
+            return;
+        }
         var tailHit = !leftPressed || rightPressed || timingHit.HasValue || Tool == TimelineTool.Erase
             ? null
             : HitTestHoldTail(point, geometry);
-        var bodyHit = rightPressed ? HitTestVisibleNote(point, geometry) : lane == NoWorkspaceColumn
+        var bodyHit = rightPressed || drawingTool ? HitTestVisibleNote(point, geometry) : lane == NoWorkspaceColumn
             ? null
             : HitTestDisplayedNote(
                 lane,
@@ -1637,6 +1647,31 @@ public sealed class TimelineSurface : Control
             return;
         }
 
+        if (leftPressed && drawingTool && !eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control) && tailHit == null)
+        {
+            if (lane != NoWorkspaceColumn && CanBeginNoteEdit("放置"))
+            {
+                if (hit != null && !session.AllowOwnerProtectedEdits && session.IsOwnerProtected(hit))
+                    StatusChanged?.Invoke(this, "该按键位于锁定选区，不能替换");
+                else
+                {
+                    BeginPlacement(lane, point, Tool);
+                    if (placingNote)
+                    {
+                        placementReplacedNoteId = hit?.Id;
+                        CaptureInteraction(eventArgs.Pointer, MouseButton.Left, point);
+                    }
+                }
+            }
+            eventArgs.Handled = true;
+            return;
+        }
+        if (middlePressed && drawingTool && hit == null)
+        {
+            eventArgs.Handled = true;
+            return;
+        }
+
         if (hit == null && (Tool == TimelineTool.Select ||
             InteractionProfile == EditorInteractionProfile.OsuMania && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control)))
         {
@@ -1743,7 +1778,7 @@ public sealed class TimelineSurface : Control
                 return;
             }
             dragging = true;
-            CaptureInteraction(eventArgs.Pointer, MouseButton.Left, point);
+            CaptureInteraction(eventArgs.Pointer, middlePressed ? MouseButton.Middle : MouseButton.Left, point);
             SelectionChanged?.Invoke(this, EventArgs.Empty);
             if (hadTimingSelection) TimingSelectionChanged?.Invoke(this, EventArgs.Empty);
             var columnText = hit.IsDraft
@@ -1773,6 +1808,8 @@ public sealed class TimelineSurface : Control
     protected override void OnPointerMoved(PointerEventArgs eventArgs)
     {
         base.OnPointerMoved(eventArgs);
+        placementHoverPoint = eventArgs.GetPosition(this);
+        if (Tool is TimelineTool.Tap or TimelineTool.Hold) InvalidateVisual();
         if (session == null) return;
         if (eventArgs.Pointer.Type == PointerType.Touch &&
             touchContacts.ContainsKey(eventArgs.Pointer.Id))
@@ -1892,9 +1929,18 @@ public sealed class TimelineSurface : Control
         eventArgs.Handled = true;
     }
 
+    protected override void OnPointerEntered(PointerEventArgs eventArgs)
+    {
+        base.OnPointerEntered(eventArgs);
+        placementHoverPoint = eventArgs.GetPosition(this);
+        InvalidateVisual();
+    }
+
     protected override void OnPointerExited(PointerEventArgs eventArgs)
     {
         base.OnPointerExited(eventArgs);
+        placementHoverPoint = null;
+        InvalidateVisual();
         if (lastTooltipCreatorId != 0)
         {
             lastTooltipCreatorId = 0;
@@ -2604,7 +2650,10 @@ public sealed class TimelineSurface : Control
         }
 
         var lane = placementLane;
+        var replacedNoteId = placementReplacedNoteId;
+        var expectedSerial = placementStartChangeSerial;
         placingNote = false;
+        placementReplacedNoteId = null;
         placementLane = NoWorkspaceColumn;
         ReleaseInteractionCapture();
         if (!CanBeginNoteEdit("放置"))
@@ -2622,14 +2671,14 @@ public sealed class TimelineSurface : Control
                     placement.EndBeat!.Value,
                     GetWorkspaceColumnRange(),
                     BasicBeatPlacementPolicy.PreserveAuthoredBeat,
-                    PlacementGroup)
+                    PlacementGroup, replacedNoteId, expectedSerial)
                 : WindowsProEditorCommand.PlaceTap(
                     session,
                     lane,
                     placement.StartBeat,
                     GetWorkspaceColumnRange(),
                     BasicBeatPlacementPolicy.PreserveAuthoredBeat,
-                    PlacementGroup);
+                    PlacementGroup, replacedNoteId, expectedSerial);
             if (placedId.HasValue)
             {
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -2661,6 +2710,8 @@ public sealed class TimelineSurface : Control
             return;
         }
         placingNote = true;
+        placementReplacedNoteId = null;
+        placementStartChangeSerial = session.ChangeSerial;
         placementLane = lane;
         placementStartBeat = beat;
         placementCurrentBeat = beat;
@@ -3076,9 +3127,10 @@ public sealed class TimelineSurface : Control
             ? BeatAtY(point.Y, geometry) : PointerToRawNoteBeat(point.Y, geometry);
         var beatRadius = TimelineHoldTailResize.HitTolerance(noteHeight) /
             Math.Max(1, PixelsPerBeat);
+        var bottomAnchor = InteractionProfile == EditorInteractionProfile.OsuMania;
         noteIndex.QueryHoldTails(
-            pointerBeat - GetMaximumStoredRenderBeatAdjustment() - beatRadius,
-            pointerBeat + beatRadius,
+            bottomAnchor ? BeatAtY(point.Y + noteHeight, geometry) : pointerBeat - GetMaximumStoredRenderBeatAdjustment() - beatRadius,
+            bottomAnchor ? BeatAtY(point.Y - TimelineHoldTailResize.HitTolerance(noteHeight), geometry) : pointerBeat + beatRadius,
             holdTailScratch,
             includeDrafts: proEditorEnabled);
         ChartNote? best = null;
@@ -3096,7 +3148,7 @@ public sealed class TimelineSurface : Control
                     InteractionProfile == EditorInteractionProfile.OsuMania
                         ? YAtBeat(note.Beat.Value, geometry) : NoteYAtBeat(note.Beat, geometry),
                     tailY,
-                noteHeight)) continue;
+                noteHeight, bottomAnchor)) continue;
             var distance = Math.Abs(point.Y - tailY);
             if (distance >= bestDistance) continue;
             best = note;
@@ -3375,6 +3427,7 @@ public sealed class TimelineSurface : Control
         marqueeNextTimingSelection.Clear();
         marqueeCandidates.Clear();
         placingNote = false;
+        placementReplacedNoteId = null;
         placementLane = NoWorkspaceColumn;
         placementStartBeat = BeatPosition.Zero;
         placementCurrentBeat = BeatPosition.Zero;
@@ -3854,6 +3907,7 @@ public sealed class TimelineSurface : Control
         {
             if (hiddenGroups.Contains(note.Group)) continue;
             if (erasingStroke && erasedNoteIds.Contains(note.Id)) continue;
+            if (placingNote && note.Id == placementReplacedNoteId) continue;
             // The resizing LN is drawn once from the pure preview state below.
             // Keeping the document copy here would leave a misleading old tail
             // visible while shortening or converting the LN to a Tap.
@@ -4215,6 +4269,17 @@ public sealed class TimelineSurface : Control
                 DrawTapNote(context, tapRect);
             context.DrawRectangle(null, SelectedNotePen, tapRect, 4, 4);
         }
+    }
+
+    private void DrawPlacementHover(DrawingContext context, TimelineGeometry geometry)
+    {
+        if (InteractionProfile != EditorInteractionProfile.OsuMania || session == null || session.IsReadOnly || !session.CanEditNotes ||
+            Tool is not (TimelineTool.Tap or TimelineTool.Hold) || placementHoverPoint is not { } point ||
+            placingNote || dragging || resizingHoldTail || movingTiming || marqueeSelecting) return;
+        if (WorkspaceColumnAtX(point.X, geometry) == NoWorkspaceColumn || !new Rect(Bounds.Size).Contains(point)) return;
+        var width = GetRenderedNoteWidth(geometry.LaneWidth);
+        using (context.PushOpacity(.65))
+            DrawTapNote(context, new Rect(point.X - width / 2, point.Y - noteHeight, width, noteHeight));
     }
 
     private void DrawPlacementPreview(DrawingContext context, TimelineGeometry geometry)

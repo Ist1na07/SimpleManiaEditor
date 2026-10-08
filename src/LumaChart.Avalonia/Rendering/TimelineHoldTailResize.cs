@@ -18,13 +18,15 @@ public static class TimelineHoldTailResize
         double noteRight,
         double headY,
         double tailY,
-        double renderedNoteHeight)
+        double renderedNoteHeight,
+        bool bottomAnchor = false)
     {
         var tailDistance = Math.Abs(point.Y - tailY);
         return point.X >= noteLeft &&
             point.X <= noteRight &&
-            tailDistance <= HitTolerance(renderedNoteHeight) &&
-            tailDistance <= Math.Abs(point.Y - headY);
+            (bottomAnchor
+                ? point.Y >= tailY - renderedNoteHeight && point.Y <= tailY + HitTolerance(renderedNoteHeight)
+                : tailDistance <= HitTolerance(renderedNoteHeight) && tailDistance <= Math.Abs(point.Y - headY));
     }
 
     public static BeatPosition? ResolveTarget(

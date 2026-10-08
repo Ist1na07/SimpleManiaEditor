@@ -19,8 +19,8 @@ public static class WindowsProEditorCommand
         BeatPosition beat,
         ProEditorColumnRange allowedColumns,
         BasicBeatPlacementPolicy placementPolicy,
-        int group = 0) =>
-        Place(session, workspaceColumn, beat, null, allowedColumns, placementPolicy, group);
+        int group = 0, Guid? replacedNoteId = null, long? expectedChangeSerial = null) =>
+        Place(session, workspaceColumn, beat, null, allowedColumns, placementPolicy, group, replacedNoteId, expectedChangeSerial);
 
     public static Guid? PlaceHold(
         EditorSession session,
@@ -29,7 +29,7 @@ public static class WindowsProEditorCommand
         BeatPosition secondBeat,
         ProEditorColumnRange allowedColumns,
         BasicBeatPlacementPolicy placementPolicy,
-        int group = 0)
+        int group = 0, Guid? replacedNoteId = null, long? expectedChangeSerial = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         var start = ResolveBeat(session, firstBeat, placementPolicy);
@@ -46,7 +46,7 @@ public static class WindowsProEditorCommand
             end,
             allowedColumns,
             BasicBeatPlacementPolicy.PreserveAuthoredBeat,
-            group);
+            group, replacedNoteId, expectedChangeSerial);
     }
 
     public static int MoveSelection(
@@ -115,10 +115,20 @@ public static class WindowsProEditorCommand
         BeatPosition? endBeat,
         ProEditorColumnRange allowedColumns,
         BasicBeatPlacementPolicy placementPolicy,
-        int group)
+        int group, Guid? replacedNoteId = null, long? expectedChangeSerial = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         EnsureEditable(session, "放置");
+        if (expectedChangeSerial.HasValue && session.ChangeSerial != expectedChangeSerial)
+            throw new InvalidOperationException("放置已按最新谱面状态取消，请重新操作");
+        if (replacedNoteId.HasValue)
+        {
+            var original = session.Document.Notes.FirstOrDefault(n => n.Id == replacedNoteId);
+            if (original == null || ProEditorWorkspaceGeometry.GetColumn(original) != workspaceColumn)
+                throw new InvalidOperationException("被替换的按键已改变，请重新操作");
+            if (!session.AllowOwnerProtectedEdits && session.IsOwnerProtected(original))
+                throw new InvalidOperationException("该按键位于锁定选区，不能替换");
+        }
         if (!allowedColumns.Contains(workspaceColumn))
             throw new ArgumentOutOfRangeException(nameof(workspaceColumn));
         if (group is < 0 or > ushort.MaxValue)
@@ -132,6 +142,7 @@ public static class WindowsProEditorCommand
         if (end.HasValue && end.Value.CompareTo(start) <= 0)
             throw new ArgumentException("LN End Beat 必须晚于 Beat。", nameof(endBeat));
         if (session.Document.Notes.Any(note =>
+                note.Id != replacedNoteId &&
                 ProEditorWorkspaceGeometry.GetColumn(note) == workspaceColumn &&
                 Math.Abs(note.Beat.Value - start.Value) <= BeatEpsilon))
             return null;
@@ -142,6 +153,7 @@ public static class WindowsProEditorCommand
         var id = Guid.NewGuid();
         session.Mutate(document =>
         {
+            if (replacedNoteId.HasValue) document.Notes.RemoveAll(n => n.Id == replacedNoteId);
             var note = new ChartNote
             {
                 Id = id,

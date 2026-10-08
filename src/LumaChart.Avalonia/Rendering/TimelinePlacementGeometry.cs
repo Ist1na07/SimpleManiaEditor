@@ -166,39 +166,13 @@ public static class TimelinePlacementGeometry
     {
         if (tool is not (TimelineTool.Tap or TimelineTool.Hold))
             throw new ArgumentOutOfRangeException(nameof(tool));
-        snapDivision = Math.Clamp(snapDivision, 1, 1920);
-        if (tool == TimelineTool.Tap &&
-            Math.Abs(currentBeat.Value - startBeat.Value) < 1d / snapDivision - 0.000001)
+        if (tool == TimelineTool.Tap || currentBeat.CompareTo(startBeat) == 0)
             return new TimelinePlacement(TimelinePlacementKind.Tap, startBeat, null);
 
         var first = startBeat;
         var second = currentBeat;
         if (second.CompareTo(first) < 0) (first, second) = (second, first);
-        if (second.CompareTo(first) == 0)
-            second = AddSubdivision(first, snapDivision);
         return new TimelinePlacement(TimelinePlacementKind.Hold, first, second);
     }
 
-    private static BeatPosition AddSubdivision(BeatPosition beat, int division)
-    {
-        if (beat.Denominator == 0) beat = BeatPosition.Zero;
-        var divisor = GreatestCommonDivisor(beat.Denominator, division);
-        var denominator = checked((long)beat.Denominator / divisor * division);
-        if (denominator > BeatPosition.MaximumPreservedDenominator)
-            throw new InvalidOperationException(
-                AvaloniaLocalizationCatalog.Format("放置后的公分母 {0} 超过上限 {1}。", denominator, BeatPosition.MaximumPreservedDenominator));
-        var numerator = checked(
-            (long)beat.Numerator * (denominator / beat.Denominator) + denominator / division);
-        var barDelta = Math.DivRem(numerator, denominator, out var remainder);
-        return BeatPosition.Preserve(
-            checked((int)(beat.Bar + barDelta)),
-            checked((int)remainder),
-            checked((int)denominator));
-    }
-
-    private static long GreatestCommonDivisor(long left, long right)
-    {
-        while (right != 0) (left, right) = (right, left % right);
-        return Math.Max(1, Math.Abs(left));
-    }
 }
