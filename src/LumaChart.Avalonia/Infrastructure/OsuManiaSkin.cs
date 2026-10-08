@@ -13,6 +13,7 @@ internal sealed class OsuManiaSkin : IDisposable
     private readonly List<Bitmap> owned = [];
     private readonly Dictionary<string, IBrush> colours = new(StringComparer.OrdinalIgnoreCase);
     private long pixelBudget;
+    private readonly CancellationToken loadCancellation;
     public string Root { get; }
     public string Name { get; }
     public int LoadedImageCount => owned.Count;
@@ -44,62 +45,67 @@ internal sealed class OsuManiaSkin : IDisposable
     public double AnimationFps { get; }
     public bool ModernSkin { get; }
 
-    private OsuManiaSkin(string root, int count)
+    private OsuManiaSkin(string root, int count, CancellationToken cancellationToken)
     {
-        Root = Path.GetFullPath(root);
-        var iniPath = Path.Combine(Root, "skin.ini");
-        if (File.Exists(iniPath) && new FileInfo(iniPath).Length > 2 * 1024 * 1024) throw new InvalidDataException("skin.ini 过大。");
-        var ini = File.Exists(iniPath) ? OsuIniDocument.ReadSkin(iniPath) : new OsuIniDocument("");
-        Config = ini.Mania(count);
-        var legacyPath = Path.Combine(Root, $"{count}K.ini");
-        if (Config.Values.Count == 0 && File.Exists(legacyPath))
+        loadCancellation = cancellationToken;
+        try
         {
-            var legacy = OsuIniDocument.ReadSkin(legacyPath);
-            Config = legacy.Mania(count);
-            if (Config.Values.Count == 0) Config = legacy.Sections.FirstOrDefault(s => s.Values.Count > 0) ?? Config;
+            Root = Path.GetFullPath(root);
+            var iniPath = Path.Combine(Root, "skin.ini");
+            if (File.Exists(iniPath) && new FileInfo(iniPath).Length > 2 * 1024 * 1024) throw new InvalidDataException("skin.ini 过大。");
+            var ini = File.Exists(iniPath) ? OsuIniDocument.ReadSkin(iniPath) : new OsuIniDocument("");
+            Config = ini.Mania(count);
+            var legacyPath = Path.Combine(Root, $"{count}K.ini");
+            if (Config.Values.Count == 0 && File.Exists(legacyPath))
+            {
+                var legacy = OsuIniDocument.ReadSkin(legacyPath);
+                Config = legacy.Mania(count);
+                if (Config.Values.Count == 0) Config = legacy.Sections.FirstOrDefault(s => s.Values.Count > 0) ?? Config;
+            }
+            Fonts = ini.Find("Fonts") ?? new OsuIniDocument.Section("Fonts");
+            var general = ini.Find("General");
+            Name = general?.Text("Name", Path.GetFileName(Root)) ?? Path.GetFileName(Root);
+            ModernSkin = general == null || general.Text("Version") == "latest" || general.Number("Version", 1) >= 2.5;
+            AnimationFps = Math.Clamp(general?.Number("AnimationFramerate", 60) ?? 60, -1, 240);
+            SplitStages = count > 1 && Config.Flag("SplitStages", count > 9);
+            Widths = Config.Numbers("ColumnWidth", count, 30, 1, 200);
+            Spacing = Config.Numbers("ColumnSpacing", count, 0, 0, 100);
+            LineWidths = Config.Numbers("ColumnLineWidth", count + 1, 2, 0, 20);
+            HeightScaleWidth = Math.Clamp(Config.Number("WidthForNoteHeightScale", Widths.Min()), 1, 200);
+            LaneColours = Enumerable.Range(1, count).Select(i => Colour("Colour" + i, Colors.Black)).ToArray();
+            Notes = new SkinAnimation?[count]; Heads = new SkinAnimation?[count]; Bodies = new SkinAnimation?[count]; Tails = new SkinAnimation?[count];
+            Keys = new SkinAnimation?[count]; PressedKeys = new SkinAnimation?[count];
+            for (var lane = 0; lane < count; lane++)
+            {
+                var kind = DefaultKind(count, lane, (int)Config.Number("SpecialStyle", 0));
+                Notes[lane] = Load(Config.Text($"NoteImage{lane}", $"mania-note{kind}"));
+                Heads[lane] = Load(Config.Text($"NoteImage{lane}H", $"mania-note{kind}H")) ?? Notes[lane];
+                Bodies[lane] = Load(Config.Text($"NoteImage{lane}L", $"mania-note{kind}L"));
+                Tails[lane] = Load(Config.Text($"NoteImage{lane}T", $"mania-note{kind}T")) ?? Heads[lane];
+                Keys[lane] = Load(Config.Text($"KeyImage{lane}", $"mania-key{kind}"));
+                PressedKeys[lane] = Load(Config.Text($"KeyImage{lane}D", $"mania-key{kind}D")) ?? Keys[lane];
+            }
+            foreach (var (key, fallback) in new[] { ("StageLeft","mania-stage-left"), ("StageRight","mania-stage-right"), ("StageBottom","mania-stage-bottom"),
+                ("StageHint","mania-stage-hint"), ("StageLight","mania-stage-light"), ("LightingN","lightingN"), ("LightingL","lightingL"), ("WarningArrow","mania-warningarrow"),
+                ("Hit0","mania-hit0"), ("Hit50","mania-hit50"), ("Hit100","mania-hit100"), ("Hit200","mania-hit200"), ("Hit300","mania-hit300"), ("Hit300g","mania-hit300g") })
+                Load(Config.Text(key, fallback));
+            foreach (var name in new[] { "comboburst-mania", "scorebar-bg", "scorebar-colour", "scorebar-marker", "pause-overlay", "pause-continue", "pause-retry", "pause-back", "play-skip" }) Load(name);
+            foreach (var prefix in new[] { Fonts.Text("ScorePrefix", "score"), Fonts.Text("ComboPrefix", "score") }.Distinct())
+                foreach (var glyph in new[] { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "dot", "percent", "x" }) Load(prefix + "-" + glyph);
+            var stageLight = Texture("StageLight", "mania-stage-light");
+            StageLights = Enumerable.Range(1, count).Select(i => Tint(stageLight, ((ISolidColorBrush)Colour("ColourLight" + i, Color.FromRgb(55, 255, 255))).Color)).ToArray();
+            HitSoundPath = new[] { "normal-hitnormal.wav", "normal-hitnormal.ogg", "normal-hitnormal.mp3" }.Select(SafePath).FirstOrDefault(p => p != null && File.Exists(p));
+            if (Config.Values.Count == 0) warnings.Add($"没有 {count}K 的 [Mania] 配置，使用默认布局和可用素材。");
+            if (Notes.All(n => n == null) && Heads.All(n => n == null)) warnings.Add("没有找到 mania 按键图片，使用内置按键；检查是否选择了正确的皮肤目录。");
         }
-        Fonts = ini.Find("Fonts") ?? new OsuIniDocument.Section("Fonts");
-        var general = ini.Find("General");
-        Name = general?.Text("Name", Path.GetFileName(Root)) ?? Path.GetFileName(Root);
-        ModernSkin = general == null || general.Text("Version") == "latest" || general.Number("Version", 1) >= 2.5;
-        AnimationFps = Math.Clamp(general?.Number("AnimationFramerate", 60) ?? 60, -1, 240);
-        SplitStages = count > 1 && Config.Flag("SplitStages", count > 9);
-        Widths = Config.Numbers("ColumnWidth", count, 30, 1, 200);
-        Spacing = Config.Numbers("ColumnSpacing", count, 0, 0, 100);
-        LineWidths = Config.Numbers("ColumnLineWidth", count + 1, 2, 0, 20);
-        HeightScaleWidth = Math.Clamp(Config.Number("WidthForNoteHeightScale", Widths.Min()), 1, 200);
-        LaneColours = Enumerable.Range(1, count).Select(i => Colour("Colour" + i, Colors.Black)).ToArray();
-        Notes = new SkinAnimation?[count]; Heads = new SkinAnimation?[count]; Bodies = new SkinAnimation?[count]; Tails = new SkinAnimation?[count];
-        Keys = new SkinAnimation?[count]; PressedKeys = new SkinAnimation?[count];
-        for (var lane = 0; lane < count; lane++)
-        {
-            var kind = DefaultKind(count, lane, (int)Config.Number("SpecialStyle", 0));
-            Notes[lane] = Load(Config.Text($"NoteImage{lane}", $"mania-note{kind}"));
-            Heads[lane] = Load(Config.Text($"NoteImage{lane}H", $"mania-note{kind}H")) ?? Notes[lane];
-            Bodies[lane] = Load(Config.Text($"NoteImage{lane}L", $"mania-note{kind}L"));
-            Tails[lane] = Load(Config.Text($"NoteImage{lane}T", $"mania-note{kind}T")) ?? Heads[lane];
-            Keys[lane] = Load(Config.Text($"KeyImage{lane}", $"mania-key{kind}"));
-            PressedKeys[lane] = Load(Config.Text($"KeyImage{lane}D", $"mania-key{kind}D")) ?? Keys[lane];
-        }
-        foreach (var (key, fallback) in new[] { ("StageLeft","mania-stage-left"), ("StageRight","mania-stage-right"), ("StageBottom","mania-stage-bottom"),
-            ("StageHint","mania-stage-hint"), ("StageLight","mania-stage-light"), ("LightingN","lightingN"), ("LightingL","lightingL"), ("WarningArrow","mania-warningarrow"),
-            ("Hit0","mania-hit0"), ("Hit50","mania-hit50"), ("Hit100","mania-hit100"), ("Hit200","mania-hit200"), ("Hit300","mania-hit300"), ("Hit300g","mania-hit300g") })
-            Load(Config.Text(key, fallback));
-        foreach (var name in new[] { "comboburst-mania", "scorebar-bg", "scorebar-colour", "scorebar-marker", "pause-overlay", "pause-continue", "pause-retry", "pause-back", "play-skip" }) Load(name);
-        foreach (var prefix in new[] { Fonts.Text("ScorePrefix", "score"), Fonts.Text("ComboPrefix", "score") }.Distinct())
-            foreach (var glyph in new[] { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "dot", "percent", "x" }) Load(prefix + "-" + glyph);
-        var stageLight = Texture("StageLight", "mania-stage-light");
-        StageLights = Enumerable.Range(1, count).Select(i => Tint(stageLight, ((ISolidColorBrush)Colour("ColourLight" + i, Color.FromRgb(55, 255, 255))).Color)).ToArray();
-        HitSoundPath = new[] { "normal-hitnormal.wav", "normal-hitnormal.ogg", "normal-hitnormal.mp3" }.Select(SafePath).FirstOrDefault(p => p != null && File.Exists(p));
-        if (Config.Values.Count == 0) warnings.Add($"没有 {count}K 的 [Mania] 配置，使用默认布局和可用素材。");
-        if (Notes.All(n => n == null) && Heads.All(n => n == null)) warnings.Add("没有找到 mania 按键图片，使用内置按键；检查是否选择了正确的皮肤目录。");
+        catch { Dispose(); throw; }
     }
 
     public static Task<OsuManiaSkin> LoadAsync(string path, int count, CancellationToken token) => Task.Run(() =>
     {
         token.ThrowIfCancellationRequested();
         if (!Directory.Exists(path)) throw new DirectoryNotFoundException("皮肤目录不存在。");
-        var result = new OsuManiaSkin(path, count);
+        var result = new OsuManiaSkin(path, count, token);
         if (token.IsCancellationRequested) { result.Dispose(); token.ThrowIfCancellationRequested(); }
         return result;
     }, token);
@@ -124,6 +130,7 @@ internal sealed class OsuManiaSkin : IDisposable
 
     private SkinAnimation? Load(string name)
     {
+        loadCancellation.ThrowIfCancellationRequested();
         name = name.Trim();
         if (textures.TryGetValue(name, out var existing)) return existing;
         var fileName = name;
@@ -133,6 +140,7 @@ internal sealed class OsuManiaSkin : IDisposable
         var frames = new List<Bitmap>(); var density = 1;
         for (var i = 0; i < 120; i++)
         {
+            loadCancellation.ThrowIfCancellationRequested();
             var file = ImagePath(fileName + "-" + i, out var d);
             if (file == null) break;
             var image = Decode(file); if (image == null) break;
@@ -176,6 +184,7 @@ internal sealed class OsuManiaSkin : IDisposable
         var frames = new List<Bitmap>();
         foreach (var frame in source.Frames)
         {
+            loadCancellation.ThrowIfCancellationRequested();
             using var encoded = new MemoryStream(); frame.Save(encoded, PngBitmapEncoderOptions.Default); encoded.Position = 0;
             using var decoded = SKBitmap.Decode(encoded); using var target = new SKBitmap(decoded.Width, decoded.Height);
             using (var canvas = new SKCanvas(target))

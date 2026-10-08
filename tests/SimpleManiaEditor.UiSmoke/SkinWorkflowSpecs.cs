@@ -59,6 +59,13 @@ internal static class SkinWorkflowSpecs
         var recovery = Window(); recovery.Show(); Program.Pump(80); Wait(Field<Task<bool>>(recovery,"skinLoadTask"));
         Require(WindowsPlaytestSettingsStore.Load().SkinPath == missing && Field<ComboBox>(recovery,"skinPicker").SelectedItem is OsuSkinEntry { Available:false },"missing skin silently erased its saved selection");
         Wait(recovery.SelectSkinAsync("")); recovery.Close(); Program.Pump(20);
+        WindowsPlaytestSettingsStore.Save(new WindowsPlaytestSettings(autoPlay:false,fullScreen:false,skinPath:a));
+        var startup = new PlaytestWindow(new ChartDocument {KeyCount=7,Notes=[new ChartNote{Lane=3,Beat=new(2,0,1)}]},null,Path.Combine(root,"startup.mc"),0,
+            WindowsPlaytestSettingsStore.Load(),new WindowsKeySoundSettings(),1,true,.8f,60,1,1,false,autoStart:true);
+        startup.Show(); startup.KeyPress(Key.F1,RawInputModifiers.None,PhysicalKey.F1,"F1"); startup.KeyRelease(Key.F1,RawInputModifiers.None,PhysicalKey.F1,"F1");
+        Wait(Field<Task<bool>>(startup,"skinLoadTask")); Program.Pump(100);
+        Require(!startup.Diagnostics.Playing && Field<Border>(startup,"settingsSide").IsVisible,"initial autostart interrupted skin selection/settings");
+        startup.Close(); Program.Pump(20);
         Console.WriteLine("PASS persistent skin catalogue/selector, official multi-Keys and animated paths, close during loading, repeated reopen, rapid switch and missing-skin recovery");
 
         PlaytestWindow Window() => new(new ChartDocument {KeyCount=7,Notes=[new ChartNote {Lane=3,Beat=new(2,0,1)}]},null,Path.Combine(root,"skin-workflow.mc"),0,

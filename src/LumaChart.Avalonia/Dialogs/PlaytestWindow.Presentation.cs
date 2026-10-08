@@ -23,8 +23,10 @@ internal sealed partial class PlaytestWindow
     private bool syncingSkinPicker;
     private string skinCatalogueWarning = "";
     private bool preferencesSaveFailed;
+    private bool suppressInitialAutoStart;
     private readonly LumaChart.Avalonia.Controls.PlaytestSurface skinPreview = new() { Height = 160, PreviewOnly = true };
     private Task<bool> skinLoadTask = Task.FromResult(true);
+    private CancellationTokenSource? skinLoadCancellation;
     private CheckBox? fullScreenBox, upsideDownBox, skinSamplesBox;
     private OsuManiaSkin? activeSkin;
     private int skinGeneration;
@@ -241,15 +243,18 @@ internal sealed partial class PlaytestWindow
     internal async Task<bool> LoadSkinAsync(string path)
     {
         var generation = ++skinGeneration;
+        skinLoadCancellation?.Cancel();
+        var loadLifetime = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        skinLoadCancellation = loadLifetime;
         OsuManiaSkin? next = null;
         try
         {
             if (importStatus != null) importStatus.Text = "正在加载皮肤…";
-            next = string.IsNullOrWhiteSpace(path) ? null : await OsuManiaSkin.LoadAsync(path, session.KeyCount, lifetime.Token);
+            next = string.IsNullOrWhiteSpace(path) ? null : await OsuManiaSkin.LoadAsync(path, session.KeyCount, loadLifetime.Token);
             var soundReady = false;
             if (next?.HitSoundPath != null)
-                try { soundReady = await keySounds.PreloadAsync(next.HitSoundPath, lifetime.Token); }
-                catch (Exception) when (!lifetime.IsCancellationRequested) { /* Sound failure cannot reject valid artwork. */ }
+                try { soundReady = await keySounds.PreloadAsync(next.HitSoundPath, loadLifetime.Token); }
+                catch (Exception) when (!loadLifetime.IsCancellationRequested) { /* Sound failure cannot reject valid artwork. */ }
             if (closing || generation != skinGeneration) { next?.Dispose(); return false; }
             var old = activeSkin; activeSkin = next; playfield.SetSkin(next); skinPreview.SetSkin(next); old?.Dispose();
             skinSoundReady = soundReady;
@@ -266,6 +271,11 @@ internal sealed partial class PlaytestWindow
         catch (Exception e) when (!closing)
         { next?.Dispose(); if (generation == skinGeneration && importStatus != null) importStatus.Text = "皮肤加载失败，选择已保留，可重新加载：" + e.Message; return false; }
         catch (Exception) when (closing) { next?.Dispose(); return false; }
+        finally
+        {
+            if (ReferenceEquals(skinLoadCancellation, loadLifetime)) skinLoadCancellation = null;
+            loadLifetime.Dispose();
+        }
     }
 
     private async Task LoadBackgroundAsync()

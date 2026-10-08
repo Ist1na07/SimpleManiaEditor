@@ -298,7 +298,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
             }
             RequestPlaytestAnimationFrame();
             RefreshAutomationDiagnostics(CurrentMilliseconds());
-            if (autoStart) await TogglePauseAsync();
+            if (autoStart && !suppressInitialAutoStart) await TogglePauseAsync();
         };
         PropertyChanged += (_, eventArgs) =>
         {
@@ -996,6 +996,7 @@ internal sealed partial class PlaytestWindow : PlatformWindow
     /// </summary>
     private void ToggleSettingsPanel()
     {
+        suppressInitialAutoStart = true;
         if (playing) _ = PausePlaybackAsync();
         settingsPanelCollapsed = !settingsPanelCollapsed;
         ApplySettingsPanelVisibility();
