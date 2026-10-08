@@ -535,6 +535,14 @@ public sealed class MainWindowViewModel
         return mixedSelectionClipboard;
     }
 
+    public MixedSelectionClipboard? EditorClipboard => mixedSelectionClipboard;
+
+    public void SetEditorClipboard(MixedSelectionClipboard clipboard)
+    {
+        mixedSelectionClipboard = clipboard;
+        RaiseStateChanged();
+    }
+
     public MixedSelectionClipboard CopyTimingSelection(IEnumerable<Guid> timingIds)
     {
         var tab = ActiveTab ?? throw new InvalidOperationException("No chart tab is active.");

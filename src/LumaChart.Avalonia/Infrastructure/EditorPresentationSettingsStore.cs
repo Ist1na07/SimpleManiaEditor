@@ -10,21 +10,50 @@ public static class EditorPresentationSettingsStore
     public static string SettingsPath => Path.Combine(AvaloniaAppPaths.LocalDataRoot, "editor-presentation.json");
 
     public static EditorNoteStyle LoadNoteStyle()
+        => ReadPreferences().NoteStyle;
+
+    public static EditorGridNotation LoadGridNotation() => ReadPreferences().GridNotation;
+    public static int LoadLayoutRevision() => ReadPreferences().LayoutRevision;
+
+    private static Preferences ReadPreferences()
     {
         try
         {
-            if (!WindowsSettingsFileGuard.TryReadExisting(SettingsPath, out var bytes)) return EditorNoteStyle.Osu;
-            var value = JsonSerializer.Deserialize<Preferences>(bytes)?.NoteStyle ?? EditorNoteStyle.Osu;
-            return Enum.IsDefined(value) ? value : EditorNoteStyle.Osu;
+            if (!WindowsSettingsFileGuard.TryReadExisting(SettingsPath, out var bytes)) return new();
+            var value = JsonSerializer.Deserialize<Preferences>(bytes) ?? new();
+            if (!Enum.IsDefined(value.NoteStyle)) value.NoteStyle = EditorNoteStyle.Osu;
+            if (!Enum.IsDefined(value.GridNotation)) value.GridNotation = EditorGridNotation.Osu;
+            return value;
         }
         catch (Exception exception)
         {
             WindowsSettingsFileGuard.ReportLoadFailure(SettingsPath, exception);
-            return EditorNoteStyle.Osu;
+            return new();
         }
     }
 
     public static void SaveNoteStyle(EditorNoteStyle value)
+    {
+        var preferences = ReadPreferences();
+        preferences.NoteStyle = value;
+        Save(preferences);
+    }
+
+    public static void SaveGridNotation(EditorGridNotation value)
+    {
+        var preferences = ReadPreferences();
+        preferences.GridNotation = value;
+        Save(preferences);
+    }
+
+    public static void SaveLayoutRevision(int value)
+    {
+        var preferences = ReadPreferences();
+        preferences.LayoutRevision = value;
+        Save(preferences);
+    }
+
+    private static void Save(Preferences preferences)
     {
         if (!WindowsSettingsFileGuard.CanWrite(SettingsPath)) return;
         Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
@@ -33,7 +62,7 @@ public static class EditorPresentationSettingsStore
         {
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(stream, new Preferences { NoteStyle = value });
+                JsonSerializer.Serialize(stream, preferences);
                 stream.Flush(flushToDisk: true);
             }
             File.Move(temporary, SettingsPath, overwrite: true);
@@ -41,5 +70,10 @@ public static class EditorPresentationSettingsStore
         finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
-    private sealed class Preferences { public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu; }
+    private sealed class Preferences
+    {
+        public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
+        public EditorGridNotation GridNotation { get; set; } = EditorGridNotation.Osu;
+        public int LayoutRevision { get; set; }
+    }
 }

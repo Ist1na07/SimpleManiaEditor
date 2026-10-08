@@ -35,6 +35,7 @@ internal static class Program
         Directory.CreateDirectory(screenshotRoot);
         try
         {
+            TrackWorkspaceSpecs.Run(root);
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
@@ -145,7 +146,7 @@ internal static class Program
         var save = viewModel.SaveAndVerifyAsync(tab.Id);
         PumpUntil(() => save.IsCompleted);
         Require(save.GetAwaiter().GetResult()?.StructurallyEqual == true, "editor save/reload verification failed");
-        var gridPicker = (Slider)typeof(MainWindow).GetField("fixedGridSlider", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        var gridPicker = (ComboBox)typeof(MainWindow).GetField("fixedGridPicker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         Require(gridPicker.IsVisible && gridPicker.TranslatePoint(new Point(), window)!.Value.Y < origin.Y,
             "grid selector is not in fixed top toolbar");
         var currentBeat = timeline.CurrentBeat;
@@ -163,17 +164,17 @@ internal static class Program
             window.MouseWheel(probe.TapTarget.SurfacePoint + (Vector)origin, new Vector(0, 1), RawInputModifiers.Control);
             Require(tab.Session.SnapDivision == expected, "Ctrl wheel included a manual-only division");
         }
-        gridPicker.Value = 4;
+        gridPicker.SelectedItem = 5;
         Require(tab.Session.SnapDivision == 5, "slider could not manually choose 1/5");
         var commandMenu = (Border)typeof(MainWindow).GetField("commandMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         commandMenu.IsVisible = true;
         Dispatcher.UIThread.RunJobs();
-        Require(commandMenu.TranslatePoint(new Point(), window)!.Value.Y >= gridPicker.TranslatePoint(new Point(0, gridPicker.Bounds.Height), window)!.Value.Y,
+        Require(commandMenu.TranslatePoint(new Point(0, commandMenu.Bounds.Height), window)!.Value.Y <= gridPicker.TranslatePoint(new Point(), window)!.Value.Y,
             "expanded gear menu overlaps fixed toolbar");
         Require(timeline.TranslatePoint(new Point(), window)!.Value.Y >= commandMenu.TranslatePoint(new Point(0, commandMenu.Bounds.Height), window)!.Value.Y,
             "expanded gear menu overlaps the chart/tools row");
         using (var menuFrame = window.CaptureRenderedFrame()!) menuFrame.Save(Path.Combine(screenshots, "editor-menu.png"), PngBitmapEncoderOptions.Default);
-        commandMenu.IsVisible = false;
+        Require(commandMenu.IsVisible, "merged top commands were collapsed");
         var wavePath = Path.Combine(Path.GetDirectoryName(tab.WorkingPath)!, "simulation.wav");
         WriteSimulationWave(wavePath);
         SeekPerformanceSpecs.CheckCanceledPreparation(wavePath);
@@ -200,11 +201,11 @@ internal static class Program
         Require(transport.PlaybackSnapshot?.IsPlaying == false, "pending wheel seek resumed after explicit Space pause");
         Require(factory.Outputs.Any(output => output.Format.SampleRate == 16000 && output.BytesRead > 0) &&
             factory.Outputs.All(output => output.ReadFailure == null), "simulated sink did not consume real DSP output cleanly");
-        var fixedRate = (Slider)typeof(MainWindow).GetField("fixedRateSlider", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
-        fixedRate.Value = 1.5;
+        var fixedRate = (ComboBox)typeof(MainWindow).GetField("fixedRatePicker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        fixedRate.SelectedItem = 1.5;
         PumpUntil(() => Math.Abs(transport.PlaybackRate - 1.5) < .001 && transport.PlaybackSnapshot?.PlaybackRate == 1.5);
         Require(transport.PlaybackSnapshot!.PlaybackRate == 1.5, "top rate slider failed to apply >1x playback");
-        fixedRate.Value = 1;
+        fixedRate.SelectedItem = 1d;
         PumpUntil(() => Math.Abs(transport.PlaybackRate - 1) < .001 && transport.PlaybackSnapshot?.PlaybackRate == 1);
         var tapToolButton = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.ToolRail.Tap");
         tapToolButton.Focus();
@@ -251,6 +252,7 @@ internal static class Program
         skinPicker.SelectedIndex = 0;
         Require(timeline.NoteStyle == EditorNoteStyle.Osu && EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Osu,
             "skin selector did not restore/persist osu default");
+        WorkbenchRegressionSpecs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);
@@ -265,7 +267,7 @@ internal static class Program
         window.MouseDown(point, MouseButton.Left, modifiers);
         window.MouseUp(point, MouseButton.Left, modifiers);
     }
-    private static void Stroke(Window window, Key key, RawInputModifiers modifiers = RawInputModifiers.None)
+    internal static void Stroke(Window window, Key key, RawInputModifiers modifiers = RawInputModifiers.None)
     {
         window.KeyPress(key, modifiers, PhysicalKey.None, null);
         window.KeyRelease(key, modifiers, PhysicalKey.None, null);
@@ -283,7 +285,7 @@ internal static class Program
         writer.Write(System.Text.Encoding.ASCII.GetBytes("data")); writer.Write(frames * 2);
         for (var i = 0; i < frames; i++) writer.Write((short)(Math.Sin(i * Math.PI * 2 * 440 / rate) * 8000));
     }
-    private static void PumpUntil(Func<bool> condition)
+    internal static void PumpUntil(Func<bool> condition)
     {
         var deadline = Environment.TickCount64 + 15000;
         while (!condition())
@@ -292,7 +294,7 @@ internal static class Program
             Pump(10);
         }
     }
-    private static void Pump(int milliseconds)
+    internal static void Pump(int milliseconds)
     {
         var until = Environment.TickCount64 + milliseconds;
         while (Environment.TickCount64 < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }

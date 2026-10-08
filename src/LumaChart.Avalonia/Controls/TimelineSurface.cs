@@ -351,6 +351,8 @@ public sealed class TimelineSurface : Control
     public const double MaximumZoom = 3840;
     public const double PlaybackWheelStepMilliseconds = 500;
     public event EventHandler<int>? SnapDivisionChangeRequested;
+    public event EventHandler<int>? PlaybackRateChangeRequested;
+    public event EventHandler<Point>? BlankContextRequested;
     private bool proEditorEnabled;
     private int proGridColumnCount = ProEditorWorkspaceGeometry.DefaultTotalColumns;
     private double gridLaneWidth = WindowsEditorViewSettings.DefaultGridLaneWidth;
@@ -945,6 +947,17 @@ public sealed class TimelineSurface : Control
         SetCurrentBeat(beat);
     }
 
+    public void NavigateToBeat(double beat) => SetCurrentBeatFromManualNavigation(Math.Max(0, beat));
+
+    public void SetViewportAnchor(double position)
+    {
+        var value = Math.Clamp(position, .05, .98);
+        if (Math.Abs(judgementLinePosition - value) < .0001) return;
+        judgementLinePosition = value;
+        InvalidateAudioScene();
+        InvalidateVisual();
+    }
+
     public void SetZoom(double pixelsPerBeat)
     {
         var next = Math.Clamp(pixelsPerBeat, MinimumZoom, MaximumZoom);
@@ -1459,6 +1472,12 @@ public sealed class TimelineSurface : Control
                 excludedGroups: hiddenGroups,
                 includeDrafts: proEditorEnabled);
         var hit = tailHit ?? bodyHit;
+        if (rightPressed && hit == null && !timingHit.HasValue)
+        {
+            BlankContextRequested?.Invoke(this, point);
+            eventArgs.Handled = true;
+            return;
+        }
 
         if (leftPressed &&
             eventArgs.Pointer.Type == PointerType.Touch &&
@@ -2164,6 +2183,11 @@ public sealed class TimelineSurface : Control
         {
             var direction = Math.Sign(eventArgs.Delta.Y);
             if (direction != 0) SnapDivisionChangeRequested?.Invoke(this, direction);
+        }
+        else if (InteractionProfile == EditorInteractionProfile.OsuMania && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            var direction = Math.Sign(eventArgs.Delta.Y);
+            if (direction != 0) PlaybackRateChangeRequested?.Invoke(this, direction);
         }
         else if (proEditorEnabled && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {

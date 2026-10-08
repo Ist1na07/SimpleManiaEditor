@@ -36,6 +36,18 @@ public sealed class MixedSelectionClipboard
         notes.Select(note => note.Clone()).ToArray();
 
     public MixedSelectionClipboard EffectsOnly() => new([], effects);
+    public MixedSelectionClipboard NotesOnly() => new(notes, []);
+
+    /// <summary>Copies arrangement without chart-specific sample references or source-format fields.</summary>
+    public MixedSelectionClipboard PatternOnly() => new(notes.Select(note =>
+    {
+        var copy = note.Clone();
+        copy.Sound = null;
+        copy.Volume = 100;
+        copy.UnknownData = null;
+        copy.OnlineCreatorUserId = 0;
+        return copy;
+    }), []);
 
     internal IReadOnlyList<ChartNote> Notes => notes;
 }

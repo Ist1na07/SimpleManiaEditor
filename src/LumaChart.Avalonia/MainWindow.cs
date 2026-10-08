@@ -5475,10 +5475,11 @@ public sealed partial class MainWindow : PlatformWindow
             Padding = new Thickness(1),
             Child = timelineHost
         };
-        var timelineColumn = new Grid { ColumnDefinitions = new ColumnDefinitions("90,*") };
+        var timelineColumn = new Grid { ColumnDefinitions = new ColumnDefinitions("165,*") };
         timelineColumn.Children.Add(BuildFixedToolRail());
-        Grid.SetColumn(timelineFrame, 1);
-        timelineColumn.Children.Add(timelineFrame);
+        var trackWorkbench = BuildTrackWorkbench(timelineFrame);
+        Grid.SetColumn(trackWorkbench, 1);
+        timelineColumn.Children.Add(trackWorkbench);
         Grid.SetColumn(timelineColumn, 2);
         workbench.Children.Add(timelineColumn);
         inspectorText.Foreground = MutedBrush;
@@ -5593,11 +5594,11 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetColumnSpan(commandMenuButton, 5);
         workbench.Children.Add(commandMenuButton);
         var quickPalette = BuildQuickEditPalette();
-        var quickValues = BuildQuickValuesPalette();
+        var quickValues = BuildAdjustmentToolbar();
         var roomCollaboration = BuildRoomCollaborationPanel();
         Grid.SetColumn(quickPalette, 2);
         Grid.SetColumnSpan(quickPalette, WindowsInspectorParityPolicy.FloatingPaletteColumnSpan);
-        workbench.Children.Add(quickPalette);
+        MergeQuickPaletteIntoToolRail();
         Grid.SetColumn(quickValues, 2);
         Grid.SetColumnSpan(quickValues, WindowsInspectorParityPolicy.FloatingPaletteColumnSpan);
         workbench.Children.Add(quickValues);
@@ -5609,14 +5610,20 @@ public sealed partial class MainWindow : PlatformWindow
         var extension = BuildExtensionPalette();
         Grid.SetColumn(extension, 2);
         workbench.Children.Add(extension);
-        // Fixed controls and the expandable menu each get a layout row.
-        // Palettes stay in the chart row below both command areas.
-        workbench.RowDefinitions = new RowDefinitions("Auto,Auto,*");
-        foreach (var child in workbench.Children) Grid.SetRow(child, 2);
-        Grid.SetRow(commandMenuButton, 0);
-        Grid.SetRow(commandMenu, 1);
+        // Commands, presets and adjustments each get a fixed layout row.
+        // Track bodies and remaining palettes stay below the fixed controls.
+        workbench.RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*");
+        foreach (var child in workbench.Children) Grid.SetRow(child, 3);
+        Grid.SetRow(quickValues, 2);
+        Grid.SetColumn(quickValues, 0);
+        Grid.SetColumnSpan(quickValues, 5);
+        commandMenuButton.IsVisible = false;
+        Grid.SetRow(commandMenu, 0);
+        commandMenu.IsVisible = true;
+        commandMenu.Margin = new Thickness(0, 0, 0, 0);
         var fixedToolbar = BuildFixedGridToolbar();
-        Grid.SetColumn(fixedToolbar, 2);
+        Grid.SetColumnSpan(fixedToolbar, 5);
+        Grid.SetRow(fixedToolbar, 1);
         workbench.Children.Add(fixedToolbar);
         editorView.Children.Add(workbench);
     }
@@ -7540,38 +7547,9 @@ public sealed partial class MainWindow : PlatformWindow
         ConfigureQuickValueText(quickSnapText);
         ConfigureQuickValueText(quickGridScaleText);
         ConfigureQuickValueText(quickPlaybackRateText);
-        quickValuesPaletteBody.Children.Add(BuildQuickValueSection(
-            "分度",
-            quickSnapText,
-            (_, _) => AdjustQuickSnap(1),
-            (_, _) => AdjustQuickSnap(-1),
-            anchor => ShowQuickPresetMenu(
-                anchor,
-                QuickSnapDivisions.Select(value =>
-                    ($"1/{value}", (Action)(() => SetQuickSnapDivision(value))))),
-            "Snap"));
-        quickValuesPaletteBody.Children.Add(BuildQuickValueSection(
-            "高度",
-            quickGridScaleText,
-            (_, _) => AdjustQuickGrid(1),
-            (_, _) => AdjustQuickGrid(-1),
-            anchor => ShowQuickPresetMenu(
-                anchor,
-                QuickGridScales.Select(value =>
-                    ($"{value:0.0}x", (Action)(() => SetQuickGridScale(value))))),
-            "Grid"));
-        quickValuesPaletteBody.Children.Add(BuildQuickValueSection(
-            "倍速",
-            quickPlaybackRateText,
-            async (_, _) => await AdjustQuickPlaybackRateAsync(.1),
-            async (_, _) => await AdjustQuickPlaybackRateAsync(-.1),
-            anchor => ShowQuickPresetMenu(
-                anchor,
-                QuickPlaybackRates.Select(value =>
-                    ($"{value:0.0}x", (Action)(() => _ = SetQuickPlaybackRateAsync(value))))),
-            "Rate"));
+        quickValuesPaletteBody.Children.Add(BuildAdjustmentSliders());
         quickValuesPaletteBody.Margin = new Thickness(0, 4, 0, 0);
-        quickValuesPaletteBody.Width = 100;
+        quickValuesPaletteBody.Width = 290;
         quickValuesPaletteBody.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         quickValuesPaletteCollapseButton.Content = "−";
@@ -7641,12 +7619,12 @@ public sealed partial class MainWindow : PlatformWindow
 
         var content = new StackPanel
         {
-            Width = 100,
+            Width = 290,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         content.Children.Add(header);
         content.Children.Add(quickValuesPaletteBody);
-        quickValuesPalette.Width = WindowsInspectorParityPolicy.QuickValuesPaletteWidth;
+        quickValuesPalette.Width = 310;
         quickValuesPalette.Background = new SolidColorBrush(Color.Parse("#F51A1D20"));
         quickValuesPalette.BorderBrush =
             new SolidColorBrush(Color.Parse("#293135"));
@@ -7950,7 +7928,7 @@ public sealed partial class MainWindow : PlatformWindow
         SyncFixedGridPicker(division);
         RefreshQuickValuesPaletteValues();
         timeline.InvalidateVisual();
-        viewModel.SetStatus(AvaloniaLocalizationCatalog.Format("当前分度 1/{0}", division));
+        viewModel.SetStatus($"当前网格 {GridLabel(division)}");
         MarkEditorViewSettingsDirty();
     }
 
@@ -7981,10 +7959,11 @@ public sealed partial class MainWindow : PlatformWindow
     {
         SyncFixedGridPicker(viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision);
         var division = viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision;
-        quickSnapText.Text = $"1/{division}";
+        quickSnapText.Text = GridLabel(division);
         quickGridScaleText.Text = $"{timeline.PixelsPerBeat / 140d:0.00}x";
         quickPlaybackRateText.Text = $"{audioTransport.PlaybackRate:0.00}x";
         SyncFixedPlaybackRate();
+        SyncAdjustmentZoom();
     }
 
     private void ApplyQuickValuesPaletteLayout()
@@ -10080,7 +10059,7 @@ public sealed partial class MainWindow : PlatformWindow
             foreach (var division in new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16 })
                 settingsSnapBox.Items.Add(new ComboBoxItem
                 {
-                    Content = $"1/{division}",
+                    Content = GridLabel(division),
                     Tag = division
                 });
             settingsSnapBox.IsEditable = true;
@@ -10268,7 +10247,7 @@ public sealed partial class MainWindow : PlatformWindow
         foreach (var division in new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16 })
             settingsFixedSnapBox.Items.Add(new ComboBoxItem
             {
-                Content = $"1/{division}",
+                Content = GridLabel(division),
                 Tag = division
             });
         settingsFixedSnapBox.IsEditable = true;
@@ -10430,7 +10409,7 @@ public sealed partial class MainWindow : PlatformWindow
             gridLaneWidthValueText,
             TimingField("主编辑区域 X 轴偏移", mainEditorHorizontalOffsetSlider),
             mainEditorHorizontalOffsetValueText,
-            TimingField("栅格高度（每 Beat，Ctrl + 滚轮）", gridBeatHeightSlider),
+            TimingField("缩放（DIP / beat，Alt + 滚轮）", gridBeatHeightSlider),
             gridBeatHeightValueText,
             noteSizeGrid,
             TimingField("Note 透明度", noteOpacitySlider),
@@ -10543,22 +10522,20 @@ public sealed partial class MainWindow : PlatformWindow
         if (!restoreInvalidText) return;
         SyncSettingsSnapBox(
             viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision);
-        viewModel.SetStatus("分度范围：1–1920");
+        viewModel.SetStatus(gridNotation == EditorGridNotation.General ? "General 网格分母：4–7680，须为 4 的倍数。" : "osu 网格分母：1–1920。");
     }
 
-    private static bool TryParseSnapDivisionText(string? text, out int division)
+    private bool TryParseSnapDivisionText(string? text, out int division)
     {
         division = 0;
         if (string.IsNullOrWhiteSpace(text)) return false;
         var trimmed = text.Trim();
         var slash = trimmed.LastIndexOf('/');
         if (slash >= 0) trimmed = trimmed[(slash + 1)..].Trim();
-        return int.TryParse(
-                   trimmed,
-                   NumberStyles.Integer,
-                   CultureInfo.InvariantCulture,
-                   out division) &&
-               division is >= 1 and <= 1920;
+        if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var displayed)) return false;
+        try { division = EditorGridNotationPolicy.FromDisplayedDenominator(displayed, gridNotation); }
+        catch (ArgumentOutOfRangeException) { return false; }
+        return division is >= 1 and <= 1920;
     }
 
     private void SyncSettingsSnapBox(int division, bool addCustomDivisionItem = true)
@@ -10578,13 +10555,13 @@ public sealed partial class MainWindow : PlatformWindow
             {
                 item = new ComboBoxItem
                 {
-                    Content = $"1/{division}",
+                    Content = GridLabel(division),
                     Tag = division
                 };
                 settingsSnapBox.Items.Add(item);
             }
             settingsSnapBox.SelectedItem = item;
-            settingsSnapBox.Text = $"1/{division}";
+            settingsSnapBox.Text = GridLabel(division);
             AutomationProperties.SetHelpText(
                 settingsSnapBox,
                 $"SnapDivision={division}; Range=1-1920; Editable=True");
@@ -10625,7 +10602,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         if (!restoreInvalidText) return;
         SyncSettingsFixedSnapBox(editorViewSettings.FixedSnapDivision);
-        viewModel.SetStatus("分度范围：1–1920");
+        viewModel.SetStatus(gridNotation == EditorGridNotation.General ? "General 网格分母：4–7680，须为 4 的倍数。" : "osu 网格分母：1–1920。");
     }
 
     private void SetFixedSnapDivision(int division, bool addCustomDivisionItem = true)
@@ -10652,13 +10629,13 @@ public sealed partial class MainWindow : PlatformWindow
             {
                 item = new ComboBoxItem
                 {
-                    Content = $"1/{division}",
+                    Content = GridLabel(division),
                     Tag = division
                 };
                 settingsFixedSnapBox.Items.Add(item);
             }
             settingsFixedSnapBox.SelectedItem = item;
-            settingsFixedSnapBox.Text = $"1/{division}";
+            settingsFixedSnapBox.Text = GridLabel(division);
             AutomationProperties.SetHelpText(
                 settingsFixedSnapBox,
                 $"FixedSnapDivision={division}; Range=1-1920; Editable=True");
@@ -11454,6 +11431,8 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void Timeline_PixelsPerBeatChanged(object? sender, double pixelsPerBeat)
     {
+        SyncTrackViewports();
+        SyncAdjustmentZoom();
         _ = sender;
         UpdateAudioPanelViewports();
         if (suppressEditorViewControls ||
@@ -12195,9 +12174,8 @@ public sealed partial class MainWindow : PlatformWindow
             metadataPreviewHereButton,
             "播放中使用音频时钟；未播放时使用当前红线与 TimingMap");
 
-        metadataApplyButton.Content =
-            WindowsInspectorParityPolicy.Wpf110MetadataApplyLabel;
-        metadataApplyButton.Click += (_, _) => ApplyMetadataEditor();
+        metadataApplyButton.Content = "应用谱面信息";
+        metadataApplyButton.Click += (_, _) => ApplyMetadataCategory();
         ApplyWpfPrimaryButtonStyle(metadataApplyButton);
         metadataApplyButton.Margin =
             WindowsInspectorParityPolicy.MetadataApplyActionMargin;
@@ -12283,11 +12261,11 @@ public sealed partial class MainWindow : PlatformWindow
         {
             ColumnDefinitions = MetadataPairColumns()
         };
-        bpmKeys.Children.Add(MetadataPairField("谱面 BPM", metadataBpmBox));
+
         var keyCountField = MetadataPairField(
             WindowsInspectorParityPolicy.Wpf110MetadataKeyCountLabel,
             metadataKeyCountBox);
-        Grid.SetColumn(keyCountField, 2);
+        Grid.SetColumnSpan(keyCountField, 3);
         bpmKeys.Children.Add(keyCountField);
 
         metadataAudioFileBox.Margin = new Thickness(0, 0, 7, 0);
@@ -12335,15 +12313,15 @@ public sealed partial class MainWindow : PlatformWindow
             metadataPreviewHereButton,
             WindowsInspectorParityPolicy.MetadataPreviewActionColumnWidth);
 
-        var offsetPreview = new Grid
+        var offsetPreview = TimingField("预览时间（ms）", previewRow);
+        timingMetadataSection = new StackPanel { Spacing = 8, Margin = new Thickness(16, 12), Children =
         {
-            ColumnDefinitions = MetadataPairColumns()
-        };
-        offsetPreview.Children.Add(
-            MetadataPairField("音频 Offset（ms · Timing 权限）", metadataOffsetBox));
-        var previewField = MetadataPairField("预览时间（ms）", previewRow);
-        Grid.SetColumn(previewField, 2);
-        offsetPreview.Children.Add(previewField);
+            new TextBlock { Text = "参考 BPM / 音频 Offset", FontSize = 16, Foreground = Brushes.White },
+            TimingField("参考 BPM（显示/速度补偿）", metadataBpmBox),
+            TimingField("音频 Offset（ms）", metadataOffsetBox),
+            analysisButtons, metadataAudioAnalysisText,
+            PrimaryButton("应用 Timing 基础信息", (_, _) => ApplyTimingMetadata())
+        } };
 
         var metadataStatsGrid =
             new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*") };
@@ -12417,7 +12395,7 @@ public sealed partial class MainWindow : PlatformWindow
                 },
                 new TextBlock
                 {
-                    Text = WindowsInspectorParityPolicy.Wpf110MetadataSubtitle,
+                    Text = "元数据、键数、资源与难度设置",
                     Foreground = MutedBrush,
                     FontSize = 10,
                     TextWrapping = TextWrapping.Wrap
@@ -12433,8 +12411,6 @@ public sealed partial class MainWindow : PlatformWindow
                 creatorVersion,
                 bpmKeys,
                 TimingField("音频", audioRow),
-                analysisButtons,
-                metadataAudioAnalysisText,
                 offsetPreview,
                 TimingField("歌曲封面", coverRow),
                 TimingField("背景图片", backgroundRow),
@@ -13635,7 +13611,11 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetRow(actions, 3);
         root.Children.Add(actions);
         AutomationProperties.SetAutomationId(root, "Inspector.Timing.Root");
-        return root;
+        timingList.MinHeight = 160;
+        timingList.MaxHeight = 240;
+        root.MinHeight = 420;
+        return new ScrollViewer { Content = new StackPanel { Children = { timingMetadataSection!, root } },
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }
 
     private enum InspectorButtonTone
@@ -14270,7 +14250,7 @@ public sealed partial class MainWindow : PlatformWindow
             metadataEditorTabId == metadataTab.Id &&
             metadataEditorDirty;
         var hasUnsavedDocuments =
-            hasPendingMetadataDraft ||
+            hasPendingMetadataDraft || trackWorkspaces.Values.Any(w => w.HasPendingChanges) ||
             viewModel.Tabs.Any(tab => tab.Session.IsDirty);
         var hasBlockingExternalShutdownWork =
             HasBlockingExternalApplicationShutdownWork();
@@ -14310,6 +14290,7 @@ public sealed partial class MainWindow : PlatformWindow
             SuspendFullscreenForClosePreflight();
         try
         {
+            await SaveTrackWorkspacesAsync();
             if (!await PersistPendingNavigationMarkersAsync(force: true))
             {
                 // A persistent failure (read-only or full disk) used to cancel
@@ -15517,6 +15498,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async Task ExecuteShortcutAsync(string action)
     {
+        if (TryExecuteTrackCommand(action)) return;
         var command = WindowsEditorShortcutRouting.Resolve(action);
         switch (command.Route)
         {
@@ -16401,6 +16383,7 @@ public sealed partial class MainWindow : PlatformWindow
             audioVolumeSlider.Value = audioTransport.Volume * 100;
             audioRateSlider.Value = audioTransport.PlaybackRate;
             SyncFixedPlaybackRate();
+        SyncAdjustmentZoom();
             audioPreservePitchBox.IsChecked = audioTransport.PreservePitch;
             audioPreservePitchBox.IsEnabled =
                 WindowsInspectorParityPolicy.SettingsPreservePitchEnabledWithoutLoadedAudio;
@@ -17265,6 +17248,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void Timeline_CurrentBeatChanged(object? sender, double beat)
     {
+        SyncTrackViewports();
         if (settingProgrammaticPlaybackBeat) return;
         UpdatePlaybackPositionUi(beat);
         QueuePositionInspectorRefresh();
@@ -17701,6 +17685,7 @@ public sealed partial class MainWindow : PlatformWindow
             audioTimingMapCache.Clear();
             EnsureKeySoundActiveTab(null, null);
         }
+        RefreshTrackWorkspace(viewModel.ActiveTab);
         // The library-deletion evidence run intentionally keeps a real survivor
         // tab open while exercising a different folder. Session-selection
         // changes during the render probe can raise another workspace update;
@@ -18142,12 +18127,17 @@ public sealed partial class MainWindow : PlatformWindow
         }
     }
 
-    private bool ApplyMetadataEditor(bool enforceCommunityRules = false)
+    private bool ApplyMetadataEditor(bool enforceCommunityRules = false, bool includeTiming = true)
     {
         lastMetadataApplyError = null;
         var tab = viewModel.ActiveTab;
         if (tab == null) return false;
         var draft = CaptureMetadataEditorDraft(tab);
+        if (!includeTiming)
+        {
+            var timing = ChartMetadataEditingService.Capture(tab.Session.Document);
+            draft = draft with { Bpm = timing.Bpm, Offset = timing.Offset };
+        }
         ChartMetadataEdit? edit;
         string error;
         var parsed = enforceCommunityRules
@@ -20056,6 +20046,7 @@ public sealed partial class MainWindow : PlatformWindow
             session != null && (selectedNoteCount > 0 || selectedEffectCount > 0));
         SetQuickShortcutEnabled("Paste", canPaste);
         SetQuickShortcutEnabled("SelectAll", session != null);
+        RefreshTrackCommandButtons();
 
         if (mixedCopyButton != null)
             mixedCopyButton.IsEnabled = session != null && (selectedNoteCount > 0 || selectedEffectCount > 0);
@@ -20234,6 +20225,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void CopyMixedSelection()
     {
+        if (TryExecuteTrackCommand("Copy")) return;
         if (viewModel.ActiveTab == null) return;
         try
         {
@@ -20248,6 +20240,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void CutMixedSelection()
     {
+        if (TryExecuteTrackCommand("Cut")) return;
         if (viewModel.ActiveTab == null) return;
         try
         {
@@ -20269,6 +20262,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void SelectAllVisibleObjects()
     {
+        if (TryExecuteTrackCommand("SelectAll")) return;
         var tab = viewModel.ActiveTab;
         if (tab == null) return;
         tab.Session.Selection.Clear();
@@ -20289,6 +20283,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void ExecuteHistoryCommand(bool redo)
     {
+        if (TryExecuteTrackCommand(redo ? "Redo" : "Undo")) return;
         var tab = viewModel.ActiveTab;
         if (tab == null)
         {
@@ -20305,6 +20300,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void MirrorVisibleSelection()
     {
+        if (TryExecuteTrackCommand("Mirror")) return;
         var tab = viewModel.ActiveTab;
         if (tab == null) return;
         // Match WPF: a mixed source selection mirrors only visible, unlocked
@@ -20415,6 +20411,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void SetTimelineToolFromShortcut(TimelineTool tool)
     {
+        if (TryExecuteTrackCommand("Tool" + tool)) return;
         if (!WindowsAvaloniaEditorInputPolicy.CanUseTimelineTool(viewModel.ActiveTab?.Session, tool))
         {
             viewModel.SetStatus("当前权限不能使用该编辑工具");
@@ -20569,6 +20566,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void PasteMixedSelection()
     {
+        if (TryExecuteTrackCommand("Paste")) return;
         var tab = viewModel.ActiveTab;
         if (tab == null) return;
         try
@@ -20607,6 +20605,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void DeleteMixedSelection()
     {
+        if (TryExecuteTrackCommand("Delete")) return;
         if (viewModel.ActiveTab == null) return;
         try
         {
@@ -21120,6 +21119,8 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async Task<SaveRoundTripResult?> SaveAndVerifyWithPreflightAsync(Guid? tabId = null)
     {
+        try { await SaveTrackWorkspacesAsync(); }
+        catch (Exception exception) { viewModel.SetStatus($"轨道保存失败：{exception.Message}"); return null; }
         var tab = tabId.HasValue
             ? viewModel.Tabs.FirstOrDefault(candidate => candidate.Id == tabId.Value)
             : viewModel.ActiveTab;
