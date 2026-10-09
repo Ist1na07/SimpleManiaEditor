@@ -130,6 +130,9 @@ internal static class Program
         showEditor.Invoke(window, showEditor.GetParameters().Select(p => p.DefaultValue).ToArray());
         Pump(100);
         var tab = viewModel.ActiveTab ?? throw new InvalidOperationException("new tab missing");
+        var initialBoard = (ScrollViewer)typeof(MainWindow).GetField("trackScroller", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        Require(Math.Abs(initialBoard.Offset.X - initialBoard.Viewport.Width) < 12,
+            $"initial board left blank padding visible: offset={initialBoard.Offset.X}, viewport={initialBoard.Viewport.Width}");
         Require(tab.Session.Document.KeyCount == 7 && tab.SourcePath.EndsWith(".osu", StringComparison.OrdinalIgnoreCase), "application did not create native 7K");
         timeline.SetCurrentBeat(4);
         timeline.Focus();
@@ -323,6 +326,7 @@ internal static class Program
         RequestedWorkflowSpecs.Run(window, screenshots);
         WorkbenchRegressionSpecs.Run(window, screenshots);
         WorkbenchSafetySpecs.Run(window, screenshots);
+        StartupPlaybackSpecs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

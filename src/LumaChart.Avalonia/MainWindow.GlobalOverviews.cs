@@ -16,6 +16,33 @@ public sealed partial class MainWindow
     private readonly CheckBox globalDifficultyBox = new() { Content = "显示全局难度" };
     private Border? globalDensityPanel;
     private Border? globalDifficultyPanel;
+    private Control BuildVisiblePanelsMenu()
+    {
+        var density = new CheckBox { Content = "全局密度", IsChecked = globalDensityBox.IsChecked };
+        var difficulty = new CheckBox { Content = "全局难度", IsChecked = globalDifficultyBox.IsChecked };
+        AutomationProperties.SetAutomationId(density, "Editor.Views.GlobalDensity");
+        AutomationProperties.SetAutomationId(difficulty, "Editor.Views.GlobalDifficulty");
+        density.IsCheckedChanged += (_, _) => globalDensityBox.IsChecked = density.IsChecked;
+        difficulty.IsCheckedChanged += (_, _) => globalDifficultyBox.IsChecked = difficulty.IsChecked;
+        globalDensityBox.IsCheckedChanged += (_, _) => density.IsChecked = globalDensityBox.IsChecked;
+        globalDifficultyBox.IsCheckedChanged += (_, _) => difficulty.IsChecked = globalDifficultyBox.IsChecked;
+        var reset = new Button { Content = "整理布局：主轨归位" };
+        AutomationProperties.SetAutomationId(reset, "Editor.Views.Arrange");
+        reset.Click += (_, _) =>
+        {
+            var main = (EditorTrackPanel)mainTrackFrame!;
+            trackPanels.Children.Remove(main); trackPanels.Children.Insert(0, main);
+            activeTrackWorkspace?.BoardOrder.Clear(); activeTrackWorkspace?.MarkLayoutChanged();
+            RestoreBoardPanAfterLayout(0);
+            quickValuesPaletteTransform.X = 0; quickValuesPaletteTransform.Y = 0;
+            editorViewSettings = editorViewSettings.WithQuickValuesPalette(0, 0, editorViewSettings.QuickValuesPaletteCollapsed);
+            ApplyQuickValuesPaletteLayout(); MarkEditorViewSettingsDirty();
+        };
+        var button = new Button { Content = "显示 / 布局 ▾", Padding = new Thickness(6, 3) };
+        AutomationProperties.SetAutomationId(button, "Editor.Views");
+        button.Flyout = new Flyout { Content = new StackPanel { Spacing = 8, Children = { density, difficulty, reset } } };
+        return button;
+    }
     private EditorSession? globalLoadSession;
     private long globalLoadSerial = -1;
     private int globalLoadGeneration;

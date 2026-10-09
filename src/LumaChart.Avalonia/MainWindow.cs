@@ -15870,7 +15870,6 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void EditorAnimationFrame(TimeSpan compositionTimestamp)
     {
-        _ = compositionTimestamp;
         editorAnimationFrameRequested = false;
         if (windowClosePreflightInProgress ||
             windowClosePreflightComplete ||
@@ -15881,11 +15880,14 @@ public sealed partial class MainWindow : PlatformWindow
         var limit = EffectiveFrameRateLimit();
         if (editorCompositionFrameGate.Limit != limit)
             editorCompositionFrameGate.SetLimit(limit);
-        RunEditorFrame(editorCompositionFrameGate.ShouldRender());
+        RunEditorFrame(editorCompositionFrameGate.ShouldRender(), compositionTimestamp.TotalMilliseconds);
         RequestEditorAnimationFrame();
     }
 
-    private void RunEditorFrame(bool updateVisuals)
+    private readonly EditorPlaybackVisualClock editorVisualClock = new();
+    private readonly Stopwatch editorVisualTime = Stopwatch.StartNew();
+
+    private void RunEditorFrame(bool updateVisuals, double? presentationTimeMilliseconds = null)
     {
         if (playtestInProgress) return;
         var pump = editorViewSettings.FrameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate &&
@@ -15928,7 +15930,9 @@ public sealed partial class MainWindow : PlatformWindow
         }
         if (audioPositionPointerDown) return;
 
-        var beat = Math.Max(0, timingMap.MillisecondsToBeat(pump.PositionMilliseconds).Value);
+        var visualPosition = editorVisualClock.Sample(pump.PositionMilliseconds, audioTransport.PlaybackRate,
+            presentationTimeMilliseconds ?? editorVisualTime.Elapsed.TotalMilliseconds);
+        var beat = timingMap.MillisecondsToBeat(visualPosition, 1_000_000).Value;
         SetProgrammaticPlaybackBeat(beat);
         UpdateAudioPanelPlaybackBeat(beat);
         if (updatePositionUi) UpdatePlaybackPositionUi(beat);
@@ -16010,6 +16014,7 @@ public sealed partial class MainWindow : PlatformWindow
         editorFrameClock.Restart();
         audioPositionUiClock.Restart();
         if (playbackStarted) timeline.Performance.Reset();
+        if (playbackStarted || !isPlaying) editorVisualClock.Reset();
         RefreshFrameRateStatus(isPlaying, force: true);
     }
 
@@ -16603,6 +16608,7 @@ public sealed partial class MainWindow : PlatformWindow
         bool resumeAfterSeek = true)
     {
         if (playtestInProgress) return false;
+        editorVisualClock.Reset();
         if (!IsCurrentKeySoundTab(tab) || keySoundRuntimeDisposed) return false;
         if (editorSeekPending && ReferenceEquals(editorSeekTab, tab))
         {
@@ -17660,7 +17666,7 @@ public sealed partial class MainWindow : PlatformWindow
             editorOverview.SetIssues(timeline.ChartIssues);
             editorOverview.SetNavigationMarkers(activeTab.NavigationMarkers);
             eventTimeRuler.SetDocument(activeTab.Session, GetAudioTimingMap(activeTab), audioTransport.PlaybackSnapshot?.Duration.TotalMilliseconds ?? 0, activeTab.NavigationMarkers);
-            editorOverview.SetCurrentBeat(activeTab.CurrentBeat);
+            editorOverview.SetCurrentBeat(IsEditorPlaybackActive() && ReferenceEquals(activeTab, keySoundActiveTab) ? timeline.CurrentBeat : activeTab.CurrentBeat);
             RefreshNavigationMarkerUi();
             miniNoteCountText.Text = activeTab.Session.Document.Notes.Count.ToString(
                 "N0",
@@ -17674,7 +17680,10 @@ public sealed partial class MainWindow : PlatformWindow
                 quickGroupLabel.Text = AvaloniaLocalizationCatalog.Format("分组 {0}", activeTab.ActivePlacementGroup);
             timeline.SetHiddenGroups(activeTab.HiddenGroups);
             RefreshTimelineOnlineCreators();
-            SetProgrammaticPlaybackBeat(activeTab.CurrentBeat);
+            // Status/checkpoint refreshes must not rewind an active viewport to
+            // the navigation state last published 50 ms ago.
+            if (!IsEditorPlaybackActive() || !ReferenceEquals(activeTab, keySoundActiveTab))
+                SetProgrammaticPlaybackBeat(activeTab.CurrentBeat);
             activeTab.Session.SnapDivision = editorViewSettings.SnapDivision;
             divisionPicker.SelectedItem = activeTab.Session.SnapDivision;
             SyncSettingsSnapBox(activeTab.Session.SnapDivision);

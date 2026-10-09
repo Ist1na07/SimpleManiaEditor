@@ -605,8 +605,8 @@ public sealed class DesktopDocumentWorkspace
     }
 
     /// <summary>
-    /// Saves to the tab's absolute source path. Like WPF 1.1.0, this deliberately
-    /// overwrites an externally changed source instead of rejecting it by hash.
+    /// Saves to the tab's absolute source path, rejecting external changes
+    /// and an unverified recovery copy.
     /// </summary>
     public async Task<DesktopChartSaveResult> SaveAsync(
         Guid tabId,
@@ -631,6 +631,8 @@ public sealed class DesktopDocumentWorkspace
         {
             tab = tabs.FirstOrDefault(candidate => candidate.Id == tabId)
                   ?? throw new KeyNotFoundException("The requested desktop chart tab is not open.");
+            if (tab.RequiresRecoverySaveAs)
+                throw new IOException("这是旧版校验不一致的恢复副本。编辑已保留，请另存为新文件后继续；不能直接覆盖源谱面。");
             var (savedChangeSerial, snapshot) = ResolveRequestedSnapshot(
                 tab,
                 requestedTab,
@@ -698,6 +700,8 @@ public sealed class DesktopDocumentWorkspace
         {
             tab = tabs.FirstOrDefault(candidate => candidate.Id == tabId)
                   ?? throw new KeyNotFoundException("The requested desktop chart tab is not open.");
+            if (tab.RequiresRecoverySaveAs && PathComparer.Equals(tab.SourcePath, destination))
+                throw new IOException("恢复副本请另存为不同文件；源谱面保持原状。");
             var (savedChangeSerial, snapshot) = ResolveRequestedSnapshot(
                 tab,
                 requestedTab,
@@ -739,6 +743,7 @@ public sealed class DesktopDocumentWorkspace
             tab.OsuTimingImportMode = destinationOsuTimingImportMode;
             tab.SourceSha256 = destinationHash;
             tab.SourceMissing = false;
+            tab.RequiresRecoverySaveAs = false;
             tab.IsPreservedRoomDraft = false;
             tab.PreservedRoomNumber = 0;
             tab.PreservedRoomName = string.Empty;
@@ -786,6 +791,7 @@ public sealed class DesktopDocumentWorkspace
             // captured on entry; it must not be written back over it.
             tab.PersistedSnapshotTicket = Interlocked.Increment(ref documentSnapshotTicket);
             tab.SourceMissing = false;
+            tab.RequiresRecoverySaveAs = false;
             tab.Session.ReplaceDocument(document);
             await PersistCoreAsync(snapshots, cancellationToken).ConfigureAwait(false);
         }
@@ -905,7 +911,7 @@ public sealed class DesktopDocumentWorkspace
     /// </summary>
     public IReadOnlyList<string> GetProtectedCacheDirectories()
     {
-        var protectedPaths = new List<string> { manifestPath, manifestLockPath };
+        var protectedPaths = new List<string> { manifestPath, manifestLockPath, Path.Combine(editingRoot, "unverified") };
         if (Volatile.Read(ref manifestWriteBlocked))
             protectedPaths.Add(documentCacheRoot);
         foreach (var tab in Tabs)
@@ -1092,6 +1098,7 @@ public sealed class DesktopDocumentWorkspace
         ChartDocument? document = null;
         Exception? workingCacheError = null;
         var dirty = false;
+        var requiresRecoverySaveAs = item.RequiresRecoverySaveAs;
         var preservedRoomDraft = false;
         if (item.IsPreservedRoomDraft && workingExists)
         {
@@ -1134,6 +1141,20 @@ public sealed class DesktopDocumentWorkspace
             }
         }
 
+        // Older builds wrote dirty checkpoints without updating their hash.
+        // Recover differing valid edits, but require review through Save As.
+        if (document == null && workingExists && !workingMatchesManifest && item.IsDirty)
+        {
+            try
+            {
+                document = await LoadWorkingCopyAsync(workingPath, cancellationToken).ConfigureAwait(false);
+                dirty = true;
+                requiresRecoverySaveAs = true;
+                recoveryWarnings.Add($"{sourcePath}: 工作副本与旧清单校验不一致，已保留编辑内容；请核对后另存为新文件。源谱面未覆盖。");
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException) { workingCacheError = exception; }
+        }
+
         var sourceChanged = sourceExists && currentSourceHash != null && !sourceMatchesManifest;
         Exception? sourceLoadError = sourceFingerprintError;
         if (document == null && sourceExists)
@@ -1152,6 +1173,13 @@ public sealed class DesktopDocumentWorkspace
                     workingPath,
                     cancellationToken).ConfigureAwait(false);
                 document.FilePath = workingPath;
+                if (workingExists && !workingMatchesManifest)
+                {
+                    var retainedRoot = Path.Combine(editingRoot, "unverified");
+                    Directory.CreateDirectory(retainedRoot);
+                    File.Copy(workingPath, Path.Combine(retainedRoot,
+                        Path.GetFileName(cacheDirectory) + "-" + Guid.NewGuid().ToString("N") + ".mc"));
+                }
                 currentWorkingHash = await WriteWorkingCopyAsync(document, workingPath, cancellationToken)
                     .ConfigureAwait(false);
                 currentSourceHash ??= await ComputeSha256Async(sourcePath, cancellationToken).ConfigureAwait(false);
@@ -1209,6 +1237,7 @@ public sealed class DesktopDocumentWorkspace
             format,
             osuTimingImportMode)
         {
+            RequiresRecoverySaveAs = requiresRecoverySaveAs,
             CurrentBeat = double.IsFinite(item.CurrentBeat) ? Math.Max(0, item.CurrentBeat) : 0,
             SourceSha256 = dirty && sourceChanged ? item.SourceSha256 : currentSourceHash ?? item.SourceSha256,
             WorkingSha256 = currentWorkingHash ?? item.WorkingSha256,
@@ -1464,8 +1493,7 @@ public sealed class DesktopDocumentWorkspace
                     tab.WorkingPath,
                     cancellationToken).ConfigureAwait(false);
                 tab.PersistedSnapshotTicket = snapshot.Ticket;
-                if (tab.IsPreservedRoomDraft)
-                    tab.WorkingSha256 = workingSha256;
+                tab.WorkingSha256 = workingSha256;
             }
         }
 
@@ -1552,6 +1580,7 @@ public sealed class DesktopDocumentWorkspace
             SourceSha256 = tab.SourceSha256,
             WorkingSha256 = tab.WorkingSha256,
             IsDirty = tab.Session.IsDirty,
+            RequiresRecoverySaveAs = tab.RequiresRecoverySaveAs,
             IsPreservedRoomDraft = tab.IsPreservedRoomDraft,
             PreservedRoomNumber = tab.PreservedRoomNumber,
             PreservedRoomName = tab.PreservedRoomName,
@@ -1581,6 +1610,7 @@ public sealed class DesktopDocumentWorkspace
             OsuTimingImportMode = item.OsuTimingImportMode,
             SourceSha256 = item.SourceSha256,
             WorkingSha256 = item.WorkingSha256,
+            RequiresRecoverySaveAs = item.RequiresRecoverySaveAs,
             IsDirty = item.IsDirty,
             IsPreservedRoomDraft = item.IsPreservedRoomDraft,
             PreservedRoomNumber = item.PreservedRoomNumber,
@@ -2149,6 +2179,7 @@ public sealed class DesktopDocumentWorkspace
         public string SourceSha256 { get; set; } = string.Empty;
         public string WorkingSha256 { get; set; } = string.Empty;
         public bool IsDirty { get; set; }
+        public bool RequiresRecoverySaveAs { get; set; }
         public bool IsPreservedRoomDraft { get; set; }
         public long PreservedRoomNumber { get; set; }
         public string PreservedRoomName { get; set; } = string.Empty;
@@ -2195,6 +2226,7 @@ public sealed class DesktopChartTab
     public DesktopChartFormat Format { get; internal set; }
     public OsuNoteTimingImportMode OsuTimingImportMode { get; internal set; }
     public double CurrentBeat { get; internal set; }
+    public bool RequiresRecoverySaveAs { get; internal set; }
     // Replaced as a whole, never mutated in place: the UI thread replaces the
     // markers while a gated persist may be serializing them on the thread pool.
     private IReadOnlyList<DesktopNavigationMarker> navigationMarkers = [];

@@ -21,18 +21,18 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, EditorTrackPanel> boardFrames = [];
     private bool updatingBoardScroll;
     private double boardEdgePadding;
-    private double? pendingBoardPan;
+    private double? pendingBoardPan = 0;
+    private double desiredBoardPan;
     private int boardLayoutRevision;
 
     private void RestoreBoardPanAfterLayout(double pan)
     {
+        desiredBoardPan = pan;
         pendingBoardPan = pan;
         var revision = ++boardLayoutRevision;
         global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             if (revision != boardLayoutRevision) return;
-            pendingBoardPan = null;
-            trackScroller.Offset = new Vector(Math.Clamp(boardEdgePadding + pan, 0, trackBoardScrollbar.Maximum), 0);
             UpdateBoardScrollState();
         }, global::Avalonia.Threading.DispatcherPriority.Loaded);
     }
@@ -61,14 +61,21 @@ public sealed partial class MainWindow
         trackScroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden;
         trackScroller.AddHandler(Control.RequestBringIntoViewEvent, (_, e) => e.Handled = true, RoutingStrategies.Tunnel);
         trackPanels.SizeChanged += (_, _) => UpdateBoardScrollState();
-        trackPanels.LayoutUpdated += (_, _) => SyncTrackViewports();
+        trackPanels.LayoutUpdated += (_, _) => { UpdateBoardScrollState(); SyncTrackViewports(); };
         trackScroller.PropertyChanged += (_, e) =>
         {
-            if (e.Property == ScrollViewer.OffsetProperty || e.Property == ScrollViewer.ViewportProperty) UpdateBoardScrollState();
+            if (e.Property == ScrollViewer.OffsetProperty && !updatingBoardScroll && !pendingBoardPan.HasValue &&
+                Math.Abs(trackScroller.Extent.Width - trackBoardCanvas.Width) < 1 && Math.Abs(trackScroller.Viewport.Width - boardEdgePadding) < 1)
+                desiredBoardPan = trackScroller.Offset.X - boardEdgePadding;
+            if (e.Property == ScrollViewer.OffsetProperty || e.Property == ScrollViewer.ViewportProperty || e.Property == ScrollViewer.ExtentProperty) UpdateBoardScrollState();
         };
         trackBoardScrollbar.ValueChanged += (_, e) =>
         {
-            if (!updatingBoardScroll) trackScroller.Offset = new Vector(e.NewValue, 0);
+            if (!updatingBoardScroll)
+            {
+                desiredBoardPan = e.NewValue - boardEdgePadding; pendingBoardPan = null;
+                trackScroller.Offset = new Vector(e.NewValue, 0);
+            }
         };
         AutomationProperties.SetAutomationId(trackBoardScrollbar, "Editor.Board.Scrollbar");
         trackBoardScrollbar.Resources["ScrollBarSize"] = 24d;
@@ -166,13 +173,22 @@ public sealed partial class MainWindow
         try
         {
             var padding = Math.Max(0, trackScroller.Viewport.Width);
-            var offset = trackScroller.Offset.X + padding - boardEdgePadding;
+            var canvasWidth = width + padding * 2;
+            if (Math.Abs(padding - boardEdgePadding) > .1 || Math.Abs(canvasWidth - trackBoardCanvas.Width) > .1)
+                pendingBoardPan ??= desiredBoardPan;
             boardEdgePadding = padding;
             trackPanels.Margin = new Thickness(padding, 0, 0, 0);
-            trackBoardCanvas.Width = width + padding * 2;
+            trackBoardCanvas.Width = canvasWidth;
             trackBoardScrollbar.Maximum = Math.Max(0, trackBoardCanvas.Width - trackScroller.Viewport.Width);
             trackBoardScrollbar.ViewportSize = Math.Max(1, trackScroller.Viewport.Width);
-            trackScroller.Offset = new Vector(Math.Clamp(offset, 0, trackBoardScrollbar.Maximum), 0);
+            // Setting Offset before the new content extent is arranged coerces
+            // it to zero. Keep the desired pan independently across that phase.
+            if (padding > 0 && Math.Abs(trackScroller.Extent.Width - canvasWidth) < 1)
+            {
+                trackScroller.Offset = new Vector(Math.Clamp(padding + (pendingBoardPan ?? desiredBoardPan), 0, trackBoardScrollbar.Maximum), 0);
+                desiredBoardPan = trackScroller.Offset.X - padding;
+                pendingBoardPan = null;
+            }
             trackBoardScrollbar.Value = trackScroller.Offset.X;
         }
         finally { updatingBoardScroll = false; }

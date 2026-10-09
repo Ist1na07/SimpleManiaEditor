@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.16；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.17；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -115,3 +115,11 @@ OsuTimingEditingService 使用绝对整数毫秒 DTO，草稿弹窗不占历史�
 - EventTimeRuler 按 session serial 缓存事件/Kiai，播放只更新位置；时间轴可拖动 seek、双击原生事件编辑。Timing 右键/擦除删除入口完全移除，保留选中后删除。
 - MainWindow.GlobalOverviews 固定左侧全局视图与显隐偏好；DifficultyOverview 未有 Rework 结果时显示实验负荷。EditorMetricTrackSurface.CalculateLocal 为 500 ms 窗口、8 ms 采样（最多 250k）、连续屏幕绘制；Calculate 保留全局每秒分桶语义。
 - WorkbenchSafetySpecs 覆盖实际编辑器音乐播放 + 滚轮后试玩、输入锁定/返回、silent clock、固定全局/持久化、Timing 右键/擦除、Kiai 范围/时间定位和局部 NPS。OptionControlsSpecs 改为只允许全局偏好恢复按钮。
+
+## 0.1.17 恢复、布局与帧时钟
+
+- DesktopDocumentWorkspace.PersistCoreAsync 必须对所有实际写入的缓存更新 WorkingSha256；旧代码仅 retained room draft 更新，导致普通 checkpoint 的误判和丢弃。RequiresRecoverySaveAs 跨清单持久化：不可信但有效的旧脏副本保留，Save/同路径 SaveAs 阻止覆盖；不同路径成功另存为或从源重新载入后解除。无效缓存保留到 editingRoot/unverified，独立于标签缓存并受清理保护；关闭恢复标签不删除它。
+- 当前用户 FEHLT 只读检查：源 hash 匹配、缓存不匹配。没有改写用户清单、谱面或缓存。历史已被旧版覆盖的内容不保证可找回。
+- TrackBoard 使用 desiredBoardPan/pendingBoardPan，实际 Extent 就绪才应用 Offset；LayoutUpdated/ExtentProperty 触发提交。顶部 Views flyout 同步原全局显隐设置，Arrange 归位主轨和卡片。
+- EditorPlaybackVisualClock 只影响显示，使用 compositionTimestamp 和有界 2.5% slew；音频/打击音依旧采用原设备时钟。UpdateUi 播放中禁止把 timeline 写回 stale ActiveTab.CurrentBeat。
+- WorkspaceCheckpointSpecs：checkpoint hash/dirty reopen/旧 hash recovery/原谱保护/SaveAs/损坏副本保留。StartupPlaybackSpecs：布局/resize/归位/全局恢复/长路径提示/播放刷新不回跳/离散音频时钟匀速及漂移。

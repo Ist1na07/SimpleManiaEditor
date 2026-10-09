@@ -202,7 +202,7 @@ public sealed partial class MainWindow
             playtestRate = rate; EditorPresentationSettingsStore.SavePlaytestRate(rate); RefreshOptionResets();
         };
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
-            Children = { playtest, playtestRatePicker, ToolbarLabel("倍速"), fixedRatePicker, ToolbarLabel("网格"), fixedGridPicker } };
+            Children = { BuildVisiblePanelsMenu(), playtest, playtestRatePicker, ToolbarLabel("倍速"), fixedRatePicker, ToolbarLabel("网格"), fixedGridPicker } };
         return new Border { Background = RaisedBrush, Padding = new Thickness(10, 6), MinHeight = 48,
             BorderBrush = StrokeBrush, BorderThickness = new Thickness(0, 0, 0, 1),
             Child = new Grid { Children = { controls } } };

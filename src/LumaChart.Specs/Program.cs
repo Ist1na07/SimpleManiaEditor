@@ -141,6 +141,7 @@ var tests = new (string Name, Action Body)[]
     ("Large chart normalization", TestLargeChart),
     ("Core model, format and editing fixes keep timing, resources and round-trips exact", CoreFixSpecs.Run),
     ("Workspace, library and managed-storage fixes fail closed and never lose recoverable data", WorkspaceFixSpecs.Run),
+    ("Dirty checkpoint hashes, legacy recovery review and source isolation", WorkspaceCheckpointSpecs.Run),
 #if LUMACHART_SERVER
     ("Server chart gates partition by account and room, and IPv6 limits group by /64", ServerFixSpecs.RunGatesAndPartitions),
     ("Server authentication hardening bounds captcha, login, room password, email-code and hashing abuse", ServerFixSpecs.RunAuthenticationHardening),

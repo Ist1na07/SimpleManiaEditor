@@ -132,7 +132,7 @@ public sealed partial class MainWindow
 
     private void RebuildTrackViews()
     {
-        var previousPan = pendingBoardPan ?? trackScroller.Offset.X - boardEdgePadding;
+        var previousPan = pendingBoardPan ?? desiredBoardPan;
         activeSecondaryTrack = null;
         foreach (var view in secondaryTrackViews.Values)
         {

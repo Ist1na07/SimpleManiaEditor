@@ -39,6 +39,11 @@ internal static class WindowsWorkspaceRecoveryNoticePolicy
                 .Replace('\r', ' ')
                 .Replace('\n', ' ')
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        // A long source path used to consume the entire visible allowance and
+        // hide the actual recovery reason. Put the reason before the path.
+        var separator = normalized.IndexOf(": ", StringComparison.Ordinal);
+        if (separator > 0 && Path.IsPathRooted(normalized[..separator]))
+            normalized = normalized[(separator + 2)..] + " · " + normalized[..separator];
         return normalized.Length <= MaximumWarningLength
             ? normalized
             : normalized[..(MaximumWarningLength - 1)] + "…";
