@@ -22,6 +22,7 @@ internal static class ResidentSupervisorSpecs
         for (var index = 0; index < 32; index++) chart.Notes.Add(new ChartNote { Lane = index % 7, Beat = BeatPosition.FromDouble(2 + index * .5) });
         OsuManiaSerializer.Save(chart, file);
         var times = new List<double>();
+        using var focusWindow = new ResidentFocusWindow();
         try
         {
             var cold = Stopwatch.StartNew(); await runner.PrewarmAsync();
@@ -29,6 +30,7 @@ internal static class ResidentSupervisorSpecs
             var pid = runner.ProcessId;
             for (var iteration = 0; iteration < 3; iteration++)
             {
+                await focusWindow.ActivateAsync();
                 var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 void OnReady() => ready.TrySetResult(true);
                 runner.BecameReady += OnReady;
@@ -39,6 +41,11 @@ internal static class ResidentSupervisorSpecs
                 {
                     await ready.Task.WaitAsync(TimeSpan.FromSeconds(30));
                     times.Add(clock.Elapsed.TotalMilliseconds);
+                    var focusDeadline = Stopwatch.StartNew();
+                    while (PlaytestWindowActivation.ForegroundProcessId != pid && focusDeadline.Elapsed < TimeSpan.FromSeconds(2))
+                        await Task.Delay(25);
+                    if (PlaytestWindowActivation.ForegroundProcessId != pid)
+                        throw new InvalidOperationException("Playtest appeared without acquiring foreground keyboard focus.");
                     await play.WaitAsync(TimeSpan.FromSeconds(30));
                 }
                 finally { runner.BecameReady -= OnReady; }
@@ -50,7 +57,7 @@ internal static class ResidentSupervisorSpecs
             if (runner.ProcessId == pid) throw new InvalidOperationException("Supervisor did not replace its exited process.");
             await runner.ShutdownAsync();
             if (runner.ProcessId != null) throw new InvalidOperationException("Supervisor leaked its child.");
-            Console.WriteLine("PASS production supervisor prewarm/IPC, same PID, edited snapshot/cache, crash restart and shutdown; end-to-end click ready ms=" + string.Join(",", times.Select(t => t.ToString("0.0"))));
+            Console.WriteLine("PASS production supervisor prewarm/IPC, foreground keyboard focus on every entry, same PID, edited snapshot/cache, crash restart and shutdown; end-to-end click ready ms=" + string.Join(",", times.Select(t => t.ToString("0.0"))));
         }
         finally { await runner.ShutdownAsync(); OfficialPlaytestLauncher.ProcessRunner = original; }
     }

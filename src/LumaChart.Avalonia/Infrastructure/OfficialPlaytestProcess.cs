@@ -99,6 +99,8 @@ internal sealed class OfficialPlaytestProcess : IOfficialPlaytestProcess
     public async Task RunAsync(string requestPath)
     {
         await requestGate.WaitAsync();
+        using var activationCancellation = new CancellationTokenSource();
+        Task activation = Task.CompletedTask;
         try
         {
             await EnsureStartedAsync();
@@ -107,9 +109,15 @@ internal sealed class OfficialPlaytestProcess : IOfficialPlaytestProcess
             if (OperatingSystem.IsWindows()) AllowSetForegroundWindow(child!.Id);
             await child!.StandardInput.WriteLineAsync(new ResidentMessage("open", requestPath).ToJson());
             await child.StandardInput.FlushAsync();
+            activation = PlaytestWindowActivation.TransferAsync(child, activationCancellation.Token);
             await completed.Task;
         }
-        finally { activePath = null; completed = null; requestGate.Release(); }
+        finally
+        {
+            activationCancellation.Cancel();
+            try { await activation; }
+            finally { activePath = null; completed = null; requestGate.Release(); }
+        }
     }
 
     internal async Task ShutdownAsync()

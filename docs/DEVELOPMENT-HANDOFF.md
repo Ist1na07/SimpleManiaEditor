@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.12；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.13；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -91,3 +91,7 @@ $env:DOTNET_CLI_HOME = 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-aud
 ## 0.1.5 完成状态
 
 已实现上述请求，新增 EditorTrackPanel / MainWindow.TrackBoard.cs 统一底板，Songs 导入副本与写保护、时间投影、格线前置放置、精确尾部、默认保音高和单一顶部栏。核心49/49通过；新增 Songs、精确放置、菜单关闭吞点击、实际拖动与顺序恢复、不同 BPM 高缩放、波形高缩放等界面回归通过。用户已说明警告原文忘记，后续再次触发再补，勿声称复现官方报错。
+
+## 0.1.13 试玩焦点交接
+
+PlaytestWindowActivation 在 RunAsync 发出 open 后等待自有子进程可见窗口，再由仍持有前台的编辑器调用 SetForegroundWindow；取消、退出或 10 秒截止终止等待，用户主动切到其他进程则停止交接。避免仅授权子进程/调用 SDL Raise 却没有实际切换前台。ResidentSupervisorSpecs 使用响应消息循环的原生父进程窗口，三个回合都断言 Windows 前台 PID 为实际 GPU 游戏宿主；保留资源缓存、同 PID、异常重建和关闭测试。
