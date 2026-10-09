@@ -52,8 +52,14 @@ internal sealed class ResidentFocusWindow : IDisposable
     {
         var requested = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         Interlocked.Exchange(ref activation, requested);
-        if (!await requested.Task.WaitAsync(TimeSpan.FromSeconds(5)))
-            throw new InvalidOperationException("Cannot focus the editor fixture; foreground test needs an interactive desktop.");
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (LumaChart.Avalonia.Infrastructure.PlaytestWindowActivation.ForegroundProcessId != Environment.ProcessId)
+        {
+            Console.WriteLine("Waiting for an interactive click on SimpleManiaEditor focus verification (45 seconds); Windows denied automatic foreground activation.");
+            var deadline = System.Diagnostics.Stopwatch.StartNew();
+            while (LumaChart.Avalonia.Infrastructure.PlaytestWindowActivation.ForegroundProcessId != Environment.ProcessId && deadline.Elapsed < TimeSpan.FromSeconds(45))
+                await Task.Delay(50);
+        }
         if (LumaChart.Avalonia.Infrastructure.PlaytestWindowActivation.ForegroundProcessId != Environment.ProcessId)
             throw new InvalidOperationException("Editor fixture did not acquire foreground focus.");
     }

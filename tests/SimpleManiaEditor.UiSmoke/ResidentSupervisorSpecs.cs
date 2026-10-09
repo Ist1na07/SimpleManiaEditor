@@ -31,6 +31,7 @@ internal static class ResidentSupervisorSpecs
             for (var iteration = 0; iteration < 3; iteration++)
             {
                 await focusWindow.ActivateAsync();
+                Console.WriteLine($"Focus iteration {iteration}: editor {Environment.ProcessId}, game {pid}, foreground before launch {PlaytestWindowActivation.ForegroundProcessId}");
                 var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 void OnReady() => ready.TrySetResult(true);
                 runner.BecameReady += OnReady;
@@ -45,7 +46,7 @@ internal static class ResidentSupervisorSpecs
                     while (PlaytestWindowActivation.ForegroundProcessId != pid && focusDeadline.Elapsed < TimeSpan.FromSeconds(2))
                         await Task.Delay(25);
                     if (PlaytestWindowActivation.ForegroundProcessId != pid)
-                        throw new InvalidOperationException("Playtest appeared without acquiring foreground keyboard focus.");
+                        throw new InvalidOperationException($"Playtest appeared without acquiring foreground keyboard focus: expected {pid}, actual {PlaytestWindowActivation.ForegroundProcessId}.");
                     await play.WaitAsync(TimeSpan.FromSeconds(30));
                 }
                 finally { runner.BecameReady -= OnReady; }

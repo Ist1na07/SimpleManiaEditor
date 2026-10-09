@@ -14,6 +14,7 @@ internal static class PlaytestWindowActivation
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint window);
     [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint window, int command);
+    [DllImport("user32.dll")] private static extern nint GetWindow(nint window, uint command);
 
     internal static int ForegroundProcessId
     {
@@ -35,12 +36,12 @@ internal static class PlaytestWindowActivation
         {
             var foreground = ForegroundProcessId;
             if (foreground == process.Id) return;
-            if (foreground != Environment.ProcessId) return; // Respect a deliberate application switch.
+            if (foreground != 0 && foreground != Environment.ProcessId) return; // Respect a deliberate application switch.
             nint target = 0;
             EnumWindows((window, _) =>
             {
                 GetWindowThreadProcessId(window, out var owner);
-                if (owner != process.Id || !IsWindowVisible(window)) return true;
+                if (owner != process.Id || !IsWindowVisible(window) || GetWindow(window, 4) != 0) return true;
                 target = window;
                 return false;
             }, 0);
