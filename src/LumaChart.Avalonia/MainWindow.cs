@@ -1310,6 +1310,21 @@ public sealed partial class MainWindow : PlatformWindow
         };
         editorWorkbench.SizeChanged += (_, _) => QueueFloatingPaletteClamp();
         Opened += Window_Opened;
+        Opened += async (_, _) =>
+        {
+            if (OfficialPlaytestLauncher.ProcessRunner is OfficialPlaytestProcess process)
+                try
+                {
+                    officialPlaytestWarmStatus.Text = "正在后台准备试玩，编辑不受影响…";
+                    await process.PrewarmAsync();
+                    officialPlaytestWarmStatus.Text = process.ProcessId != null ? "试玩已预热就绪" : "试玩组件会在完整便携包中预热";
+                }
+                catch (Exception) { officialPlaytestWarmStatus.Text = "预热未完成，点击试玩时重试"; }
+        };
+        Closed += async (_, _) =>
+        {
+            if (OfficialPlaytestLauncher.ProcessRunner is OfficialPlaytestProcess process) await process.ShutdownAsync();
+        };
         Activated += (_, _) =>
         {
             RefreshFollowSystemLanguage();
@@ -6679,6 +6694,7 @@ public sealed partial class MainWindow : PlatformWindow
             // InvalidateChartBackgroundCache.
             InvalidateChartBackgroundCache();
             UpdateUi();
+            if (IsVisible && WindowState != WindowState.Minimized) Activate();
             Dispatcher.UIThread.Post(() => timeline.Focus(), DispatcherPriority.Input);
         }
     }
@@ -9706,6 +9722,7 @@ public sealed partial class MainWindow : PlatformWindow
         };
         var sections = new[]
         {
+            BuildOfficialPlaytestSettings(),
             BuildLanguageSettings(),
             BuildEditorViewSettings(),
             BuildDisplayScaleSettings(),

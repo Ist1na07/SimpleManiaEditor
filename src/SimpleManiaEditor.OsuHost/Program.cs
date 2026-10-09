@@ -25,7 +25,23 @@ internal static class Program
                 FriendlyGameName = "SimpleManiaEditor · osu!mania",
                 PortableInstallation = true
             });
-            using var game = new PlaytestGame(request, requestPath, args.Contains("--verify"), args.Contains("--verify-settings"));
+            var resident = args.Contains("--resident");
+            using var game = new PlaytestGame(request, requestPath, args.Contains("--verify"), args.Contains("--verify-settings"), resident,
+                resident ? message => { Console.WriteLine(message.ToJson()); Console.Out.Flush(); } : null);
+            if (resident)
+            {
+                _ = Task.Run(async () =>
+                {
+                    while (await Console.In.ReadLineAsync() is { } line)
+                    {
+                        var message = ResidentMessage.Parse(line);
+                        if (message?.Kind == "open") game.Enqueue(() => game.AcceptRequest(message.Path));
+                        else if (message?.Kind == "return") game.Enqueue(game.ReturnToEditor);
+                        else if (message?.Kind == "shutdown") { host.Exit(); return; }
+                    }
+                    host.Exit(); // Parent closed its pipe or exited unexpectedly.
+                });
+            }
             host.Run(game);
             return game.Failure == null ? 0 : 1;
         }

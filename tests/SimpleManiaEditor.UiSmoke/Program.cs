@@ -31,6 +31,7 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_LOCAL_DATA_ROOT", Path.Combine(root, "settings"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_EDITING_ROOT", Path.Combine(root, "editing"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
+        if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
         var screenshotRoot = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
@@ -48,6 +49,7 @@ internal static class Program
             StablePlaytestUiSpecs.Run(screenshotRoot);
             OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
             SkinWorkflowSpecs.Run(root, screenshotRoot);
+            PlaytestPackageCacheSpecs.Run(root);
             RunApplicationSmoke(screenshotRoot);
             Console.WriteLine("PASS headless pointer workflow, shortcuts, profile persistence, application startup and rendering");
             return 0;
@@ -276,11 +278,16 @@ internal static class Program
             Pump(100);
             var settingsRecorder = new RecordingOfficialPlaytestProcess();
             OfficialPlaytestLauncher.ProcessRunner = settingsRecorder;
-            var settingsAction = playtestButton.ContextMenu!.Items.OfType<MenuItem>().Single(item => item.Header?.ToString()?.StartsWith("官方试玩设置") == true);
-            settingsAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            ((TabControl)typeof(MainWindow).GetField("editorInspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).SelectedItem =
+                typeof(MainWindow).GetField("settingsInspectorTab", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
+            Pump(100);
+            var settingsAction = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Settings.Playtest.Open");
+            Require(global::Avalonia.LogicalTree.LogicalExtensions.GetLogicalAncestors(settingsAction).Contains((Control)typeof(MainWindow).GetField("settingsInspectorTab", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!), "playtest settings are not in the right settings tab");
+            settingsAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => settingsRecorder.Request != null);
             Require(settingsRecorder.Request!.SettingsOnly && settingsRecorder.Request.BeatmapArchive.Length == 0,
                 "official settings entry unnecessarily starts gameplay or exports a chart");
+            using (var settingsFrame = window.CaptureRenderedFrame()!) settingsFrame.Save(Path.Combine(screenshots, "editor-settings-playtest.png"), PngBitmapEncoderOptions.Default);
         }
         finally { OfficialPlaytestLauncher.ProcessRunner = originalProcessRunner; }
         Pump(200);

@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.11；0.1.10 基线提交 `c1422d0`。源码位于 `src/`。
+- 最新交付 0.1.12；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -33,6 +33,10 @@
 - 精确面尾拖动命中以实际时间底边为入口；空白右键取消 Note/Timing 选择，底板空白也取消各轨选择。
 - 底板未处理滚轮交给主时间轴；横向条 Visibility=Visible、AllowAutoHide=false、高 24 DIP、柄 12 DIP。
 - ZCode 窗口可发现，但两次 Computer Use 捕获返回 FrameArrived/window capture timed out；本轮未提交外部模型任务。
+
+## 0.1.12 常驻试玩与资源缓存
+
+右侧 Settings 首部 BuildOfficialPlaytestSettings 显式按钮替代右键菜单，并显示预热状态。OfficialPlaytestProcess 是编辑器所有的单实例游戏监督器，Opened 异步预热，Closed 关闭；JSON ResidentMessage 通过继承管道通信。宿主 EOF/shutdown 退出，异常退出下一次重建，AllowSetForegroundWindow 仅授权自己的子进程。后台隐藏/静音/停音乐/10 Hz，实际试玩恢复帧率和音量。PlaytestGame 用轻量 OsuScreen 加载官方 PracticePlayer，保留重试与高性能会话，移除 PlayerLoader 私有固定 650+500 ms 转场。TryTransferTrack 复用音轨。OfficialPlaytestPackageCache 监控源/工作资源目录，复用压缩资源并仅重写 .osu；官方导出可选 CaptureNormalizedDocument 回调保留路径规范化映射，测试覆盖冲突、新编辑、切片、资源更新和原件不写。Protected 根和监控异常禁用缓存。原生 GPU 常驻测试 scripts/Test-ResidentPlaytest.ps1；实际监督器/缓存/异常重建端到端入口 UiSmoke --resident-process-test <self-contained host exe>。首次预热/素材不能声称全部秒开；重复热启动实测数百毫秒，报告位置见 RELEASE-0.1.12。
 
 ## 0.1.11 官方宿主
 

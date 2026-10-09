@@ -97,7 +97,8 @@ internal static class ChartFullPackageExportService
                 request.OsuOverallDifficulty,
                 request.OsuHpDrainRate,
                 progress,
-                cancellationToken),
+                cancellationToken,
+                request.CaptureNormalizedDocument),
             cancellationToken);
     }
 
@@ -111,7 +112,8 @@ internal static class ChartFullPackageExportService
         double osuOverallDifficulty,
         double osuHpDrainRate,
         Action<ChartFullPackageExportProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<ChartDocument>? captureNormalizedDocument)
     {
         var exportRoot = Path.GetFullPath(Path.Combine(sessionScratchRoot, "exports"));
         Directory.CreateDirectory(exportRoot);
@@ -165,6 +167,7 @@ internal static class ChartFullPackageExportService
                 sharedResources,
                 budget,
                 referencedResourcesOnly);
+            captureNormalizedDocument?.Invoke(snapshot.Clone());
 
             var mainChartPath = keepSiblingCharts
                 ? Path.Combine(temporaryRoot, Path.GetFileName(packageSourceChartPath))

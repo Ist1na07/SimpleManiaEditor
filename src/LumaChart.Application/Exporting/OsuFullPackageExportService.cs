@@ -23,7 +23,8 @@ public static class OsuFullPackageExportService
                     request.SessionScratchRoot,
                     ChartFullPackageExportFormat.OsuMania,
                     request.OverallDifficulty,
-                    request.HpDrainRate),
+                    request.HpDrainRate,
+                    request.CaptureNormalizedDocument),
                 progress == null
                     ? null
                     : value => progress.Report(new OsuFullPackageExportProgress(

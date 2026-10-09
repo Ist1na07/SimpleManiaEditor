@@ -23,6 +23,7 @@ public sealed record PlaytestRequest
     public Dictionary<int, string[]> KeyBindings { get; init; } = [];
     public string SettingsImportRevision { get; init; } = "";
     public bool SettingsOnly { get; init; }
+    public bool WarmupOnly { get; init; }
 
     public static PlaytestRequest Read(string path)
     {

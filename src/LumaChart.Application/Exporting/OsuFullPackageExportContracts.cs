@@ -8,7 +8,8 @@ public sealed record OsuFullPackageExportRequest(
     string DestinationArchivePath,
     string SessionScratchRoot,
     double OverallDifficulty = 8,
-    double HpDrainRate = 8);
+    double HpDrainRate = 8,
+    Action<ChartDocument>? CaptureNormalizedDocument = null);
 
 public readonly record struct OsuFullPackageExportProgress(
     int Completed,

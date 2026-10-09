@@ -2,11 +2,12 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前为 0.1.11 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前为 0.1.12 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
-关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.11/`，包含编辑器和官方游戏宿主各自的运行时。
+关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.12/`，包含编辑器和官方游戏宿主各自的运行时。
 
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
+- [0.1.12 试玩预热与设置](docs/RELEASE-0.1.12.md)：常驻游戏、资源缓存、快速进入及右侧设置入口。
 - [0.1.11 官方试玩宿主](docs/RELEASE-0.1.11.md)：右下角可移动调整卡片、官方皮肤渲染与设置、独立游戏数据。
 - [0.1.10 皮肤工作流修复](docs/RELEASE-0.1.10.md)：皮肤库与选择预览、重进持久化、官方格式兼容、工具栏合并。
 - [0.1.7 绘制工具](docs/RELEASE-0.1.7.md)：绘制与移动分离、鼠标按键预览、LN 尾部重叠校验。

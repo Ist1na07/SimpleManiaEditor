@@ -15,7 +15,8 @@ internal sealed record ChartFullPackageExportRequest(
     string SessionScratchRoot,
     ChartFullPackageExportFormat Format,
     double OsuOverallDifficulty,
-    double OsuHpDrainRate);
+    double OsuHpDrainRate,
+    Action<ChartDocument>? CaptureNormalizedDocument = null);
 
 internal readonly record struct ChartFullPackageExportProgress(
     int Completed,

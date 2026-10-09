@@ -11,6 +11,7 @@ using osu.Game.Input.Bindings;
 using osu.Game.Rulesets.Mods;
 using System.Text.Json;
 using osu.Game.Rulesets.Mania.Replays;
+using osu.Framework.Graphics;
 
 namespace SimpleManiaEditor.OsuHost;
 
@@ -83,4 +84,12 @@ internal partial class PracticePlayer(double startTime, string preferencesPath, 
     public void OnReleased(KeyBindingReleaseEvent<GlobalAction> e) { }
     public double SongTime => GameplayClockContainer.CurrentTime;
     public bool AutoPlaying => DrawableRuleset.ReplayScore != null;
+    public override void OnEntering(ScreenTransitionEvent e)
+    {
+        base.OnEntering(e);
+        // Official EditorPlayer also finishes the game-entry animation.
+        FinishTransforms(); Alpha = 1; Scale = osuTK.Vector2.One;
+        GameplayClockContainer.FinishTransforms(false, nameof(Alpha));
+        GameplayClockContainer.Alpha = 1;
+    }
 }

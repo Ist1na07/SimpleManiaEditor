@@ -6,18 +6,29 @@ namespace LumaChart.Avalonia;
 
 public sealed partial class MainWindow
 {
-    private void ConfigureOfficialPlaytestMenu(Button button)
+    private readonly TextBlock officialPlaytestWarmStatus = new()
+    { Text = "首次打开时后台准备试玩", TextWrapping = global::Avalonia.Media.TextWrapping.Wrap, FontSize = 11 };
+    private Control BuildOfficialPlaytestSettings()
     {
-        ToolTip.SetTip(button, "官方 osu!mania 试玩 · 游戏内 Ctrl+O 设置 · Tab 自动演奏 · 右键导入皮肤/键位");
-        var cfg = new MenuItem { Header = "导入 osu! 用户配置：键位、落速、皮肤…" };
-        var settings = new MenuItem { Header = "官方试玩设置：皮肤、按键、游戏…" };
+        var panel = new StackPanel { Spacing = 6 };
+        panel.Children.Add(new TextBlock { Text = "试玩", Foreground = MutedBrush });
+        officialPlaytestWarmStatus.Foreground = MutedBrush;
+        panel.Children.Add(officialPlaytestWarmStatus);
+        var settings = new Button { Content = "官方试玩设置：皮肤、按键、游戏…" };
         settings.Click += async (_, _) => await StartPlaytestAsync(0, settingsOnly: true);
-        var folder = new MenuItem { Header = "添加皮肤目录 / osu! Skins 目录…" };
-        var archive = new MenuItem { Header = "导入 .osk 皮肤包（官方导入器）…" };
+        global::Avalonia.Automation.AutomationProperties.SetAutomationId(settings, "Editor.Settings.Playtest.Open");
+        var cfg = new Button { Content = "导入 osu! 键位、落速与皮肤…" };
+        var folder = new Button { Content = "添加皮肤目录 / Skins 目录…" };
+        var archive = new Button { Content = "导入 .osk 皮肤包…" };
         cfg.Click += async (_, _) => await ImportOfficialPlaytestConfigAsync();
         folder.Click += async (_, _) => await ImportOfficialSkinAsync(false);
         archive.Click += async (_, _) => await ImportOfficialSkinAsync(true);
-        button.ContextMenu = new ContextMenu { ItemsSource = new object[] { settings, new Separator(), cfg, folder, archive } };
+        foreach (var button in new[] { settings, cfg, folder, archive })
+        {
+            button.HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Stretch;
+            panel.Children.Add(button);
+        }
+        return panel;
     }
 
     private async Task ImportOfficialPlaytestConfigAsync()
