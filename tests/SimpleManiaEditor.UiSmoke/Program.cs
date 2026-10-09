@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Automation;
 using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Themes.Fluent;
@@ -32,7 +33,7 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_EDITING_ROOT", Path.Combine(root, "editing"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
-        var screenshotRoot = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
+        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
         {
@@ -41,6 +42,12 @@ internal static class Program
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
+            if (args.Length > 0 && args[0] == "--workbench-test")
+            {
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                RunApplicationSmoke(screenshotRoot);
+                return 0;
+            }
             RunPointerWorkflow(screenshotRoot);
             InteractionRegressionSpecs.Run();
             PlacementPrecisionSpecs.Run();
@@ -295,6 +302,10 @@ internal static class Program
         var inspectorTabs = (TabControl)typeof(MainWindow).GetField("editorInspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         inspectorTabs.SelectedItem = settingsTab;
         Dispatcher.UIThread.RunJobs();
+        var appearance = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => AutomationProperties.GetAutomationId(e) == "Settings.Appearance");
+        Require(!appearance.IsExpanded, "editor appearance should be collapsed by default");
+        appearance.IsExpanded = true;
+        Pump(100);
         var skinPicker = window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetAutomationId(c) == "Editor.NoteStyle");
         skinPicker.SelectedIndex = 1;
         Require(timeline.NoteStyle == EditorNoteStyle.Malody, "skin selector did not switch editor rendering");
@@ -302,6 +313,7 @@ internal static class Program
         skinPicker.SelectedIndex = 0;
         Require(timeline.NoteStyle == EditorNoteStyle.Osu && EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Osu,
             "skin selector did not restore/persist osu default");
+        OptionControlsSpecs.Run(window, screenshots);
         WorkbenchRegressionSpecs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);

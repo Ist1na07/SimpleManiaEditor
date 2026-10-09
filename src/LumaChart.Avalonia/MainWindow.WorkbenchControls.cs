@@ -115,6 +115,7 @@ public sealed partial class MainWindow
         slider = new Slider { Minimum = 0, Maximum = count - 1, TickFrequency = 1,
             TickPlacement = TickPlacement.BottomRight, IsSnapToTickEnabled = true, SmallChange = 1, LargeChange = 1, Height = 30 };
         AutomationProperties.SetAutomationId(slider, id);
+        optionResetHeaders[slider] = header;
         ticks = new Grid { ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", count))) };
         for (var index = 0; index < count; index++)
         {
@@ -154,7 +155,7 @@ public sealed partial class MainWindow
             adjustmentZoomSlider.Value = NearestPreset(workbenchZooms, timeline.PixelsPerBeat);
             adjustmentZoomText.Text = $"{timeline.PixelsPerBeat / 140:0.##}x · {timeline.PixelsPerBeat:0} DIP/beat";
         }
-        finally { syncingAdjustmentZoom = false; }
+        finally { syncingAdjustmentZoom = false; RefreshOptionResets(); }
     }
 
     private static int NearestPreset(IReadOnlyList<double> presets, double value) =>

@@ -1252,6 +1252,7 @@ public sealed partial class MainWindow : PlatformWindow
         AvaloniaLocalizationRuntime.SetPreference(languageSettings.Preference);
         displayScaleRoot.Child = BuildShell();
         Content = displayScaleRoot;
+        ConfigureEditorOptionControls();
         fontScaleController = new AvaloniaWindowFontScaleController(this);
         localizationController.Apply();
         displayScaleController = new WindowsDisplayScaleController(
@@ -10376,34 +10377,34 @@ public sealed partial class MainWindow : PlatformWindow
             spectrogramDetailSlider,
             spectrogramDetailValueText);
 
+        var appearance = new Expander
+        {
+            Header = "外观", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = new StackPanel { Spacing = 5, Children =
+            {
+                TimingField("Note 对齐", anchorGrid),
+                TimingField("栅格宽度（每列）", gridLaneWidthSlider), gridLaneWidthValueText,
+                TimingField("主编辑区域 X 轴偏移", mainEditorHorizontalOffsetSlider), mainEditorHorizontalOffsetValueText,
+                TimingField("缩放（DIP / beat，Alt + 滚轮）", gridBeatHeightSlider), gridBeatHeightValueText,
+                BuildNoteStyleSelector(), noteSizeGrid,
+                TimingField("Note 透明度", noteOpacitySlider), noteOpacityValueText,
+                TimingField("轨道区域透明度", trackOpacitySlider), trackOpacityValueText,
+                TimingField("整体背景暗度", backgroundDarknessSlider), backgroundDarknessValueText,
+                spectrogramAppearanceGrid,
+                TimingField("小节线粗细", barLineThicknessSlider), barLineThicknessValueText,
+                TimingField("分度线粗细（保留层级）", subdivisionLineThicknessSlider), subdivisionLineThicknessValueText,
+                TimingField("判定线位置（画面高度）", judgementLinePositionSlider), judgementLinePositionValueText,
+                judgementStyleGrid
+            } }
+        };
+        AutomationProperties.SetAutomationId(appearance, "Settings.Appearance");
         var section = SettingsSection(
             "编辑器设置",
             "吸附与视图",
             "Settings.EditorViewSection",
             TimingField("网格分度", settingsSnapBox),
             TimingField("固定分度", settingsFixedSnapBox),
-            TimingField("Note 对齐", anchorGrid),
-            TimingField("栅格宽度（每列）", gridLaneWidthSlider),
-            gridLaneWidthValueText,
-            TimingField("主编辑区域 X 轴偏移", mainEditorHorizontalOffsetSlider),
-            mainEditorHorizontalOffsetValueText,
-            TimingField("缩放（DIP / beat，Alt + 滚轮）", gridBeatHeightSlider),
-            gridBeatHeightValueText,
-            noteSizeGrid,
-            TimingField("Note 透明度", noteOpacitySlider),
-            noteOpacityValueText,
-            TimingField("轨道区域透明度", trackOpacitySlider),
-            trackOpacityValueText,
-            TimingField("整体背景暗度", backgroundDarknessSlider),
-            backgroundDarknessValueText,
-            spectrogramAppearanceGrid,
-            TimingField("小节线粗细", barLineThicknessSlider),
-            barLineThicknessValueText,
-            TimingField("分度线粗细（保留层级）", subdivisionLineThicknessSlider),
-            subdivisionLineThicknessValueText,
-            TimingField("判定线位置（画面高度）", judgementLinePositionSlider),
-            judgementLinePositionValueText,
-            judgementStyleGrid,
+            appearance,
             TimingField("ProEditor 总列数", proGridColumnSlider),
             proGridColumnText);
         return section;
@@ -10435,6 +10436,7 @@ public sealed partial class MainWindow : PlatformWindow
         ApplyEditorViewSettings();
         RefreshEditorViewSettingsUi();
         MarkEditorViewSettingsDirty();
+        RefreshOptionResets();
         viewModel.SetStatus(AvaloniaLocalizationCatalog.Format("Note 对齐：{0}", NoteAnchorDisplayName(anchor)));
     }
 
@@ -10761,6 +10763,7 @@ public sealed partial class MainWindow : PlatformWindow
             CornerRadius = new CornerRadius(4)
         };
         AutomationProperties.SetAutomationId(resetButton, "Settings.Shortcuts.Reset");
+        shortcutResetAllButton = resetButton;
         resetButton.Click += (_, _) => ResetShortcutSettings();
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         header.Children.Add(new StackPanel
@@ -10860,6 +10863,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void RefreshShortcutButtons()
     {
+        RefreshOptionResets();
         foreach (var descriptor in WindowsEditorShortcutSettings.Catalog)
         {
             if (!shortcutButtons.TryGetValue(descriptor.Id, out var button)) continue;
@@ -12388,6 +12392,8 @@ public sealed partial class MainWindow : PlatformWindow
                 TimingField("艺术家原文", metadataArtistOriginalBox),
                 creatorVersion,
                 bpmKeys,
+                TimingField("OD · 判定难度（0–10）", metadataOverallDifficultyBox),
+                TimingField("HP · 掉血难度（0–10）", metadataHpDrainRateBox),
                 TimingField("音频", audioRow),
                 offsetPreview,
                 TimingField("歌曲封面", coverRow),
@@ -18111,6 +18117,17 @@ public sealed partial class MainWindow : PlatformWindow
         var tab = viewModel.ActiveTab;
         if (tab == null) return false;
         var draft = CaptureMetadataEditorDraft(tab);
+        if (!double.TryParse(draft.OverallDifficulty, NumberStyles.Float, CultureInfo.InvariantCulture, out var requestedOd) ||
+            !double.IsFinite(requestedOd) || requestedOd is < 0 or > 10 ||
+            !double.TryParse(draft.HpDrainRate, NumberStyles.Float, CultureInfo.InvariantCulture, out var requestedHp) ||
+            !double.IsFinite(requestedHp) || requestedHp is < 0 or > 10)
+        {
+            lastMetadataApplyError = "OD 和 HP 必须是 0–10 范围内的数字。";
+            metadataStatusText.Text = lastMetadataApplyError;
+            metadataStatusText.Foreground = Brushes.OrangeRed;
+            viewModel.SetStatus(lastMetadataApplyError);
+            return false;
+        }
         if (!includeTiming)
         {
             var timing = ChartMetadataEditingService.Capture(tab.Session.Document);

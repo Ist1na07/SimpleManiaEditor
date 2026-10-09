@@ -20,6 +20,22 @@ public sealed partial class MainWindow
         Background = new SolidColorBrush(Color.Parse("#30393D")) };
     private readonly Dictionary<string, EditorTrackPanel> boardFrames = [];
     private bool updatingBoardScroll;
+    private double boardEdgePadding;
+    private double? pendingBoardPan;
+    private int boardLayoutRevision;
+
+    private void RestoreBoardPanAfterLayout(double pan)
+    {
+        pendingBoardPan = pan;
+        var revision = ++boardLayoutRevision;
+        global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (revision != boardLayoutRevision) return;
+            pendingBoardPan = null;
+            trackScroller.Offset = new Vector(Math.Clamp(boardEdgePadding + pan, 0, trackBoardScrollbar.Maximum), 0);
+            UpdateBoardScrollState();
+        }, global::Avalonia.Threading.DispatcherPriority.Loaded);
+    }
     private bool dismissTrackMenuClick;
 
     private Control CreateUnifiedBoard(Control mainContent)
@@ -141,14 +157,20 @@ public sealed partial class MainWindow
 
     private void UpdateBoardScrollState()
     {
+        if (updatingBoardScroll) return;
         var width = trackPanels.Children.OfType<EditorTrackPanel>().Sum(panel => panel.Width) + Math.Max(0, trackPanels.Children.Count - 1) * trackPanels.Spacing;
-        trackBoardCanvas.Width = Math.Max(trackScroller.Viewport.Width, width + 120);
         updatingBoardScroll = true;
         try
         {
+            var padding = Math.Max(0, trackScroller.Viewport.Width);
+            var offset = trackScroller.Offset.X + padding - boardEdgePadding;
+            boardEdgePadding = padding;
+            trackPanels.Margin = new Thickness(padding, 0, 0, 0);
+            trackBoardCanvas.Width = width + padding * 2;
             trackBoardScrollbar.Maximum = Math.Max(0, trackBoardCanvas.Width - trackScroller.Viewport.Width);
             trackBoardScrollbar.ViewportSize = Math.Max(1, trackScroller.Viewport.Width);
-            trackBoardScrollbar.Value = Math.Clamp(trackScroller.Offset.X, 0, trackBoardScrollbar.Maximum);
+            trackScroller.Offset = new Vector(Math.Clamp(offset, 0, trackBoardScrollbar.Maximum), 0);
+            trackBoardScrollbar.Value = trackScroller.Offset.X;
         }
         finally { updatingBoardScroll = false; }
     }

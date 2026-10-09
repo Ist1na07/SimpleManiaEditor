@@ -119,6 +119,7 @@ public sealed partial class MainWindow
             SelectedIndex = shortcutSettings.Profile == EditorInteractionProfile.OsuMania ? 0 : 1,
             HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Stretch
         };
+        global::Avalonia.Automation.AutomationProperties.SetAutomationId(picker, "Editor.InteractionProfile");
         picker.SelectionChanged += (_, _) =>
         {
             var profile = picker.SelectedIndex == 1 ? EditorInteractionProfile.LumaLegacy : EditorInteractionProfile.OsuMania;
@@ -148,6 +149,7 @@ public sealed partial class MainWindow
             shortcutSettingsSaveTimer.Stop();
             shortcutSettingsSaveTimer.Start();
         };
+        global::Avalonia.Automation.AutomationProperties.SetAutomationId(reverseTimeWheelBox, "Editor.ReverseTimeWheel");
         return new StackPanel
         {
             Spacing = 6,
@@ -156,7 +158,6 @@ public sealed partial class MainWindow
                 new TextBlock { Text = "操作方案（切换时重置快捷键）", Foreground = Brushes.White },
                 picker,
                 reverseTimeWheelBox,
-                BuildNoteStyleSelector(),
                 BuildGridNotationSelector(),
                 new TextBlock
                 {
@@ -313,7 +314,7 @@ public sealed partial class MainWindow
                 fixedRatePicker.SelectedItem = rate;
             }
         }
-        finally { syncingFixedRate = false; }
+        finally { syncingFixedRate = false; RefreshOptionResets(); }
     }
 
     private async Task CommitFixedPlaybackRateAsync()
@@ -350,6 +351,6 @@ public sealed partial class MainWindow
                 fixedGridPicker.SelectedItem = division;
             }
         }
-        finally { syncingFixedGridPicker = false; }
+        finally { syncingFixedGridPicker = false; RefreshOptionResets(); }
     }
 }

@@ -154,6 +154,9 @@ internal static class OsuSkinPlaytestSpecs
         Require(pause.Content is Image,"pause assets not applied");
         game.KeyPress(Key.Enter,RawInputModifiers.None,PhysicalKey.Enter,"Enter"); game.KeyRelease(Key.Enter,RawInputModifiers.None,PhysicalKey.Enter,"Enter"); Program.Pump(40);
         Require(game.Diagnostics.Playing && !Field<Border>(game,"gameChrome").IsVisible && !Field<Border>(game,"pauseOverlay").IsVisible,"gameplay chrome was not hidden");
+        // Cold skin loading may run beyond the first note on a busy machine.
+        // Reset judgements before moving the test clock back to that note.
+        Field<PlaytestSession>(game,"session").Prepare();
         typeof(PlaytestWindow).GetField("silentAnchorMilliseconds",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(game,900d - Field<System.Diagnostics.Stopwatch>(game,"silentClock").Elapsed.TotalMilliseconds);
         typeof(PlaytestWindow).GetMethod("RunFrame",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(game,null); Program.Pump(20);
         typeof(PlaytestWindow).GetField("silentAnchorMilliseconds",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(game,1000d - Field<System.Diagnostics.Stopwatch>(game,"silentClock").Elapsed.TotalMilliseconds);

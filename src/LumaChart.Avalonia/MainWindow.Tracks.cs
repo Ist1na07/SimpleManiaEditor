@@ -132,6 +132,7 @@ public sealed partial class MainWindow
 
     private void RebuildTrackViews()
     {
+        var previousPan = pendingBoardPan ?? trackScroller.Offset.X - boardEdgePadding;
         activeSecondaryTrack = null;
         foreach (var view in secondaryTrackViews.Values)
         {
@@ -151,6 +152,9 @@ public sealed partial class MainWindow
         UpdateMainTrackWidth();
         if (viewModel.ActiveTab is { } tab) UpdateTrackDocuments(tab);
         SyncTrackViewports();
+        // Replacing children can temporarily shrink the ScrollViewer extent and
+        // coerce its offset. Restore the requested pan after the final layout.
+        RestoreBoardPanAfterLayout(previousPan);
     }
 
     private Control BuildSecondaryTrack(TrackView view)

@@ -51,6 +51,8 @@ try{
         Read-Until 'done' | Out-Null
         $result=Get-Content ($path+'.verified.json') -Raw | ConvertFrom-Json
         if(-not $result.AutoPlay -or $result.Accuracy -lt .999){throw 'Resident replay did not judge perfectly'}
+        $keys=Get-Content ($path+'.shortcuts.json') -Raw | ConvertFrom-Json
+        if(-not $keys.ShiftPauseResume -or -not $keys.EscapeReturn){throw 'Shift/Escape keyboard verification failed'}
         if($process.HasExited){throw 'Resident restarted/exited between requests'}
     }
     $request.SettingsOnly=$true;$path=Join-Path $testRoot 'settings.json'
@@ -61,7 +63,7 @@ try{
     if(-not $process.WaitForExit(10000)){throw 'Resident did not shut down'}
     if($process.ExitCode -ne 0){throw 'Resident abnormal exit'}
     @{ColdWarmupMs=$cold;ClickToReadyMs=@($times);Events=@($events);ProcessId=$process.Id} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $testRoot 'timings.json') -Encoding utf8
-    Write-Output ('PASS one resident PID, three perfect GPU playtests, return/reopen, complete settings and shutdown; timings='+($times -join ',')+' ms; results='+$testRoot)
+    Write-Output ('PASS one resident PID, three perfect GPU playtests, actual Shift/Escape input, return/reopen, complete settings and shutdown; timings='+($times -join ',')+' ms; results='+$testRoot)
 }finally{
     if(-not $process.HasExited){$process.Kill();$process.WaitForExit()}
     $process.Dispose()

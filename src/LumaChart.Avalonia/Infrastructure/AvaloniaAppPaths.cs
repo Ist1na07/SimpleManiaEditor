@@ -23,7 +23,7 @@ public static class AvaloniaAppPaths
     private const string EditingRootOverride = "LUMACHART_AVALONIA_EDITING_ROOT";
     private const string WorkspaceRootOverride = "LUMACHART_AVALONIA_WORKSPACE_ROOT";
     private const string LegacyEditingCacheFolderName = "SimpleManiaEditor Editing Cache";
-    private const int DefaultProGridColumns = 12;
+    public const int DefaultProGridColumns = 12;
     private const int MaximumProGridColumns = 64;
     private static IAppStorageLocations? registeredLocations;
     private static WorkspaceRootFallbackNotice? workspaceRootFallback;

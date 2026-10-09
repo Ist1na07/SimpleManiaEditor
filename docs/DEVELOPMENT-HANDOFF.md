@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.13；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.14；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -95,3 +95,7 @@ $env:DOTNET_CLI_HOME = 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-aud
 ## 0.1.13 试玩焦点交接
 
 PlaytestWindowActivation 在 RunAsync 发出 open 后等待自有子进程可见窗口，再由仍持有前台的编辑器调用 SetForegroundWindow；取消、退出或 10 秒截止终止等待，用户主动切到其他进程则停止交接。避免仅授权子进程/调用 SDL Raise 却没有实际切换前台。ResidentSupervisorSpecs 使用响应消息循环的原生父进程窗口，三个回合都断言 Windows 前台 PID 为实际 GPU 游戏宿主；保留资源缓存、同 PID、异常重建和关闭测试。
+
+## 0.1.14 试玩与选项交互
+
+官方游戏 Content 顶层 PracticeShortcutHandler 在 replay/ruleset 输入之前接管 Shift 快速暂停/继续和 Esc 直接 ReturnToEditor；不改官方渲染、皮肤、计分。--verify 的 VerificationInputManager 注入标准 KeyboardKeyInput 走完整队列，检查左右 Shift、按住不重复、暂停时钟停止、Esc 返回和连续三次完美演奏（artifacts/resident-playtest/d26fb72f25084ef6b82541d9f842b2ab）。MainWindow.OptionControls 统一滚轮和逐项默认值按钮，显式引用出厂值；逻辑树要 Distinct，调整卡片的复原放在标题行保证滑条与刻度对齐。外观 Expander 默认收起，编辑器皮肤从快捷键区移入。OD/HP 原已有模型/读写但控件未入 UI，现在进入元数据页；提交前两项都校验 0–10，原子提交/撤销。底板两侧 padding=Viewport.Width；重建轨道临时缩小 extent 会强制偏移，因此 RestoreBoardPanAfterLayout 在最终布局后恢复平移。UiSmoke --workbench-test 提供快速编辑器回归（输出在隔离临时截图目录），完整脚本仍覆盖历史音频/皮肤用例。

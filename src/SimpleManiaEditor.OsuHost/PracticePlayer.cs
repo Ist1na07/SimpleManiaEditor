@@ -24,6 +24,7 @@ internal partial class PracticePlayer(double startTime, string preferencesPath, 
     [Cached(typeof(IGameplayLeaderboardProvider))]
     private readonly EmptyGameplayLeaderboardProvider leaderboard = new();
     public bool GameplayReady => LoadedBeatmapSuccessfully;
+    internal bool QuickPaused => GameplayClockContainer.IsPaused.Value;
     protected override bool CheckModsAllowFailure() => false;
     protected override bool PauseOnFocusLost => !verify;
     protected override void PrepareReplay()
@@ -71,14 +72,21 @@ internal partial class PracticePlayer(double startTime, string preferencesPath, 
         if (e.Repeat) return false;
         switch (e.Action)
         {
+            case GlobalAction.Back:
+                PerformExit(); return true;
             case GlobalAction.EditorTestPlayToggleAutoplay:
                 SetAutoPlay(DrawableRuleset.ReplayScore == null); return true;
             case GlobalAction.EditorTestPlayToggleQuickPause:
-                if (GameplayClockContainer.IsPaused.Value) GameplayClockContainer.Start();
-                else GameplayClockContainer.Stop();
+                ToggleQuickPause();
                 return true;
             default: return false;
         }
+    }
+
+    internal void ToggleQuickPause()
+    {
+        if (GameplayClockContainer.IsPaused.Value) GameplayClockContainer.Start();
+        else GameplayClockContainer.Stop();
     }
 
     public void OnReleased(KeyBindingReleaseEvent<GlobalAction> e) { }

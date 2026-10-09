@@ -28,6 +28,8 @@ using osu.Game.Overlays.Settings;
 using osu.Game.Overlays.Settings.Sections.Input;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
+using osu.Framework.Input;
+using osuTK.Input;
 
 namespace SimpleManiaEditor.OsuHost;
 
@@ -50,6 +52,22 @@ internal partial class PlaytestGame : OsuGame
     private bool returning;
     private readonly BindableDouble residentVolume = new(0);
     private double inactiveHz;
+    private VerificationInputManager? verificationInput;
+    private bool verifiedQuickPause;
+    private bool verificationEscapeRequested;
+    protected override UserInputManager CreateUserInputManager() => verify
+        ? verificationInput = new VerificationInputManager() : base.CreateUserInputManager();
+    protected override void LoadComplete()
+    {
+        base.LoadComplete();
+        Add(new PracticeShortcutHandler(key =>
+        {
+            if (player?.GameplayReady != true || !player.IsCurrentScreen()) return false;
+            if (key == Key.Escape) { if (resident) ReturnToEditor(); else Host.Exit(); return true; }
+            if (key is Key.ShiftLeft or Key.ShiftRight) { player.ToggleQuickPause(); return true; }
+            return false;
+        }) { RelativeSizeAxes = osu.Framework.Graphics.Axes.Both, Depth = float.MinValue });
+    }
     internal void Enqueue(Action action) => Scheduler.Add(action);
 
     public PlaytestGame(PlaytestRequest request, string requestPath, bool verify, bool verifySettings = false,
@@ -85,7 +103,7 @@ internal partial class PlaytestGame : OsuGame
             var next = PlaytestRequest.Read(path);
             if (!Path.GetFullPath(next.DataRoot).Equals(Path.GetFullPath(request.DataRoot), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("试玩数据目录不匹配。");
-            request = next; requestPath = path; launched = false; verificationStarted = false;
+            request = next; requestPath = path; launched = false; verificationStarted = false; verificationEscapeRequested = false;
             residentIdle = false; player = null; launchClock.Restart();
             residentVolume.Value = 1;
             Host.MaximumInactiveHz = inactiveHz;
@@ -309,6 +327,7 @@ internal partial class PlaytestGame : OsuGame
             OfficialPlayer = player.GetType().BaseType!.FullName, Ruleset = Ruleset.Value.ShortName
         }));
         report?.Invoke(new("ready", requestPath, launchClock.Elapsed.TotalMilliseconds));
+        if (verify) VerifyQuickPauseKeys();
         if (verify) Scheduler.AddDelayed(async () =>
         {
             try
@@ -319,11 +338,47 @@ internal partial class PlaytestGame : OsuGame
                 using var image = await Host.TakeScreenshotAsync();
                 await image.SaveAsPngAsync(requestPath + ".png");
                 if (verifySettings) VerifySkinSelector();
-                else if (resident) ReturnToEditor();
+                else if (resident)
+                {
+                    if (!verifiedQuickPause) throw new InvalidOperationException("Shift pause/resume input was not verified.");
+                    verificationEscapeRequested = true;
+                    var verificationPath = requestPath;
+                    verificationInput!.Stroke(Key.Escape);
+                    Scheduler.AddDelayed(() =>
+                    {
+                        if (!residentIdle && requestPath == verificationPath)
+                            Fail(new InvalidOperationException("Escape did not return directly to the editor."));
+                    }, 300);
+                }
                 else Host.Exit();
             }
             catch (Exception exception) { Fail(exception); }
         }, 5500);
+    }
+
+    private void VerifyQuickPauseKeys()
+    {
+        verifiedQuickPause = false;
+        Scheduler.AddDelayed(() =>
+        {
+            verificationInput!.Press(Key.ShiftLeft);
+            Scheduler.AddDelayed(() =>
+            {
+                if (!player!.QuickPaused) { Fail(new InvalidOperationException("Left Shift did not pause through the official input queue.")); return; }
+                var pausedTime = player.SongTime;
+                Scheduler.AddDelayed(() =>
+                {
+                    if (!player.QuickPaused || Math.Abs(player.SongTime - pausedTime) > 2)
+                    { Fail(new InvalidOperationException("Held Shift changed pause state or the paused clock advanced.")); return; }
+                    verificationInput.Release(Key.ShiftLeft); verificationInput.Stroke(Key.ShiftRight);
+                    Scheduler.AddDelayed(() =>
+                    {
+                        if (player.QuickPaused) { Fail(new InvalidOperationException("Right Shift did not resume.")); return; }
+                        verifiedQuickPause = true;
+                    }, 100);
+                }, 350);
+            }, 100);
+        }, 500);
     }
 
     private void VerifySkinSelector()
@@ -376,6 +431,8 @@ internal partial class PlaytestGame : OsuGame
             residentVolume.Value = 0; MusicController.Stop();
             Host.MaximumInactiveHz = 10;
             Host.Window.Hide();
+            if (verify && verificationEscapeRequested)
+                File.WriteAllText(requestPath + ".shortcuts.json", JsonSerializer.Serialize(new { ShiftPauseResume = true, EscapeReturn = true }));
             report?.Invoke(new("done", requestPath));
         }
         Schedule(FinishReturn);

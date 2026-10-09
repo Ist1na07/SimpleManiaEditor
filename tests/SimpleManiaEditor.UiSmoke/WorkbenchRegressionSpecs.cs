@@ -35,9 +35,9 @@ internal static class WorkbenchRegressionSpecs
         Require(grid.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "1/16") && tab.Session.SnapDivision == 4,
             "general notation did not display whole-note denominator while preserving beat division");
         timeline.NavigateToBeat(4);
-        var point = timeline.TranslatePoint(new Point(timeline.Bounds.Width - 5, timeline.Bounds.Height / 2), window)!.Value;
+        var point = timeline.TranslatePoint(new Point(timeline.Bounds.Width / 2, timeline.Bounds.Height / 2), window)!.Value;
         window.MouseWheel(point, new Vector(0, -1));
-        Require(Math.Abs(timeline.CurrentBeat - 4.25) < .0001, "osu 1/4 / general 1/16 did not move one quarter-beat (125ms at 120 BPM)");
+        Require(Math.Abs(timeline.CurrentBeat - 4.25) < .0001, $"osu 1/4 / general 1/16 did not move one quarter-beat: beat={timeline.CurrentBeat}, snap={tab.Session.SnapDivision}, pointer={point}, board offset={Field<ScrollViewer>(window, "trackScroller").Offset}, viewport={Field<ScrollViewer>(window, "trackScroller").Viewport}");
         Field<ComboBox>(window, "fixedRatePicker").SelectedItem = 1d;
         Program.PumpUntil(() => transport.PlaybackSnapshot?.PlaybackRate == 1);
         var beat = timeline.CurrentBeat;
@@ -100,7 +100,7 @@ internal static class WorkbenchRegressionSpecs
         Require(tab.Session.Selection.Count == 0, "blank board right-click did not deselect notes");
         var menu = Field<ContextMenu>(window, "addTrackContextMenu");
         Require(menu.IsOpen, "right-click blank space did not open track menu");
-        scroller.Offset = new Vector(0, 0); Program.Pump(50);
+        scroller.Offset = new Vector(scroller.Viewport.Width, 0); Program.Pump(50);
         var beforeDismiss = tab.Session.Document.Notes.Count;
         timeline.Tool = TimelineTool.Tap;
         var dismissProbe = timeline.GetPlacementEvidenceProbe()!;
@@ -126,7 +126,7 @@ internal static class WorkbenchRegressionSpecs
         Program.PumpUntil(() => Field<EditorTrackWorkspace>(window, "activeTrackWorkspace").Tracks.Count == 1);
         Program.Pump(100);
         Require(scroller.Offset.X == offsetBeforeAdd && Field<Control>(window, "mainTrackFrame").Width == mainWidthBeforeAdd,
-            "adding a track resized/repositioned the board");
+            $"adding a track resized/repositioned the board: offset {offsetBeforeAdd} -> {scroller.Offset.X}, main width {mainWidthBeforeAdd} -> {Field<Control>(window, "mainTrackFrame").Width}, viewport {scroller.Viewport.Width}");
         boardBar.Value = boardBar.Maximum;
         Program.Pump(50);
         var boardThumb = boardBar.GetVisualDescendants().OfType<Thumb>().Single(t => t.IsVisible);
@@ -142,7 +142,7 @@ internal static class WorkbenchRegressionSpecs
         var draftView = View(window, draft.Id);
         var surface = Property<TimelineSurface>(draftView, "Surface");
         var draftFrame = Property<Border>(draftView, "Host");
-        scroller.Offset = new Vector(Math.Max(0, draftFrame.Bounds.Right + draftFrame.TranslatePoint(new Point(), Field<StackPanel>(window, "trackPanels"))!.Value.X - scroller.Viewport.Width), 0);
+        scroller.Offset = new Vector(Math.Max(0, draftFrame.TranslatePoint(new Point(), board)!.Value.X - 100), 0);
         Program.Pump(50);
         surface.Tool = TimelineTool.Tap;
         surface.SetCurrentBeat(8);
@@ -163,7 +163,7 @@ internal static class WorkbenchRegressionSpecs
         var waveform = panelList.Children.OfType<EditorTrackPanel>().Single(p => p.TrackKey == "waveform");
         var dragStart = waveform.TranslatePoint(new Point(9, 16), window)!.Value;
         var oldOrder = panelList.Children.OfType<EditorTrackPanel>().Select(p => p.TrackKey).ToArray();
-        scroller.Offset = new Vector(Math.Max(0, waveform.TranslatePoint(new Point(), panelList)!.Value.X - 10), 0);
+        scroller.Offset = new Vector(Math.Max(0, scroller.Viewport.Width + waveform.TranslatePoint(new Point(), panelList)!.Value.X - 10), 0);
         Program.Pump(50);
         dragStart = waveform.TranslatePoint(new Point(9, 16), window)!.Value;
         window.MouseDown(dragStart, MouseButton.Left);
@@ -230,7 +230,7 @@ internal static class WorkbenchRegressionSpecs
         Require(new EditorTrackWorkspace(tab.SourcePath, Path.GetDirectoryName(workspace.DirectoryPath)!).Tracks.Count == 5,
             "track layout did not survive reopening");
         timeline.NavigateToBeat(4);
-        Field<ScrollViewer>(window, "trackScroller").Offset = new Vector(0, 0);
+        Field<ScrollViewer>(window, "trackScroller").Offset = new Vector(Field<ScrollViewer>(window, "trackScroller").Viewport.Width, 0);
         Program.Pump(100);
         using (var frame = window.CaptureRenderedFrame()!) frame.Save(Path.Combine(screenshots, "workbench-tracks.png"), PngBitmapEncoderOptions.Default);
         Field<ComboBox>(window, "fixedRatePicker").SelectedItem = 1d;
