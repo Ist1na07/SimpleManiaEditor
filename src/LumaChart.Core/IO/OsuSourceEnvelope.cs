@@ -141,6 +141,13 @@ public static class OsuSourceEnvelope
             note.Beat = newMap.MillisecondsToBeat(start, BeatPosition.MaximumPreservedDenominator);
             if (old.IsHold)
                 note.EndBeat = newMap.MillisecondsToBeat(double.Parse(parts[5].Split(':')[0], Invariant), BeatPosition.MaximumPreservedDenominator);
+            if (after.UnknownRoot["_sme_osu_grid_calibration"]?.GetValue<bool>() == true)
+            {
+                var head = OsuBeatCalibrator.Calibrate(start, note.Beat, newMap).Beat;
+                var tail = note.EndBeat is { } end ? OsuBeatCalibrator.Calibrate(
+                    double.Parse(parts[5].Split(':')[0], Invariant), end, newMap).Beat : (BeatPosition?)null;
+                if (!tail.HasValue || tail.Value.CompareTo(head) > 0) { note.Beat = head; note.EndBeat = tail; }
+            }
             // Keep current audio/property edits, but update the timestamp anchor.
             AttachNote(note, line, after.KeyCount);
         }

@@ -8,6 +8,13 @@ internal static class OsuBeatCalibrationSpecs
     {
         var straightMap = new TimingMap(
             [new TimingEvent { Beat = BeatPosition.Zero, Bpm = 120 }]);
+        foreach (var division in OsuBeatCalibrator.CommonDivisions)
+        {
+            var value = (7d + 1d / division) * 500;
+            var result = OsuBeatCalibrator.Calibrate(value, straightMap.MillisecondsToBeat(value, 1_000_000), straightMap);
+            Assert(result.Calibrated && Math.Abs(result.Beat.Value - (7d + 1d / division)) < 1e-10,
+                $"preset 1/{division} was not restored to an exact grid position");
+        }
 
         var twelfthMilliseconds = (2d + 5d / 12) * 500 + 1.4;
         var rawTwelfth = straightMap.MillisecondsToBeat(twelfthMilliseconds);
@@ -118,6 +125,15 @@ internal static class OsuBeatCalibrationSpecs
                cachedLongEnd is { } roundTripEnd &&
                roundTripEnd is { Bar: 1, Numerator: 5, Denominator: 12 },
             "the calibrated subdivision was reduced while entering the MC working cache");
+
+        Assert(OsuSourceEnvelope.TrySerialize(calibratedDocument, null, null, out var preserved) && preserved == osu,
+            "opening with calibration changed source timestamps on an untouched save");
+        var changingText = osu.Replace("0,500,4,2,1,70,1,0", "-17,500,4,2,1,70,1,0\n1001,333.333333333333,4,2,1,70,1,0");
+        var variable = OsuManiaSerializer.Parse(changingText, OsuNoteTimingImportMode.CalibrateCommonSubdivisions);
+        var variableMap = new TimingMap(variable.Timing);
+        var lastPoint = variable.Timing.Last(t => t.Bpm.HasValue);
+        Assert(Math.Abs(variableMap.BeatToMilliseconds(lastPoint.Beat) - 1001) < .001,
+            "BPM anchor rounding prevents accurate subdivision recovery");
     }
 
     private static void Assert(bool condition, string message)

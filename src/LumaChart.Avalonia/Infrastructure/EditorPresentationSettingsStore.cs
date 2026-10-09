@@ -3,6 +3,7 @@ using System.Text.Json;
 namespace LumaChart.Avalonia.Infrastructure;
 
 public enum EditorNoteStyle { Osu, Malody }
+public enum EditorRenderBackend { AutoOpenGl, CompatibleAngle, Software }
 
 /// <summary>Editor appearance preferences kept separately from legacy geometry settings.</summary>
 public static class EditorPresentationSettingsStore
@@ -17,6 +18,8 @@ public static class EditorPresentationSettingsStore
     public static double LoadPlaytestRate() => ReadPreferences().PlaytestRate;
     public static bool LoadGlobalDensity() => ReadPreferences().GlobalDensity;
     public static bool LoadGlobalDifficulty() => ReadPreferences().GlobalDifficulty;
+    public static EditorRenderBackend LoadRenderBackend() => ReadPreferences().RenderBackend;
+    public static void SaveRenderBackend(EditorRenderBackend value) { var preferences = ReadPreferences(); preferences.RenderBackend = value; Save(preferences); }
     public static void SaveGlobalDensity(bool value) { var preferences = ReadPreferences(); preferences.GlobalDensity = value; Save(preferences); }
     public static void SaveGlobalDifficulty(bool value) { var preferences = ReadPreferences(); preferences.GlobalDifficulty = value; Save(preferences); }
     public static bool LoadSnapAll() => ReadPreferences().SnapAll;
@@ -31,6 +34,7 @@ public static class EditorPresentationSettingsStore
             var value = JsonSerializer.Deserialize<Preferences>(bytes) ?? new();
             if (!Enum.IsDefined(value.NoteStyle)) value.NoteStyle = EditorNoteStyle.Osu;
             if (!Enum.IsDefined(value.GridNotation)) value.GridNotation = EditorGridNotation.Osu;
+            if (!Enum.IsDefined(value.RenderBackend)) value.RenderBackend = EditorRenderBackend.AutoOpenGl;
             if (!double.IsFinite(value.PlaytestRate) || value.PlaytestRate is < .2 or > 2) value.PlaytestRate = 1;
             return value;
         }
@@ -81,6 +85,7 @@ public static class EditorPresentationSettingsStore
 
     private sealed class Preferences
     {
+        public EditorRenderBackend RenderBackend { get; set; }
         public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
         public EditorGridNotation GridNotation { get; set; } = EditorGridNotation.Osu;
         public int LayoutRevision { get; set; }

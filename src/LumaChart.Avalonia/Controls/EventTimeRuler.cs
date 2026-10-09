@@ -18,6 +18,7 @@ public sealed record TimeRulerRange(double StartMilliseconds, double EndMillisec
 /// <summary>Cached song-wide event overview. Position updates never enumerate the chart.</summary>
 public sealed class EventTimeRuler : Control
 {
+    private readonly Dictionary<string, FormattedText> tickLabels = new(StringComparer.Ordinal);
     private EditorSession? session;
     private long serial = -1;
     private TimingMap? map;
@@ -113,7 +114,12 @@ public sealed class EventTimeRuler : Control
         {
             var x = X(time); context.DrawLine(Tick, new(x, 34), new(x, 43));
             var label = TimeSpan.FromMilliseconds(Math.Abs(time)).ToString(@"m\:ss", CultureInfo.InvariantCulture);
-            var text = new FormattedText((time < 0 ? "−" : "") + label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Font, 10, Brushes.Gray);
+            var key = (time < 0 ? "−" : "") + label;
+            if (!tickLabels.TryGetValue(key, out var text))
+            {
+                if (tickLabels.Count >= 256) tickLabels.Clear();
+                tickLabels[key] = text = new FormattedText(key, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Font, 10, Brushes.Gray);
+            }
             context.DrawText(text, new Point(Math.Clamp(x - text.Width / 2, 0, Math.Max(0, Bounds.Width - text.Width)), 40));
         }
         context.DrawLine(CursorLine, new(X(position), 0), new(X(position), 42));

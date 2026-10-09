@@ -352,7 +352,7 @@ public sealed partial class MainWindow
         synchronizingTrackViewport = true;
         try
         {
-            var milliseconds = GetAudioTimingMap(tab).BeatToMilliseconds(BeatPosition.FromDouble(timeline.CurrentBeat));
+            var milliseconds = GetAudioTimingMap(tab).BeatToMilliseconds(BeatPosition.FromDouble(timeline.CurrentBeat, 1_000_000));
             var anchor = timeline.TranslatePoint(new Point(0, timeline.Bounds.Height * timeline.JudgementLinePosition), trackPanels);
             foreach (var view in secondaryTrackViews.Values)
             {
@@ -369,7 +369,7 @@ public sealed partial class MainWindow
                     if (view.TimingSerial != surface.Session.ChangeSerial)
                     { view.Timing = new TimingMap(surface.Session.Document.Timing); view.TimingSerial = surface.Session.ChangeSerial; }
                     surface.SetTimeAxisProjection(view.Timing, GetAudioTimingMap(tab));
-                    surface.SetCurrentBeat(view.Timing!.MillisecondsToBeat(milliseconds).Value);
+                    surface.SetCurrentBeat(view.Timing!.MillisecondsToBeat(milliseconds, 1_000_000).Value);
                     surface.SetZoom(timeline.PixelsPerBeat);
                     surface.SetPlaybackActive(timeline.IsPlaybackActive);
                 }

@@ -176,13 +176,14 @@ public static class OsuManiaSerializer
         var anchorBpm = rawTiming[0].Bpm;
         for (var i = 0; i < rawTiming.Count; i++)
         {
-            // Integrate from the previous *stored* (1/1920-rounded) red line and
+            // Integrate from the previous stored red line and
             // the time TimingMap will actually give it. Each rounding residual is
             // then absorbed by the next segment instead of accumulating across
             // many BPM changes.
             var beat = i == 0
                 ? new BeatPosition(leadInBeats, 0, 1)
-                : BeatPosition.FromDouble(anchorBeat.Value + (rawTiming[i].Ms - anchorMs) * anchorBpm / 60_000d);
+                : BeatPosition.FromDouble(anchorBeat.Value + (rawTiming[i].Ms - anchorMs) * anchorBpm / 60_000d,
+                    BeatPosition.MaximumPreservedDenominator);
             anchorMs += (beat.Value - anchorBeat.Value) * 60_000d / anchorBpm;
             anchorBeat = beat;
             anchorBpm = rawTiming[i].Bpm;
@@ -234,7 +235,7 @@ public static class OsuManiaSerializer
             var x = ParseInt(parts[0], 0);
             var type = ParseInt(parts[3], 1);
             var lane = Math.Clamp((int)((long)x * keyCount / 512), 0, keyCount - 1);
-            var rawBeat = map.MillisecondsToBeat(ms);
+            var rawBeat = map.MillisecondsToBeat(ms, BeatPosition.MaximumPreservedDenominator);
             var noteBeat = noteTimingMode == OsuNoteTimingImportMode.CalibrateCommonSubdivisions
                 ? OsuBeatCalibrator.Calibrate(ms, rawBeat, map).Beat
                 : rawBeat;
@@ -243,7 +244,7 @@ public static class OsuManiaSerializer
             if ((type & 128) != 0 && parts[5].Split(':')[0] is var endText &&
                 TryDouble(endText, out var endMs) && double.IsFinite(endMs))
             {
-                rawEnd = map.MillisecondsToBeat(endMs);
+                rawEnd = map.MillisecondsToBeat(endMs, BeatPosition.MaximumPreservedDenominator);
                 end = noteTimingMode == OsuNoteTimingImportMode.CalibrateCommonSubdivisions
                     ? OsuBeatCalibrator.Calibrate(endMs, rawEnd.Value, map).Beat
                     : rawEnd;
@@ -276,6 +277,7 @@ public static class OsuManiaSerializer
         }
         document.Normalize();
         OsuSourceEnvelope.Capture(document, text);
+        document.UnknownRoot["_sme_osu_grid_calibration"] = noteTimingMode == OsuNoteTimingImportMode.CalibrateCommonSubdivisions;
         return document;
     }
 

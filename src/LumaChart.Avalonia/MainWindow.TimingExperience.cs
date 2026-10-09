@@ -52,7 +52,7 @@ public sealed partial class MainWindow
             EditorPresentationSettingsStore.SaveSnapAll(timeline.SnapAllNotes);
             SyncTrackViewports();
         };
-        return snapAllBox;
+        return new StackPanel { Spacing = 6, Children = { snapAllBox, BuildGridSnapActions() } };
     }
 
     private Control BuildNativeTimingActions()

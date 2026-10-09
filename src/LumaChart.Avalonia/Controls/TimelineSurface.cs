@@ -386,10 +386,10 @@ public sealed class TimelineSurface : Control
     }
 
     private double ProjectBeat(double beat) => sourceAxisMap == null || displayAxisMap == null ? beat :
-        displayAxisMap.MillisecondsToBeat(sourceAxisMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000))).Value;
+        displayAxisMap.MillisecondsToBeat(sourceAxisMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000)), 1_000_000).Value;
 
     private double UnprojectBeat(double beat) => sourceAxisMap == null || displayAxisMap == null ? beat :
-        sourceAxisMap.MillisecondsToBeat(displayAxisMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000))).Value;
+        sourceAxisMap.MillisecondsToBeat(displayAxisMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000)), 1_000_000).Value;
     private double judgementLinePosition =
         WindowsEditorViewSettings.DefaultJudgementLinePosition;
     private double judgementLineThickness =

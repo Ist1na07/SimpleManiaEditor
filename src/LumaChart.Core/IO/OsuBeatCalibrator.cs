@@ -26,7 +26,7 @@ public static class OsuBeatCalibrator
     public const double DefaultMaximumErrorBeats = 1d / 192;
 
     private static readonly int[] SupportedDivisions =
-        [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32, 48, 64];
 
     public static IReadOnlyList<int> CommonDivisions => SupportedDivisions;
 

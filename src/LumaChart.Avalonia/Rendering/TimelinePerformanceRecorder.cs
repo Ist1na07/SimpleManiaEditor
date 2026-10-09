@@ -12,6 +12,7 @@ public sealed class TimelinePerformanceRecorder
     private long pendingInputTimestamp;
 
     public int MaximumVisitedNotes { get; private set; }
+    public long TotalRenderedFrames { get; private set; }
 
     public long BeginRender()
     {
@@ -28,6 +29,7 @@ public sealed class TimelinePerformanceRecorder
 
     public void EndRender(long startedAt, int visitedNotes)
     {
+        TotalRenderedFrames++;
         var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
         AddSample(renderMilliseconds, elapsed);
         MaximumVisitedNotes = Math.Max(MaximumVisitedNotes, visitedNotes);
@@ -41,6 +43,7 @@ public sealed class TimelinePerformanceRecorder
 
     public void Reset()
     {
+        TotalRenderedFrames = 0;
         renderMilliseconds.Clear();
         frameIntervalsMilliseconds.Clear();
         inputLatencyMilliseconds.Clear();

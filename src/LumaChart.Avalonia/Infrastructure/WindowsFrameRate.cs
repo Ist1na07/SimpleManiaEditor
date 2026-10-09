@@ -8,7 +8,7 @@ namespace LumaChart.Avalonia.Infrastructure;
 /// </summary>
 public static class WindowsFrameRateOptions
 {
-    private static readonly int[] Values = [30, 60, 90, 120, 144, 165, 240, 330, 1000];
+    private static readonly int[] Values = [30, 60, 90, 120, 144, 165, 180, 240, 330, 1000, 2000];
 
     public const int Default = 1000;
     public const int CompositionDrivenRate = 165;
@@ -19,12 +19,9 @@ public static class WindowsFrameRateOptions
         Values.MinBy(candidate => Math.Abs((long)candidate - value));
 
     /// <summary>
-    /// Presets the panel can actually present. Asking for more than the refresh
-    /// rate buys nothing: the surplus ticks fall inside one vsync interval, so
-    /// the editor paces worse than it would at the panel rate, and the highest
-    /// preset also drives a frame pump that destabilises the Android render
-    /// thread. A null rate means the platform does not report one and the full
-    /// desktop list stands.
+    /// Display-limited hosts only offer rates within their reported refresh.
+    /// Windows retains the complete list when no host cap is supplied; its audio
+    /// sampling cap and measured drawing cadence are reported independently.
     /// </summary>
     public static IReadOnlyList<int> PresentablePresets(double? maximumRefreshRate)
     {
@@ -187,6 +184,11 @@ internal sealed class WindowsHighRateFramePump : IDisposable
 
     private void Run(int framesPerSecond, Action update, CancellationToken token)
     {
+        // Avalonia's compositor uses short timed waits. Windows' default timer
+        // quantum can turn a 5.6 ms (180 Hz) wait into ~15.6 ms. The waitable
+        // audio sampler alone does not change those waits. Scope the request to
+        // active playback and always balance it when this worker exits.
+        var preciseSystemTimer = OperatingSystem.IsWindows() && timeBeginPeriod(1) == 0;
         var clock = Stopwatch.StartNew();
         var interval = Stopwatch.Frequency / (double)framesPerSecond;
         double next = clock.ElapsedTicks;
@@ -245,6 +247,7 @@ internal sealed class WindowsHighRateFramePump : IDisposable
         finally
         {
             if (waitableTimer != IntPtr.Zero) CloseHandle(waitableTimer);
+            if (preciseSystemTimer) timeEndPeriod(1);
         }
     }
 
@@ -267,6 +270,12 @@ internal sealed class WindowsHighRateFramePump : IDisposable
     }
 
     public void Dispose() => Stop();
+
+    [DllImport("winmm.dll", ExactSpelling = true)]
+    private static extern uint timeBeginPeriod(uint milliseconds);
+
+    [DllImport("winmm.dll", ExactSpelling = true)]
+    private static extern uint timeEndPeriod(uint milliseconds);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr CreateWaitableTimerEx(

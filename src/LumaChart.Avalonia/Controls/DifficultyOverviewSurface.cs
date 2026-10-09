@@ -21,6 +21,10 @@ public sealed record DifficultyOverviewDiagnostics(
 /// </summary>
 public sealed class DifficultyOverviewSurface : Control
 {
+    private double[] fallbackRows = [];
+    private object? fallbackRowsSource;
+    private double fallbackRowsEnd;
+    private double fallbackRowsHeight;
     private static readonly IBrush BackgroundBrush =
         new SolidColorBrush(Color.Parse("#141618"));
     private static readonly IBrush RailBrush =
@@ -116,11 +120,24 @@ public sealed class DifficultyOverviewSurface : Control
         if (Bounds.Width <= 1 || Bounds.Height <= 1) return;
 
         if (result == null)
-            foreach (var sample in fallback)
+        {
+            if (!ReferenceEquals(fallbackRowsSource, fallback) || fallbackRowsEnd != endBeat || fallbackRowsHeight != Bounds.Height)
             {
-                var y = BeatToY(sample.Beat, endBeat, Bounds.Height);
-                context.DrawLine(DashPen, new Point(2, y), new Point(2 + sample.Value / fallbackMaximum * Math.Max(1, Bounds.Width - 4), y));
+                fallbackRowsSource = fallback; fallbackRowsEnd = endBeat; fallbackRowsHeight = Bounds.Height;
+                fallbackRows = new double[Math.Clamp((int)Math.Ceiling(Bounds.Height), 1, 2048)];
+                foreach (var sample in fallback)
+                {
+                    var row = Math.Clamp((int)(BeatToY(sample.Beat, endBeat, Bounds.Height) / Bounds.Height * fallbackRows.Length), 0, fallbackRows.Length - 1);
+                    fallbackRows[row] = Math.Max(fallbackRows[row], sample.Value);
+                }
             }
+            for (var row = 0; row < fallbackRows.Length; row++)
+            {
+                if (fallbackRows[row] <= 0) continue;
+                var y = (row + .5) / fallbackRows.Length * Bounds.Height;
+                context.DrawLine(DashPen, new Point(2, y), new Point(2 + fallbackRows[row] / fallbackMaximum * Math.Max(1, Bounds.Width - 4), y));
+            }
+        }
 
         using (context.PushClip(bounds))
         {

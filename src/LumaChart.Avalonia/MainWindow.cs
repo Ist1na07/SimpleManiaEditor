@@ -1253,6 +1253,7 @@ public sealed partial class MainWindow : PlatformWindow
         displayScaleRoot.Child = BuildShell();
         Content = displayScaleRoot;
         ConfigureEditorOptionControls();
+        ConfigureBlankClickFocus();
         fontScaleController = new AvaloniaWindowFontScaleController(this);
         localizationController.Apply();
         displayScaleController = new WindowsDisplayScaleController(
@@ -10415,7 +10416,7 @@ public sealed partial class MainWindow : PlatformWindow
                 TimingField("小节线粗细", barLineThicknessSlider), barLineThicknessValueText,
                 TimingField("分度线粗细（保留层级）", subdivisionLineThicknessSlider), subdivisionLineThicknessValueText,
                 TimingField("判定线位置（画面高度）", judgementLinePositionSlider), judgementLinePositionValueText,
-                judgementStyleGrid, BuildDisplayScaleSettings()
+                judgementStyleGrid, BuildDisplayScaleSettings(), BuildRenderBackendSelector()
             } }
         };
         AutomationProperties.SetAutomationId(appearance, "Settings.Appearance");
@@ -15850,11 +15851,14 @@ public sealed partial class MainWindow : PlatformWindow
     private void AudioUiTimer_Tick(object? sender, EventArgs eventArgs)
     {
         ConfigureEditorFrameRateRuntime();
-        if (UsesEditorAnimationFrames()) return;
+        if (IsEditorPlaybackActive() && (UsesEditorAnimationFrames() || UsesHighRateEditorVisuals())) return;
         RunEditorFrame(updateVisuals: true);
     }
 
-    private bool UsesEditorAnimationFrames() => IsEditorPlaybackActive();
+    private bool UsesEditorAnimationFrames() => IsEditorPlaybackActive() && !UsesHighRateEditorVisuals();
+
+    private bool UsesHighRateEditorVisuals() => OperatingSystem.IsWindows() &&
+        EffectiveFrameRateLimit() > WindowsFrameRateOptions.CompositionDrivenRate;
 
     private void RequestEditorAnimationFrame()
     {
@@ -15886,6 +15890,24 @@ public sealed partial class MainWindow : PlatformWindow
 
     private readonly EditorPlaybackVisualClock editorVisualClock = new();
     private readonly Stopwatch editorVisualTime = Stopwatch.StartNew();
+    private int editorVisualUpdatePending;
+    private readonly WindowsFrameRateGate editorHighRateVisualGate = new(240);
+    private long editorStatusRenderCount;
+    private Guid? editorRangeTab;
+    private long editorRangeSerial = -1;
+    private object? editorRangeDocument;
+    private double editorRangeEndBeat;
+
+    private double GetDocumentEndBeat(DesktopChartTab tab)
+    {
+        if (editorRangeTab != tab.Id || editorRangeSerial != tab.Session.ChangeSerial ||
+            !ReferenceEquals(editorRangeDocument, tab.Session.Document))
+        {
+            editorRangeTab = tab.Id; editorRangeSerial = tab.Session.ChangeSerial;
+            editorRangeDocument = tab.Session.Document; editorRangeEndBeat = tab.Session.Document.EndBeat;
+        }
+        return editorRangeEndBeat;
+    }
 
     private void RunEditorFrame(bool updateVisuals, double? presentationTimeMilliseconds = null)
     {
@@ -15920,12 +15942,12 @@ public sealed partial class MainWindow : PlatformWindow
 
         var durationMilliseconds = Math.Max(
             0,
-            timingMap.BeatToMilliseconds(BeatPosition.FromDouble(tab.Session.Document.EndBeat)));
+            timingMap.BeatToMilliseconds(BeatPosition.FromDouble(GetDocumentEndBeat(tab))));
         if (pump.Output == WindowsKeySoundPlaybackOutput.SilentEditorClock &&
             pump.PositionMilliseconds >= durationMilliseconds)
         {
             keySoundRuntime.StopSilent();
-            SetProgrammaticPlaybackBeat(tab.Session.Document.EndBeat);
+            SetProgrammaticPlaybackBeat(GetDocumentEndBeat(tab));
             return;
         }
         if (audioPositionPointerDown) return;
@@ -15977,7 +15999,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         var limit = EffectiveFrameRateLimit();
         var usesAnimationFrames = UsesEditorAnimationFrames();
-        var interval = usesAnimationFrames || !isPlaying
+        var interval = usesAnimationFrames || UsesHighRateEditorVisuals() || !isPlaying
             ? TimeSpan.FromMilliseconds(50)
             : WindowsEditorFrameInterval(limit);
         if (Math.Abs((audioUiTimer.Interval - interval).TotalMilliseconds) > .001)
@@ -16000,6 +16022,7 @@ public sealed partial class MainWindow : PlatformWindow
         {
             StopEditorHighRateFramePump();
             Interlocked.Exchange(ref editorHighRateSampleVersion, 0);
+            editorHighRateVisualGate.SetLimit(Math.Min(240, limit));
             editorHighRateFramePump.Start(limit, SampleEditorHighRateFrame);
             editorHighRateFramePumpRunning = true;
         }
@@ -16014,6 +16037,7 @@ public sealed partial class MainWindow : PlatformWindow
         editorFrameClock.Restart();
         audioPositionUiClock.Restart();
         if (playbackStarted) timeline.Performance.Reset();
+        editorStatusRenderCount = timeline.Performance.TotalRenderedFrames;
         if (playbackStarted || !isPlaying) editorVisualClock.Reset();
         RefreshFrameRateStatus(isPlaying, force: true);
     }
@@ -16039,6 +16063,14 @@ public sealed partial class MainWindow : PlatformWindow
             BitConverter.DoubleToInt64Bits(sample.PositionMilliseconds));
         Volatile.Write(ref editorHighRateOutput, (int)sample.Output);
         Interlocked.Increment(ref editorHighRateSampleVersion);
+        if (editorHighRateVisualGate.ShouldRender() && Interlocked.CompareExchange(ref editorVisualUpdatePending, 1, 0) == 0)
+            Dispatcher.UIThread.Post(() =>
+            {
+                Interlocked.Exchange(ref editorVisualUpdatePending, 0);
+                if (!editorHighRateFramePumpRunning || !UsesHighRateEditorVisuals() || !IsEditorPlaybackActive() ||
+                    playtestInProgress || windowClosePreflightInProgress || windowClosePreflightComplete) return;
+                RunEditorFrame(updateVisuals: true);
+            }, DispatcherPriority.Render);
     }
 
     private bool TryReadEditorHighRateSample(out WindowsKeySoundPlaybackPumpResult sample)
@@ -16106,16 +16138,20 @@ public sealed partial class MainWindow : PlatformWindow
         var seconds = Math.Max(.001, editorFrameClock.Elapsed.TotalSeconds);
         var limit = editorViewSettings.FrameRateLimit;
         var performance = timeline.Performance.Snapshot();
+        var renderedCount = timeline.Performance.TotalRenderedFrames;
+        var renderedFps = Math.Max(0, renderedCount - editorStatusRenderCount) / seconds;
+        editorStatusRenderCount = renderedCount;
+        var lowFps = performance.FrameIntervalMilliseconds.P99 > 0 ? 1000 / performance.FrameIntervalMilliseconds.P99 : 0;
         frameRateStatusIdleShown = false;
-        frameRateStatusText.Text = limit > WindowsFrameRateOptions.CompositionDrivenRate
-            ? AvaloniaLocalizationCatalog.Format("时钟采样: {0:0} · 画面更新: {1:0}", editorHighRateFramePump.TakeTickCount() / seconds, editorFrameUpdates / seconds)
-            : AvaloniaLocalizationCatalog.Format("画面: {0:0} · 更新回调: {1:0}", editorFrameUpdates / seconds, editorFrameUpdates / seconds);
+        var clockRate = limit > WindowsFrameRateOptions.CompositionDrivenRate ? editorHighRateFramePump.TakeTickCount() / seconds : editorFrameUpdates / seconds;
+        frameRateStatusText.Text = $"绘制 {renderedFps:0} FPS · 1% low≈{lowFps:0} · 时钟 {clockRate:0}";
         AutomationProperties.SetName(frameRateStatusText, frameRateStatusText.Text);
         AutomationProperties.SetHelpText(
             frameRateStatusText,
             $"FrameRateLimit={limit}; " +
             $"HighRateClock={limit > WindowsFrameRateOptions.CompositionDrivenRate}; " +
-            $"FrameDriver={(limit <= WindowsFrameRateOptions.CompositionDrivenRate ? "TopLevel.RequestAnimationFrame" : "DispatcherTimer")}; " +
+            $"FrameDriver={(UsesHighRateEditorVisuals() ? "CoalescedRenderDispatch" : "TopLevel.RequestAnimationFrame")}; " +
+            $"RenderedFps={renderedFps:F3}; VisualUpdatesPerSecond={editorFrameUpdates / seconds:F3}; " +
             $"AudioClockIndependent=true; " +
             $"TimerIntervalMs={audioUiTimer.Interval.TotalMilliseconds:F6}; " +
             $"RenderSamples={performance.RenderMilliseconds.Samples}; " +
@@ -16370,14 +16406,14 @@ public sealed partial class MainWindow : PlatformWindow
             : tab != null && TryGetCachedAudioTimingMap(tab, out var timingMap)
                 ? TimeSpan.FromMilliseconds(Math.Max(
                     0,
-                    timingMap.BeatToMilliseconds(BeatPosition.FromDouble(tab.Session.Document.EndBeat))))
+                    timingMap.BeatToMilliseconds(BeatPosition.FromDouble(GetDocumentEndBeat(tab)))))
                 : TimeSpan.Zero;
         var overviewAudioEndBeat = loaded && tab != null
             ? GetAudioTimingMap(tab).MillisecondsToBeat(duration.TotalMilliseconds).Value
             : 0;
         editorOverview.SetExternalEndBeat(overviewAudioEndBeat);
         difficultyOverview.SetEndBeat(Math.Max(
-            tab?.Session.Document.EndBeat ?? 1,
+            tab != null ? GetDocumentEndBeat(tab) : 1,
             overviewAudioEndBeat));
         suppressAudioControls = true;
         try
@@ -24487,7 +24523,7 @@ public sealed partial class MainWindow : PlatformWindow
                 var mode = await viewModel
                     .TryGetSynchronizedSuspendedOsuTimingModeAsync(path);
                 if (!mode.HasValue && shortcutSettings.Profile == EditorInteractionProfile.OsuMania && !evidenceShowOsuImportDialog)
-                    mode = OsuNoteTimingImportMode.PreserveMilliseconds;
+                    mode = OsuNoteTimingImportMode.CalibrateCommonSubdivisions;
                 if (!mode.HasValue)
                 {
                     var choice = await new OsuImportModeDialog(

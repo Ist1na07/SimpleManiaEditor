@@ -32,6 +32,7 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_LOCAL_DATA_ROOT", Path.Combine(root, "settings"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_EDITING_ROOT", Path.Combine(root, "editing"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
+        if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
         var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
@@ -327,6 +328,7 @@ internal static class Program
         WorkbenchRegressionSpecs.Run(window, screenshots);
         WorkbenchSafetySpecs.Run(window, screenshots);
         StartupPlaybackSpecs.Run(window, screenshots);
+        GridFocusSpecs.Run(window);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);
