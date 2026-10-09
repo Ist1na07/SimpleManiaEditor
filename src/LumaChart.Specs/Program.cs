@@ -69,6 +69,7 @@ var tests = new (string Name, Action Body)[]
     ("osu BPM changes support exact backward seeking", TestOsuBpmChangeBackwardSeek),
     ("osu import calibration preserves offsets and common subdivisions", OsuBeatCalibrationSpecs.Run),
     ("Explicit grid snapping includes LN endpoints, negative beats and one undo", NoteGridSnapSpecs.Run),
+    ("Center symmetry preserves LN direction, columns, rational grids and atomic completion", CenterSymmetrySpecs.Run),
     ("Pure stream/text chart imports preserve cancellation path and ownership boundaries", ChartDocumentImporterSpecs.Run),
     ("Batch move is one undo operation", TestBatchMoveUndo),
     ("Cross-platform application editing preserves offline save and history semantics", TestApplicationEditingLifecycle),

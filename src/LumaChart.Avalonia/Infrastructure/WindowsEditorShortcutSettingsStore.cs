@@ -44,6 +44,7 @@ public enum WindowsEditorShortcutRoute
     ToolTap,
     ToolHold,
     ToolErase,
+    ToggleSymmetry,
     PlayPause,
     Delete,
     StepForward,
@@ -83,6 +84,7 @@ public sealed class WindowsEditorShortcutSettings
         new("ToolTap", "单键工具", true),
         new("ToolHold", "长键工具", true),
         new("ToolErase", "擦除工具", true),
+        new("ToggleSymmetry", "启用 / 关闭中心对车", true),
         new("PlayPause", "播放 / 暂停", true),
         new("Delete", "删除 Note", true),
         new("StepForward", "向前一格", true),
@@ -139,6 +141,7 @@ public sealed class WindowsEditorShortcutSettings
             ["ToolTap"] = "W",
             ["ToolHold"] = "E",
             ["ToolErase"] = "R",
+            ["ToggleSymmetry"] = "F6",
             ["PlayPause"] = "Space",
             ["Delete"] = "Delete",
             ["StepForward"] = "Up",
@@ -187,7 +190,9 @@ public sealed class WindowsEditorShortcutSettings
             StringComparer.OrdinalIgnoreCase);
         foreach (var pair in CreateDefaults(Profile))
             if (!Bindings.TryGetValue(pair.Key, out var value) || value == null)
-                Bindings[pair.Key] = pair.Value;
+                Bindings[pair.Key] = pair.Key == "ToggleSymmetry" && Bindings.Any(existing =>
+                    existing.Key != pair.Key && string.Equals(existing.Value, pair.Value, StringComparison.OrdinalIgnoreCase))
+                    ? string.Empty : pair.Value;
     }
 
     public void Reset()
@@ -370,6 +375,7 @@ public static class WindowsEditorShortcutRouting
             "ToolTap" => new(WindowsEditorShortcutRoute.ToolTap),
             "ToolHold" => new(WindowsEditorShortcutRoute.ToolHold),
             "ToolErase" => new(WindowsEditorShortcutRoute.ToolErase),
+            "ToggleSymmetry" => new(WindowsEditorShortcutRoute.ToggleSymmetry),
             "PlayPause" => new(WindowsEditorShortcutRoute.PlayPause),
             "Delete" => new(WindowsEditorShortcutRoute.Delete),
             "StepForward" => new(WindowsEditorShortcutRoute.StepForward),

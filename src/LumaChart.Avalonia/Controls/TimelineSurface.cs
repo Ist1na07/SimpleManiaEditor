@@ -76,7 +76,7 @@ public readonly record struct TimelineProEditorGeometryDiagnostics(
     double OfficialTrackLeftDip,
     double OfficialTrackRightDip);
 
-public sealed class TimelineSurface : Control
+public sealed partial class TimelineSurface : Control
 {
     protected override AutomationPeer OnCreateAutomationPeer() =>
         new TimelineSurfaceAutomationPeer(this);
@@ -343,6 +343,12 @@ public sealed class TimelineSurface : Control
     public const double MinimumZoom = 12;
     public const double MaximumZoom = 4480;
     public bool SnapAllNotes { get; set; } = true;
+    private CenterSymmetrySettings? symmetrySettings;
+    public CenterSymmetrySettings? SymmetrySettings
+    {
+        get => symmetrySettings;
+        set { if (ReferenceEquals(symmetrySettings, value)) return; symmetrySettings = value; InvalidateVisual(); }
+    }
     private bool AllowsNegativeBeats => session != null && LumaChart.Core.IO.OsuSourceEnvelope.HasSource(session.Document);
     private long minimumBeatSerial = long.MinValue;
     private double minimumBeatCache;
@@ -1384,6 +1390,7 @@ public sealed class TimelineSurface : Control
             DrawLaneLines(context, geometry);
             DrawOwnerProtectedRegions(context, geometry, minimumBeat, maximumBeat);
             DrawGrid(context, geometry);
+            DrawSymmetryRange(context, geometry);
 
             visited = noteIndex.Query(
                 minimumStoredBeat,
@@ -2663,14 +2670,14 @@ public sealed class TimelineSurface : Control
                     placement.EndBeat!.Value,
                     GetWorkspaceColumnRange(),
                     BasicBeatPlacementPolicy.PreserveAuthoredBeat,
-                    PlacementGroup, replacedNoteId, expectedSerial)
+                    PlacementGroup, replacedNoteId, expectedSerial, SymmetrySettings)
                 : WindowsProEditorCommand.PlaceTap(
                     session,
                     lane,
                     placement.StartBeat,
                     GetWorkspaceColumnRange(),
                     BasicBeatPlacementPolicy.PreserveAuthoredBeat,
-                    PlacementGroup, replacedNoteId, expectedSerial);
+                    PlacementGroup, replacedNoteId, expectedSerial, SymmetrySettings);
             if (placedId.HasValue)
             {
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -4258,6 +4265,8 @@ public sealed class TimelineSurface : Control
         var width = GetRenderedNoteWidth(geometry.LaneWidth);
         using (context.PushOpacity(.65))
             DrawTapNote(context, new Rect(point.X - width / 2, point.Y - noteHeight, width, noteHeight));
+        if (!placingNote)
+            DrawSymmetryCompanionPreview(context, geometry, WorkspaceColumnAtX(point.X, geometry), PointerToNoteBeat(point.Y), null);
     }
 
     private void DrawPlacementPreview(DrawingContext context, TimelineGeometry geometry)
@@ -4281,6 +4290,7 @@ public sealed class TimelineSurface : Control
         var left = geometry.TrackLeft + placementLane * geometry.LaneWidth +
                    (geometry.LaneWidth - width) / 2;
         var startY = NoteYAtBeat(placement.StartBeat, geometry);
+        DrawSymmetryCompanionPreview(context, geometry, placementLane, placement.StartBeat, placement.EndBeat);
         if (placement.Kind == TimelinePlacementKind.Hold && placement.EndBeat.HasValue)
         {
             var endY = NoteYAtBeat(placement.EndBeat.Value, geometry);

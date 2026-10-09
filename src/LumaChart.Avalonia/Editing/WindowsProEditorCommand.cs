@@ -19,8 +19,8 @@ public static class WindowsProEditorCommand
         BeatPosition beat,
         ProEditorColumnRange allowedColumns,
         BasicBeatPlacementPolicy placementPolicy,
-        int group = 0, Guid? replacedNoteId = null, long? expectedChangeSerial = null) =>
-        Place(session, workspaceColumn, beat, null, allowedColumns, placementPolicy, group, replacedNoteId, expectedChangeSerial);
+        int group = 0, Guid? replacedNoteId = null, long? expectedChangeSerial = null, CenterSymmetrySettings? symmetry = null) =>
+        Place(session, workspaceColumn, beat, null, allowedColumns, placementPolicy, group, replacedNoteId, expectedChangeSerial, symmetry);
 
     public static Guid? PlaceHold(
         EditorSession session,
@@ -29,7 +29,7 @@ public static class WindowsProEditorCommand
         BeatPosition secondBeat,
         ProEditorColumnRange allowedColumns,
         BasicBeatPlacementPolicy placementPolicy,
-        int group = 0, Guid? replacedNoteId = null, long? expectedChangeSerial = null)
+        int group = 0, Guid? replacedNoteId = null, long? expectedChangeSerial = null, CenterSymmetrySettings? symmetry = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         var start = ResolveBeat(session, firstBeat, placementPolicy);
@@ -46,7 +46,7 @@ public static class WindowsProEditorCommand
             end,
             allowedColumns,
             BasicBeatPlacementPolicy.PreserveAuthoredBeat,
-            group, replacedNoteId, expectedChangeSerial);
+            group, replacedNoteId, expectedChangeSerial, symmetry);
     }
 
     public static int MoveSelection(
@@ -115,7 +115,7 @@ public static class WindowsProEditorCommand
         BeatPosition? endBeat,
         ProEditorColumnRange allowedColumns,
         BasicBeatPlacementPolicy placementPolicy,
-        int group, Guid? replacedNoteId = null, long? expectedChangeSerial = null)
+        int group, Guid? replacedNoteId = null, long? expectedChangeSerial = null, CenterSymmetrySettings? symmetry = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         EnsureEditable(session, "放置");
@@ -151,22 +151,21 @@ public static class WindowsProEditorCommand
             throw new InvalidOperationException("该位置位于房主锁定选区，成员不能放置 Note");
 
         var id = Guid.NewGuid();
+        var note = new ChartNote { Id = id, Beat = start, EndBeat = end, Group = group };
+        ProEditorWorkspaceGeometry.ApplyColumn(note, workspaceColumn, session.Document.KeyCount);
+        var companion = symmetry == null ? null : CenterSymmetryService.CreateCompanion(note, symmetry, session.Document.KeyCount);
+        if (companion != null && !CenterSymmetryService.CanAdd(session, companion,
+                session.Document.Notes.Where(n => n.Id != replacedNoteId).Append(note))) companion = null;
         session.Mutate(document =>
         {
             if (replacedNoteId.HasValue) document.Notes.RemoveAll(n => n.Id == replacedNoteId);
-            var note = new ChartNote
-            {
-                Id = id,
-                Beat = start,
-                EndBeat = end,
-                Group = group
-            };
-            ProEditorWorkspaceGeometry.ApplyColumn(note, workspaceColumn, document.KeyCount);
             document.Notes.Add(note);
+            if (companion != null) document.Notes.Add(companion);
         });
         if (!session.Document.Notes.Any(note => note.Id == id)) return null;
         session.Selection.Clear();
         session.Selection.Add(id);
+        if (companion != null) session.Selection.Add(companion.Id);
         return id;
     }
 

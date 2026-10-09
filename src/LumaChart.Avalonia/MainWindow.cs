@@ -15570,6 +15570,9 @@ public sealed partial class MainWindow : PlatformWindow
             case WindowsEditorShortcutRoute.PlayPause:
                 await ToggleAudioPlaybackAsync();
                 break;
+            case WindowsEditorShortcutRoute.ToggleSymmetry:
+                ToggleSymmetryTool();
+                break;
             case WindowsEditorShortcutRoute.Delete:
                 DeleteMixedSelection();
                 break;

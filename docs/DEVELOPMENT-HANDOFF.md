@@ -2,12 +2,14 @@
 
 ## 基线
 
+0.1.19：`CenterSymmetryService` 提供精确有理数反射、局部有序列、LN 端点交换、目标索引和冲突预检。WindowsProEditorCommand 的可选 symmetry 参数将主键/被替换键/伴随键放在一份 Mutate 历史；不建立永久键间链接。TimelineSurface 新 partial 绘制范围与预览；左栏弹层、F6 catalog/router、每图/轨 sidecar。F6 新默认遇旧自定义冲突时留空。工具设置在 LocalDataRoot/drawing-tools，只读引用禁用，CWT 避免关闭会话后滞留文档。54核心、完整UI与最终工作台回归通过，宿主只版本号变化。默认关闭，性能按0.1.18限制描述，不声称180稳定达标。
+
 0.1.18：默认 osu 导入从 Preserve 切换 Calibrate；补齐 5/7/9/10/64，红线/对象百万分拍，保留原始源封套。`_sme_osu_grid_calibration` 仅存编辑器缓存，Timing 重锚沿用校准；未编辑保存仍原文。`NoteGridSnapService` 单次 Mutate，负拍/LN/保护/只读/undo，短 LN 不塌；UI 设置内选中/全部入口。窗口 Tunnel 空白点击释放文本焦点。默认 WGL→ANGLE→software / RedirectionSurface，兼容选项持久化在 editor-presentation.json，重启生效，启动环境覆盖 SIMPLEMANIA_RENDERER。高采样线程最多240Hz单pending UI派发，暂停/试玩/关闭停止；timeBeginPeriod/endPeriod成对。结束范围按tab/document/serial缓存，ruler文本和globaldifficulty屏幕行缓存；同步投影精度提高。53核心及完整UI通过，真实窗口测量见performance/EDITOR-RENDER-0.1.18.md；稳定180/low180未达标，不得称已解决全部卡顿。官方宿主仅版本号变化。
 
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.18；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.19；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。

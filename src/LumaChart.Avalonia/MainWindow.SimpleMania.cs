@@ -288,6 +288,7 @@ public sealed partial class MainWindow
             fixedToolButtons.Add(tool, (button, shortcut));
             panel.Children.Add(button);
         }
+        panel.Children.Add(BuildSymmetryToolButton());
         RefreshFixedTools();
         return new Border { Background = PanelBrush, BorderBrush = StrokeBrush,
             BorderThickness = new Thickness(0, 0, 1, 0), Child = new ScrollViewer { Content = panel,
@@ -296,6 +297,7 @@ public sealed partial class MainWindow
 
     private void RefreshFixedTools()
     {
+        RefreshSymmetryTool();
         foreach (var (tool, controls) in fixedToolButtons)
         {
             var selected = (activeSecondaryTrack?.Surface?.Tool ?? timeline.Tool) == tool;
