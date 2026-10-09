@@ -54,7 +54,7 @@ public sealed partial class MainWindow
         var items = new List<MenuItem>();
         foreach (var (kind, name) in new[] { (EditorTrackKind.Draft, "添加草稿按键轨"),
             (EditorTrackKind.Reference, "添加其他谱面对照轨…"), (EditorTrackKind.Hitsound, "添加 hitsound 编辑轨"),
-            (EditorTrackKind.Density, "添加密度轨"), (EditorTrackKind.Difficulty, "添加局部负荷轨（实验）") })
+            (EditorTrackKind.Density, "添加局部密度轨"), (EditorTrackKind.Difficulty, "添加局部难度轨（实验）") })
         {
             var item = new MenuItem { Header = name };
             AutomationProperties.SetAutomationId(item, $"Editor.AddTrack.{kind}");
@@ -244,7 +244,7 @@ public sealed partial class MainWindow
             var metric = new EditorMetricTrackSurface();
             view.Metric = metric;
             metric.SizeChanged += (_, _) => SyncTrackViewports();
-            var info = ToolbarLabel(track.Kind == EditorTrackKind.Density ? "正式键头 / 秒" : "实验性负荷：密度 + 同列间隔 + LN；非星级");
+            var info = ToolbarLabel(track.Kind == EditorTrackKind.Density ? "局部密度 · 500 ms 滑动窗口 / 秒" : "实验性负荷：密度 + 同列间隔 + LN；非星级");
             info.TextWrapping = TextWrapping.Wrap; info.Margin = new Thickness(8);
             Grid.SetRow(info, 1); body.Children.Add(info);
             Grid.SetRow(metric, 2); body.Children.Add(metric);
@@ -327,6 +327,7 @@ public sealed partial class MainWindow
 
     private void UpdateTrackDocuments(DesktopChartTab tab)
     {
+        RefreshEventTimeRuler();
         if (tab.Session.IsInteractiveMutationActive) return;
         ChartDocument? snapshot = null;
         foreach (var view in secondaryTrackViews.Values)

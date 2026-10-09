@@ -173,7 +173,8 @@ internal static class WorkbenchRegressionSpecs
         window.MouseUp(dragStart + new Vector(130, 0), MouseButton.Left);
         Require(!panelList.Children.OfType<EditorTrackPanel>().Select(p => p.TrackKey).SequenceEqual(oldOrder), "compact audio track could not be moved by dragging its header");
         Wait(workspace.SaveAsync());
-        Require(new EditorTrackWorkspace(tab.SourcePath, Path.GetDirectoryName(workspace.DirectoryPath)!).BoardOrder.Count >= 6,
+        Require(new EditorTrackWorkspace(tab.SourcePath, Path.GetDirectoryName(workspace.DirectoryPath)!).BoardOrder.SequenceEqual(
+            panelList.Children.OfType<EditorTrackPanel>().Select(p => p.TrackKey)),
             "board order did not persist");
         var reopened = new EditorTrackWorkspace(tab.SourcePath, Path.GetDirectoryName(workspace.DirectoryPath)!);
         Require(reopened.Tracks.Single().Session!.Document.Notes.Count == 1, "draft workspace could not reopen placed note");
@@ -224,7 +225,7 @@ internal static class WorkbenchRegressionSpecs
         Add(window, EditorTrackKind.Density); Add(window, EditorTrackKind.Difficulty);
         var density = Property<EditorMetricTrackSurface>(View(window, workspace.Tracks.Single(t => t.Kind == EditorTrackKind.Density).Id), "Metric");
         Program.PumpUntil(() => !density.Computing);
-        Require(density.Samples.Sum(s => s.Value) == tab.Session.Document.Notes.Count, "density track did not reflect official main notes");
+        Require(density.Samples.Count > 20 && density.Samples.Any(s => s.Value > 0), "local density did not produce continuous nonempty samples");
         var referenceView = View(window, reference.Id);
         Click(Property<Border>(referenceView, "Host").GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "隐藏")));
         Require(!reference.Visible && workspace.Tracks.Count == 5, "hiding reference discarded its data");

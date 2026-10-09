@@ -24,31 +24,20 @@ internal static class OptionControlsSpecs
         var grid = Field<ComboBox>(window, "fixedGridPicker");
         grid.SelectedItem = 4;
         Program.Pump(50);
-        Require(!Reset(window, "Editor.Grid.Division").IsVisible, "default grid reset is visible");
         var beat = timeline.CurrentBeat;
         Wheel(window, grid, 1);
-        Require(model.ActiveTab!.Session.SnapDivision == 5 && Reset(window, "Editor.Grid.Division").IsVisible,
-            "grid dropdown wheel should select the next preset including manual quintuplets");
-        Click(Reset(window, "Editor.Grid.Division"));
-        Require(model.ActiveTab.Session.SnapDivision == 4 && !Reset(window, "Editor.Grid.Division").IsVisible && timeline.CurrentBeat == beat,
-            "reset grid changed time or did not hide after restoring the default");
+        Require(model.ActiveTab!.Session.SnapDivision == 5, "grid dropdown wheel did not select quintuplets");
+        grid.SelectedItem = 4;
         var rate = Field<ComboBox>(window, "fixedRatePicker");
-        rate.SelectedItem = 1d;
-        Program.PumpUntil(() => transport.PlaybackRate == 1);
-        Wheel(window, rate, 1);
-        Program.PumpUntil(() => Math.Abs(transport.PlaybackRate - 1.1) < .001);
-        Require(Reset(window, "Editor.Playback.Rate").IsVisible && timeline.CurrentBeat == beat, "rate wheel navigated the timeline or reset stayed hidden");
-        Click(Reset(window, "Editor.Playback.Rate"));
-        Program.PumpUntil(() => transport.PlaybackRate == 1 && !Reset(window, "Editor.Playback.Rate").IsVisible);
-        timeline.SetZoom(WindowsEditorViewSettings.DefaultGridBeatHeight);
-        var zoom = Field<Slider>(window, "adjustmentZoomSlider");
-        Wheel(window, zoom, 1);
-        Require(timeline.PixelsPerBeat == 560, "adjustment slider wheel did not select the next zoom preset");
-        Click(Reset(window, "Editor.Adjustment.Zoom"));
-        Require(timeline.PixelsPerBeat == 280 && !Reset(window, "Editor.Adjustment.Zoom").IsVisible, "zoom reset is not the actual factory zoom");
-        timeline.SetZoom(300);
-        Require(Reset(window, "Editor.Adjustment.Zoom").IsVisible, "custom zoom sharing a preset index was mistaken for a default");
-        Click(Reset(window, "Editor.Adjustment.Zoom"));
+        rate.SelectedItem = 1d; Program.PumpUntil(() => transport.PlaybackRate == 1);
+        Wheel(window, rate, 1); Program.PumpUntil(() => Math.Abs(transport.PlaybackRate - 1.1) < .001);
+        Require(timeline.CurrentBeat == beat, "rate wheel navigated timeline");
+        rate.SelectedItem = 1d; Program.PumpUntil(() => transport.PlaybackRate == 1);
+        timeline.SetZoom(280); var zoom = Field<Slider>(window, "adjustmentZoomSlider");
+        Wheel(window, zoom, 1); Require(timeline.PixelsPerBeat == 560, "zoom wheel did not select next preset");
+        timeline.SetZoom(280);
+        foreach (var id in new[] { "Editor.Grid.Division.Reset", "Editor.Playback.Rate.Reset", "Editor.Adjustment.Zoom.Reset", "Editor.Board.Scrollbar.Reset", "Metadata.OverallDifficulty.Reset" })
+            Require(!window.GetLogicalDescendants().OfType<Button>().Any(b => AutomationProperties.GetAutomationId(b) == id), "transient editing option has reset: " + id);
         var height = Field<Slider>(window, "noteHeightSlider");
         height.Value = 40;
         Require(Reset(window, "Settings.NoteHeight").IsVisible, "appearance option reset missing");
@@ -88,10 +77,10 @@ internal static class OptionControlsSpecs
         bar.Value = bar.Maximum; Program.Pump(50);
         var right = panels.TranslatePoint(new Point(panels.Bounds.Width, 0), scroller)!.Value.X;
         Require(right <= 1, "right edge cannot move every track beyond the viewport");
-        Click(Reset(window, "Editor.Board.Scrollbar")); Program.Pump(50);
+        bar.Value = scroller.Viewport.Width; Program.Pump(50);
         Require(Math.Abs(scroller.Offset.X - scroller.Viewport.Width) < 1, "board reset did not restore its starting position");
         tabs.SelectedItem = Field<TabItem>(window, "settingsInspectorTab");
-        Console.WriteLine("PASS option wheels/default-only reset visibility, empty board edges, actual factory defaults and OD/HP atomic native roundtrip");
+        Console.WriteLine("PASS option wheels/global-setting-only reset visibility, empty board edges, actual factory defaults and OD/HP atomic native roundtrip");
     }
     private static T Field<T>(object instance, string name) => (T)instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(instance)!;
     private static Button Reset(Control root, string id) => root.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == id + ".Reset");

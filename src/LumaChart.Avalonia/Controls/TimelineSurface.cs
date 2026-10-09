@@ -31,16 +31,6 @@ public enum TimelineTool
 
 public sealed record OnlineCreatorAppearance(string Name, IImage? Avatar);
 
-public sealed class TimingDeleteRequestedEventArgs : EventArgs
-{
-    public TimingDeleteRequestedEventArgs(IEnumerable<Guid> timingIds)
-    {
-        ArgumentNullException.ThrowIfNull(timingIds);
-        TimingIds = timingIds.Distinct().ToArray();
-    }
-
-    public IReadOnlyList<Guid> TimingIds { get; }
-}
 
 public sealed record TimelineHoldTailEvidenceTarget(
     Guid NoteId,
@@ -658,7 +648,6 @@ public sealed class TimelineSurface : Control
     public event EventHandler? SelectionChanged;
     public event EventHandler? TimingSelectionChanged;
     public event EventHandler? ChartIssuesChanged;
-    public event EventHandler<TimingDeleteRequestedEventArgs>? TimingDeleteRequested;
     public event EventHandler<string>? EditPermissionDenied;
     public event EventHandler<string>? StatusChanged;
     public event EventHandler<string>? HoverChanged;
@@ -1569,23 +1558,7 @@ public sealed class TimelineSurface : Control
             var timing = timingHit.Value.Timing;
             if (rightPressed)
             {
-                if (session.IsReadOnly || !session.CanEditTiming)
-                {
-                    StatusChanged?.Invoke(this, session.IsReadOnly
-                        ? "当前谱面为只读状态，不能删除 Timing / Effect。"
-                        : "当前没有编辑 Timing / Effect 的权限。");
-                    EditPermissionDenied?.Invoke(this, "Effect");
-                    eventArgs.Handled = true;
-                    return;
-                }
-                if (!session.AllowOwnerProtectedEdits && session.IsTimingOwnerProtected(timing))
-                {
-                    StatusChanged?.Invoke(this, "该 Effect 位于房主锁定选区，成员不能删除。");
-                    eventArgs.Handled = true;
-                    return;
-                }
-                var deleteIds = TimelineTimingLayout.ResolveDeleteBatch(selectedTimingIds, timing.Id);
-                TimingDeleteRequested?.Invoke(this, new TimingDeleteRequestedEventArgs(deleteIds));
+                StatusChanged?.Invoke(this, "Timing 请先左键选择，再使用删除按钮或 Delete。");
                 eventArgs.Handled = true;
                 return;
             }
@@ -2766,18 +2739,7 @@ public sealed class TimelineSurface : Control
         eraseSegmentNoteIds.Clear();
         eraseSegmentTimingIds.Clear();
         eraseTimingLabels.Clear();
-        if (session.CanEditTiming && Math.Min(from.X, to.X) < geometry.TrackLeft)
-        {
-            var padding = TimelineTimingLayout.LabelHeight / (2 * Math.Max(1, PixelsPerBeat));
-            var fromBeat = BeatAtY(from.Y, geometry);
-            var toBeat = BeatAtY(to.Y, geometry);
-            BuildTimingLabelsForRange(
-                geometry,
-                Math.Min(fromBeat, toBeat) - padding,
-                Math.Max(fromBeat, toBeat) + padding);
-            eraseTimingLabels.AddRange(visibleTimingLabels.Where(label =>
-                label.Timing.Effect.HasValue && !erasedTimingIds.Contains(label.Timing.Id)));
-        }
+
 
         for (var sampleIndex = 0; sampleIndex <= samples; sampleIndex++)
         {
@@ -2805,17 +2767,7 @@ public sealed class TimelineSurface : Control
                 }
             }
 
-            if (session.CanEditTiming && sample.X < geometry.TrackLeft)
-            {
-                var timingHit = TimelineTimingLayout.HitTestTopmost(eraseTimingLabels, sample);
-                if (timingHit is { } label)
-                {
-                    if (!session.AllowOwnerProtectedEdits && session.IsTimingOwnerProtected(label.Timing))
-                        lockedHit = true;
-                    else
-                        eraseSegmentTimingIds.Add(label.Timing.Id);
-                }
-            }
+
         }
 
         if (eraseSegmentNoteIds.Count == 0 && eraseSegmentTimingIds.Count == 0)
@@ -3459,6 +3411,13 @@ public sealed class TimelineSurface : Control
         erasedTimingIds.Clear();
         eraseSegmentTimingIds.Clear();
         eraseTimingLabels.Clear();
+    }
+
+    public void CancelInteraction()
+    {
+        ReleaseInteractionCapture();
+        ResetPointerInteraction();
+        InvalidateVisual();
     }
 
     private static bool IsExpectedEditException(Exception exception) =>

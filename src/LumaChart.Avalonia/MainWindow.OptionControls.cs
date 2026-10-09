@@ -38,7 +38,7 @@ public sealed partial class MainWindow
             (spectrogramStrengthSlider, WindowsAudioPanelSettings.DefaultBackgroundSpectrogramStrength * 100),
             (spectrogramDetailSlider, WindowsAudioPanelSettings.DefaultSpectrogramDetail * 100),
             (uiScaleSlider, 100), (fontScaleSlider, 100), (autoBackupIntervalSlider, defaults.AutoBackupMinutes),
-            (audioVolumeSlider, defaults.MusicVolume * 100), (audioRateSlider, 1),
+            (audioVolumeSlider, defaults.MusicVolume * 100),
             (keySoundVolumeSlider, WindowsKeySoundSettings.DefaultVolume * 100),
             (keySoundGlobalOffsetSlider, 0), (keySoundChartOffsetSlider, 0)
         }) AddOptionReset(slider, () => Close(slider.Value, Math.Clamp(value, slider.Minimum, slider.Maximum)),
@@ -62,19 +62,6 @@ public sealed partial class MainWindow
         }
         AddOptionReset(frameRateLimitBox, () => EffectiveFrameRateLimit() == defaults.FrameRateLimit, () =>
             frameRateLimitBox.SelectedItem = frameRateLimitBox.Items.OfType<ComboBoxItem>().First(i => Equals(i.Tag, defaults.FrameRateLimit)));
-        AddOptionReset(settingsSnapBox, () => (viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision) == defaults.SnapDivision,
-            () => SetQuickSnapDivision(defaults.SnapDivision));
-        AddOptionReset(settingsFixedSnapBox, () => editorViewSettings.FixedSnapDivision == defaults.FixedSnapDivision,
-            () => settingsFixedSnapBox.SelectedItem = settingsFixedSnapBox.Items.OfType<ComboBoxItem>().First(i => Equals(i.Tag, defaults.FixedSnapDivision)));
-        if (fixedGridPicker != null) AddOptionReset(fixedGridPicker,
-            () => (viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision) == defaults.SnapDivision, () => SetQuickSnapDivision(defaults.SnapDivision));
-        if (fixedGridSlider != null) AddOptionReset(fixedGridSlider,
-            () => (viewModel.ActiveTab?.Session.SnapDivision ?? editorViewSettings.SnapDivision) == defaults.SnapDivision, () => SetQuickSnapDivision(defaults.SnapDivision));
-        if (adjustmentZoomSlider != null) AddOptionReset(adjustmentZoomSlider,
-            () => Close(timeline.PixelsPerBeat, defaults.GridBeatHeight), () => timeline.SetZoom(defaults.GridBeatHeight));
-        foreach (var rate in new Control?[] { fixedRatePicker, fixedRateSlider }) if (rate != null)
-            AddOptionReset(rate, () => Close(audioTransport.PlaybackRate, 1), () => _ = ApplyFixedPlaybackRateAsync(1));
-        if (playtestRatePicker != null) AddOptionReset(playtestRatePicker, () => Close(playtestRate, 1), () => playtestRatePicker.SelectedItem = 1d);
         if (anchorLineButton.Parent is Control anchors)
             AddOptionReset(anchors, () => editorViewSettings.NoteAnchor == defaults.NoteAnchor, () =>
             {
@@ -93,11 +80,11 @@ public sealed partial class MainWindow
         AddOptionReset(keySoundCustomFileText, () => keySoundSettings.CustomFilePath == null, () => ApplyKeySoundSettings(new WindowsKeySoundSettings(
             keySoundSettings.EnableKeySounds, keySoundSettings.Volume, keySoundSettings.Preset, null,
             keySoundSettings.PlayLongNoteEndSound, keySoundSettings.GlobalOffset, keySoundSettings.PerChartOffsets)), "KeySound.CustomFilePath");
-        foreach (var (box, initial, step, minimum, maximum) in new (TextBox, double, double, double, double)[]
+        foreach (var (box, step, minimum, maximum) in new (TextBox, double, double, double)[]
         {
-            (metadataOverallDifficultyBox, 8, .1, 0, 10), (metadataHpDrainRateBox, 8, .1, 0, 10),
-            (metadataBpmBox, 120, 1, 1, ChartDocument.MaximumMetadataBpm),
-            (metadataOffsetBox, 0, 1, -1_000_000, 1_000_000), (metadataPreviewTimeBox, 0, 100, -1, int.MaxValue)
+            (metadataOverallDifficultyBox, .1, 0, 10), (metadataHpDrainRateBox, .1, 0, 10),
+            (metadataBpmBox, 1, 1, ChartDocument.MaximumMetadataBpm),
+            (metadataOffsetBox, 1, -1_000_000, 1_000_000), (metadataPreviewTimeBox, 100, -1, int.MaxValue)
         })
         {
             box.AddHandler(InputElement.PointerWheelChangedEvent, (_, e) =>
@@ -106,8 +93,6 @@ public sealed partial class MainWindow
                 box.Text = Math.Round(Math.Clamp(value + Math.Sign(e.Delta.Y) * step, minimum, maximum), 3).ToString("0.###", CultureInfo.InvariantCulture);
                 e.Handled = true;
             }, RoutingStrategies.Tunnel);
-            AddOptionReset(box, () => double.TryParse(box.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && Close(value, initial),
-                () => box.Text = initial.ToString(CultureInfo.InvariantCulture));
         }
         trackBoardScrollbar.SmallChange = 48;
         trackBoardScrollbar.AddHandler(InputElement.PointerWheelChangedEvent, (_, e) =>
@@ -117,7 +102,6 @@ public sealed partial class MainWindow
             trackBoardScrollbar.Value = Math.Clamp(trackBoardScrollbar.Value + delta * 48, 0, trackBoardScrollbar.Maximum);
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
-        AddOptionReset(trackBoardScrollbar, () => Close(trackBoardScrollbar.Value, boardEdgePadding), () => trackBoardScrollbar.Value = boardEdgePadding);
         RefreshOptionResets();
     }
 

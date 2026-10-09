@@ -80,7 +80,7 @@ public sealed class EditorTrackWorkspace
         var track = new EditorTrack { Kind = kind, Name = kind switch
         {
             EditorTrackKind.Draft => "草稿", EditorTrackKind.Reference => "对照", EditorTrackKind.Hitsound => "hitsound",
-            EditorTrackKind.Density => "密度", _ => "局部负荷（实验）"
+            EditorTrackKind.Density => "局部密度", _ => "局部难度（实验）"
         }, SourcePath = referencePath };
         if (kind is EditorTrackKind.Draft or EditorTrackKind.Reference)
         {

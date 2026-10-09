@@ -44,8 +44,9 @@ public sealed partial class MainWindow
         // Initialize existing overview behavior, then reparent the renderers into common compact containers.
         _ = BuildOverviewPanel(); _ = BuildDifficultyOverviewPanel();
         DetachControl(editorOverview); DetachControl(difficultyOverview);
-        RegisterBoardFrame("density", "DENSITY", 96, editorOverview, compact: true);
-        RegisterBoardFrame("difficulty", "DIFF", 96, difficultyOverview, compact: true);
+        globalDensityPanel = (Border)BuildGlobalOverview(editorOverview, "全局密度", "Density", globalDensityBox);
+        globalDifficultyPanel = (Border)BuildGlobalOverview(difficultyOverview, "全局难度", "Difficulty", globalDifficultyBox);
+        globalOverviewPanel.Children.Add(globalDensityPanel); globalOverviewPanel.Children.Add(globalDifficultyPanel);
         waveformSideSurface.IsHitTestVisible = true;
         spectrogramSideSurface.IsHitTestVisible = true;
         DetachControl(waveformSideSurface); DetachControl(spectrogramSideSurface);
@@ -53,7 +54,7 @@ public sealed partial class MainWindow
         RegisterBoardFrame("waveform", "WAVE", 96, waveformSideSurface, compact: true);
         RegisterBoardFrame("spectrogram", "SPECTRUM", 96, spectrogramSideSurface, compact: true);
         waveformPanel.IsVisible = false; spectrogramPanel.IsVisible = false;
-        foreach (var key in new[] { "density", "difficulty", "main", "waveform", "spectrogram" }) trackPanels.Children.Add(boardFrames[key]);
+        foreach (var key in new[] { "main", "waveform", "spectrogram" }) trackPanels.Children.Add(boardFrames[key]);
         trackPanels.HorizontalAlignment = HorizontalAlignment.Left;
         trackBoardCanvas.Children.Add(trackPanels);
         trackScroller.Content = trackBoardCanvas;
@@ -106,8 +107,10 @@ public sealed partial class MainWindow
             activeSecondaryTrack = null; RefreshFixedTools(); UpdateEditorAvailability();
         }, RoutingStrategies.Tunnel);
         timeline.SizeChanged += (_, _) => SyncTrackViewports();
-        var root = new Grid { RowDefinitions = new RowDefinitions("*,24") };
-        root.Children.Add(trackScroller); Grid.SetRow(trackBoardScrollbar, 1); root.Children.Add(trackBoardScrollbar);
+        var root = new Grid { RowDefinitions = new RowDefinitions("*,24"), ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        root.Children.Add(globalOverviewPanel);
+        Grid.SetColumn(trackScroller, 1); root.Children.Add(trackScroller);
+        Grid.SetRow(trackBoardScrollbar, 1); Grid.SetColumn(trackBoardScrollbar, 1); root.Children.Add(trackBoardScrollbar);
         return root;
     }
 

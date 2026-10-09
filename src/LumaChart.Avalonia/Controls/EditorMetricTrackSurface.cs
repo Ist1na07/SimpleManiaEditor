@@ -11,7 +11,7 @@ namespace LumaChart.Avalonia.Controls;
 
 public sealed record EditorMetricSample(double Beat, double Value);
 
-/// <summary>Cached one-second density or explicitly experimental local-load curve.</summary>
+/// <summary>Cached sliding-window local density or explicitly experimental load curve.</summary>
 public sealed class EditorMetricTrackSurface : Control
 {
     private EditorMetricSample[] samples = [];
@@ -39,7 +39,7 @@ public sealed class EditorMetricTrackSurface : Control
     {
         var request = ++generation;
         Computing = true;
-        _ = Task.Run(() => Calculate(document, difficulty)).ContinueWith(task => Dispatcher.UIThread.Post(() =>
+        _ = Task.Run(() => CalculateLocal(document, difficulty)).ContinueWith(task => Dispatcher.UIThread.Post(() =>
         {
             if (request != generation) return;
             Computing = false;
@@ -76,6 +76,39 @@ public sealed class EditorMetricTrackSurface : Control
         return bins.Select(b => new EditorMetricSample(map.MillisecondsToBeat(b.Key * 1000 + 500).Value, b.Value)).OrderBy(s => s.Beat).ToArray();
     }
 
+    /// <summary>500 ms centred window sampled at 8 ms (bounded to 250k points).
+    /// Uses two moving indices, so long maps do not require notes × samples work.</summary>
+    public static EditorMetricSample[] CalculateLocal(ChartDocument document, bool difficulty)
+    {
+        var map = new TimingMap(document.Timing);
+        var notes = document.Notes.Where(n => !n.IsDraft).OrderBy(n => n.Beat).ToArray();
+        if (notes.Length == 0) return [];
+        var times = new double[notes.Length]; var weights = new double[notes.Length];
+        var laneTimes = new Dictionary<int, double>();
+        for (var i = 0; i < notes.Length; i++)
+        {
+            times[i] = map.BeatToMilliseconds(notes[i].Beat);
+            weights[i] = 1;
+            if (difficulty)
+            {
+                if (laneTimes.TryGetValue(notes[i].Lane, out var previous)) weights[i] += Math.Exp(-Math.Max(0, times[i] - previous) / 80);
+                if (notes[i].IsHold) weights[i] += .25;
+                laneTimes[notes[i].Lane] = times[i];
+            }
+        }
+        var start = times[0] - 300; var end = times[^1] + 300;
+        var step = Math.Max(8, (end - start) / 249_999);
+        var result = new List<EditorMetricSample>((int)Math.Min(250_000, Math.Ceiling((end - start) / step) + 1));
+        var left = 0; var right = 0; var value = 0d;
+        for (var time = start; time <= end; time += step)
+        {
+            while (right < times.Length && times[right] <= time + 250) value += weights[right++];
+            while (left < right && times[left] < time - 250) value -= weights[left++];
+            result.Add(new(map.MillisecondsToBeat(time, 1_000_000).Value, Math.Max(0, value * 2)));
+        }
+        return result.ToArray();
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -84,15 +117,20 @@ public sealed class EditorMetricTrackSurface : Control
         context.DrawLine(CursorPen, new Point(0, cursorY), new Point(Bounds.Width, cursorY));
         if (scaleText != null) context.DrawText(scaleText, new Point(8, 6));
         var minimumBeat = currentBeat - (Bounds.Height - cursorY + 3) / pixelsPerBeat;
-        var maximumBeat = currentBeat + (cursorY + 3) / pixelsPerBeat;
         var low = 0; var high = samples.Length;
         while (low < high) { var middle = (low + high) / 2; if (samples[middle].Beat < minimumBeat) low = middle + 1; else high = middle; }
-        for (var index = low; index < samples.Length && samples[index].Beat <= maximumBeat; index++)
+        // Rasterize a continuous curve at screen resolution, including the
+        // sample immediately outside the viewport. High zoom never exposes
+        // sparse one-second histogram rows.
+        var index = Math.Max(0, low - 1);
+        for (var y = Bounds.Height; y >= 0 && samples.Length > 0; y -= 2)
         {
-            var sample = samples[index];
-            var y = cursorY - (sample.Beat - currentBeat) * pixelsPerBeat;
-            if (y < -3 || y > Bounds.Height + 3) continue;
-            var width = sample.Value / maximum * Math.Max(0, Bounds.Width - 16);
+            var beat = currentBeat + (cursorY - y) / pixelsPerBeat;
+            while (index + 1 < samples.Length && samples[index + 1].Beat < beat) index++;
+            if (beat < samples[0].Beat || beat > samples[^1].Beat) continue;
+            var first = samples[index]; var next = samples[Math.Min(index + 1, samples.Length - 1)];
+            var fraction = next.Beat <= first.Beat ? 0 : Math.Clamp((beat - first.Beat) / (next.Beat - first.Beat), 0, 1);
+            var width = (first.Value + (next.Value - first.Value) * fraction) / maximum * Math.Max(0, Bounds.Width - 16);
             context.DrawLine(CurvePen, new Point(8, y), new Point(8 + width, y));
         }
     }

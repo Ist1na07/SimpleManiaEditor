@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.15；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.16；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -107,3 +107,11 @@ PlaytestWindowActivation 在 RunAsync 发出 open 后等待自有子进程可见
 独立 playtestRate 和 SnapAll 存于 editor-presentation.json。RelativeBeatMove 支持绝对吸附修正，导入大分母使用当前分度；已写入的合法细分用 <=1920 的公共网格保留，防止粗网格压短 LN。未吸附移动的 LCM 超限使用半微拍误差以内的有界表达。原生负拍允许编辑；MinimumEditableBeat 按 session/serial 缓存，避免逐帧建 TimingMap。调整卡片默认仅跨工具/底板的前三列，避免遮住右侧栏。
 
 OsuTimingEditingService 使用绝对整数毫秒 DTO，草稿弹窗不占历史。_sme_requested_timing_ms 由原生 ReanchorTiming 消费，再重新建立时间映射，保留旧音符绝对时间。OsuTimingPointSettings 在 UnknownData 中保留节拍数/bank/index/volume/effects；原生写入现有字段，MC recovery 的红/绿线均保存。新增事件继承当时音效/Kiai 设置，编辑 Kiai 保留其他 effects 位。UI 原生 Offset 对 Malody Delay 在捕获/填表边界反号；BPM 显示六位小数，时间一毫秒，原文件未编辑行继续保真。MainWindow.TimingExperience 和 Dialogs/OsuTimingDialog 隔离新功能，MC 保留原来的 Timing 表单。
+
+## 0.1.16 工作台与音频所有权
+
+- 试玩入口先设置 playtestInProgress、取消 Timeline 指针预览、禁用 editorView、暂停音频再保存。ToggleAudioPlaybackAsync 由 editorPlaybackCommandGate 串行化；PauseAll 使用 idempotent transport.PauseAsync，取消 seek 与 silent clock。主窗口键盘、帧泵与 seek 恢复均检查 playtestInProgress；结束 finally 解锁。
+- WindowsRenderingConfiguration 使用 WinUIComposition / DirectComposition / RedirectionSurface，不再优先 LowLatencyDxgiSwapChain；具体撕裂效果需实机。
+- EventTimeRuler 按 session serial 缓存事件/Kiai，播放只更新位置；时间轴可拖动 seek、双击原生事件编辑。Timing 右键/擦除删除入口完全移除，保留选中后删除。
+- MainWindow.GlobalOverviews 固定左侧全局视图与显隐偏好；DifficultyOverview 未有 Rework 结果时显示实验负荷。EditorMetricTrackSurface.CalculateLocal 为 500 ms 窗口、8 ms 采样（最多 250k）、连续屏幕绘制；Calculate 保留全局每秒分桶语义。
+- WorkbenchSafetySpecs 覆盖实际编辑器音乐播放 + 滚轮后试玩、输入锁定/返回、silent clock、固定全局/持久化、Timing 右键/擦除、Kiai 范围/时间定位和局部 NPS。OptionControlsSpecs 改为只允许全局偏好恢复按钮。

@@ -1286,7 +1286,6 @@ public sealed partial class MainWindow : PlatformWindow
         timeline.TimingSelectionChanged += Timeline_TimingSelectionChanged;
         timeline.ChartIssuesChanged += (_, _) =>
             editorOverview.SetIssues(timeline.ChartIssues);
-        timeline.TimingDeleteRequested += Timeline_TimingDeleteRequested;
         timeline.StatusChanged += (_, status) => viewModel.SetStatus(status);
         // Hover text is transient presentation only. Routing it through the
         // view-model used to run the full UpdateUi path on every mouse move,
@@ -5606,7 +5605,7 @@ public sealed partial class MainWindow : PlatformWindow
         workbench.Children.Add(extension);
         // Commands and presets share one row; the movable adjustment card overlays the body.
         // Track bodies and remaining palettes stay below that toolbar.
-        workbench.RowDefinitions = new RowDefinitions("Auto,*");
+        workbench.RowDefinitions = new RowDefinitions("Auto,*,64");
         foreach (var child in workbench.Children) Grid.SetRow(child, 1);
         commandMenuButton.IsVisible = false;
         workbench.Children.Remove(commandMenu);
@@ -5619,6 +5618,8 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetRow(adjustmentCard, 1);
         workbench.Children.Add(adjustmentCard);
         ApplyQuickValuesPaletteLayout();
+        var timeRuler = BuildEventTimeRuler();
+        Grid.SetRow(timeRuler, 2); Grid.SetColumnSpan(timeRuler, 5); workbench.Children.Add(timeRuler);
         editorView.Children.Add(workbench);
     }
 
@@ -6134,6 +6135,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         viewModel.ReplaceNavigationMarkers(tab.Id, updated);
         editorOverview.SetNavigationMarkers(tab.NavigationMarkers);
+        RefreshEventTimeRuler();
         RefreshNavigationMarkerUi();
         ScheduleNavigationMarkerSave();
         viewModel.SetStatus(AvaloniaLocalizationCatalog.Format("已添加跳转标记 · {0}", marker.Beat));
@@ -6150,6 +6152,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (updated.Count == tab.NavigationMarkers.Count) return;
         viewModel.ReplaceNavigationMarkers(tab.Id, updated);
         editorOverview.SetNavigationMarkers(tab.NavigationMarkers);
+        RefreshEventTimeRuler();
         RefreshNavigationMarkerUi();
         ScheduleNavigationMarkerSave();
         viewModel.SetStatus("已删除跳转标记");
@@ -6635,13 +6638,24 @@ public sealed partial class MainWindow : PlatformWindow
         // and a double click used to open two modal playtest windows.
         if (playtestInProgress) return;
         playtestInProgress = true;
+        timeline.CancelInteraction();
+        foreach (var view in secondaryTrackViews.Values) view.Surface?.CancelInteraction();
+        addTrackContextMenu?.Close();
+        editorView.IsEnabled = false;
+        StopEditorHighRateFramePump();
         try
         {
+            await PauseAllEditorPlaybackAsync();
             await StartPlaytestCoreAsync(startBeat, settingsOnly);
+        }
+        catch (Exception exception)
+        {
+            await ShowSettingsMessageAsync("无法开始试玩", exception.Message);
         }
         finally
         {
             playtestInProgress = false;
+            editorView.IsEnabled = true;
             // Only now may the editor frame pump run again (the flag kept the
             // audio UI timer from restarting it while the playtest owned the
             // device clock).
@@ -6671,6 +6685,8 @@ public sealed partial class MainWindow : PlatformWindow
                 throw new IOException(viewModel.Status);
             if (!File.Exists(tab.WorkingPath))
                 throw new IOException("当前谱面没有可用的编辑缓存工作副本。");
+
+            snapshot = tab.Session.CaptureCommittedDocument();
 
             await PauseAllEditorPlaybackAsync();
             var settings = WindowsPlaytestSettingsStore.Load();
@@ -6710,21 +6726,26 @@ public sealed partial class MainWindow : PlatformWindow
     private async Task PauseAllEditorPlaybackAsync()
     {
         if (keySoundRuntimeDisposed) return;
-        await CancelPendingEditorSeek();
-        if (audioTransport.IsPlaying)
+        await editorPlaybackCommandGate.WaitAsync();
+        try
         {
+            await CancelPendingEditorSeek();
             keySoundRuntime.InvalidatePlayback();
-            await audioTransport.TogglePlayPauseAsync();
-        }
-        if (!keySoundRuntimeDisposed && keySoundRuntime.Snapshot.IsSilentPlaying)
+            // Explicit Pause is idempotent and cancels pending device seeks.
+            // A snapshot-based Toggle can race an already queued Play command.
+            await audioTransport.PauseAsync();
+            if (audioTransport.IsPlaying) throw new IOException("编辑音频未能暂停，请重试试玩。");
             keySoundRuntime.PauseSilent();
-        if (!keySoundRuntimeDisposed) keySoundRuntime.InvalidatePlayback();
+            keySoundRuntime.InvalidatePlayback();
+        }
+        finally { editorPlaybackCommandGate.Release(); }
         UpdateQuickPlayPresentation();
     }
 
     private void RefreshDifficultyUi()
     {
         var tab = viewModel.ActiveTab;
+        UpdateGlobalLoad(tab?.Session);
         if (tab == null)
         {
             difficultyOverview.SetResult(null);
@@ -9726,6 +9747,7 @@ public sealed partial class MainWindow : PlatformWindow
             BuildOfficialPlaytestSettings(),
             BuildLanguageSettings(),
             BuildEditorViewSettings(),
+            BuildGlobalOverviewSettings(),
             BuildBackupCacheSettings(),
             BuildShortcutSettings(),
             SettingsSection("音量与音频", "编辑音乐、打击音；试玩中可使用官方音量设置", "Settings.AudioSection", BuildAudioTransport()),
@@ -15306,6 +15328,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async void Window_KeyDown(object? sender, KeyEventArgs eventArgs)
     {
+        if (playtestInProgress) { eventArgs.Handled = true; return; }
         if (noteSoundExistingPopup.IsOpen)
         {
             NoteSoundPicker_KeyDown(sender, eventArgs);
@@ -15583,6 +15606,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async void Window_KeyUp(object? sender, KeyEventArgs eventArgs)
     {
+        if (playtestInProgress) { eventArgs.Handled = true; return; }
         if (eventArgs.Key != Key.Space && IsTextEditingEvent(eventArgs) && WindowsAvaloniaEditorInputPolicy.DeferToTextInputMethod(
                 eventArgs.Key,
                 eventArgs.KeyModifiers))
@@ -15850,6 +15874,7 @@ public sealed partial class MainWindow : PlatformWindow
         editorAnimationFrameRequested = false;
         if (windowClosePreflightInProgress ||
             windowClosePreflightComplete ||
+            playtestInProgress ||
             !UsesEditorAnimationFrames())
             return;
 
@@ -15862,6 +15887,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void RunEditorFrame(bool updateVisuals)
     {
+        if (playtestInProgress) return;
         var pump = editorViewSettings.FrameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate &&
                    TryReadEditorHighRateSample(out var sampled)
             ? sampled
@@ -16102,7 +16128,16 @@ public sealed partial class MainWindow : PlatformWindow
         editorFrameClock.Restart();
     }
 
+    private readonly SemaphoreSlim editorPlaybackCommandGate = new(1, 1);
     private async Task ToggleAudioPlaybackAsync()
+    {
+        if (playtestInProgress) return;
+        await editorPlaybackCommandGate.WaitAsync();
+        try { if (!playtestInProgress) await ToggleAudioPlaybackCoreAsync(); }
+        finally { editorPlaybackCommandGate.Release(); }
+    }
+
+    private async Task ToggleAudioPlaybackCoreAsync()
     {
         var tab = viewModel.ActiveTab;
         if (tab == null || !ReferenceEquals(tab, keySoundActiveTab))
@@ -16567,6 +16602,7 @@ public sealed partial class MainWindow : PlatformWindow
         double milliseconds,
         bool resumeAfterSeek = true)
     {
+        if (playtestInProgress) return false;
         if (!IsCurrentKeySoundTab(tab) || keySoundRuntimeDisposed) return false;
         if (editorSeekPending && ReferenceEquals(editorSeekTab, tab))
         {
@@ -16682,7 +16718,7 @@ public sealed partial class MainWindow : PlatformWindow
             if (!IsPendingEditorSeek(generation, tab) ||
                 targetVersion != editorSeekTargetVersion) return;
             keySoundRuntime.ResetPlaybackCursor(milliseconds, audioTransport.PlaybackRate);
-            if (resume)
+            if (resume && !playtestInProgress)
             {
                 if (usesMusic)
                 {
@@ -16732,6 +16768,7 @@ public sealed partial class MainWindow : PlatformWindow
     }
 
     private bool IsPendingEditorSeek(long generation, DesktopChartTab tab) =>
+        !playtestInProgress &&
         editorSeekPending &&
         editorSeekGeneration == generation &&
         ReferenceEquals(editorSeekTab, tab) &&
@@ -17248,6 +17285,7 @@ public sealed partial class MainWindow : PlatformWindow
     private void Timeline_CurrentBeatChanged(object? sender, double beat)
     {
         SyncTrackViewports();
+        eventTimeRuler.SetCurrentBeat(beat);
         if (settingProgrammaticPlaybackBeat) return;
         UpdatePlaybackPositionUi(beat);
         QueuePositionInspectorRefresh();
@@ -17467,26 +17505,11 @@ public sealed partial class MainWindow : PlatformWindow
         UpdateSelectionUi();
     }
 
-    private void Timeline_TimingDeleteRequested(
-        object? sender,
-        TimingDeleteRequestedEventArgs eventArgs) =>
-        DeleteTimingBatch(eventArgs.TimingIds);
-
     private void TimingList_PointerPressed(object? sender, PointerPressedEventArgs eventArgs)
     {
         CaptureTimingListSelectionModifiers(eventArgs.KeyModifiers);
         if (!eventArgs.GetCurrentPoint(timingList).Properties.IsRightButtonPressed) return;
 
-        var current = eventArgs.Source as Control;
-        while (current != null && current != timingList && current is not ListBoxItem)
-            current = current.Parent as Control;
-        if (current is not ListBoxItem item) return;
-        if (!item.IsSelected)
-        {
-            timingList.SelectedItems?.Clear();
-            item.IsSelected = true;
-        }
-        DeleteSelectedTiming();
         eventArgs.Handled = true;
     }
 
@@ -17636,6 +17659,7 @@ public sealed partial class MainWindow : PlatformWindow
             editorOverview.Session = activeTab.Session;
             editorOverview.SetIssues(timeline.ChartIssues);
             editorOverview.SetNavigationMarkers(activeTab.NavigationMarkers);
+            eventTimeRuler.SetDocument(activeTab.Session, GetAudioTimingMap(activeTab), audioTransport.PlaybackSnapshot?.Duration.TotalMilliseconds ?? 0, activeTab.NavigationMarkers);
             editorOverview.SetCurrentBeat(activeTab.CurrentBeat);
             RefreshNavigationMarkerUi();
             miniNoteCountText.Text = activeTab.Session.Document.Notes.Count.ToString(
@@ -17670,6 +17694,7 @@ public sealed partial class MainWindow : PlatformWindow
             editorOverview.Session = null;
             editorOverview.SetIssues([]);
             editorOverview.SetNavigationMarkers([]);
+            eventTimeRuler.SetDocument(null, null, 0, []);
             editorOverview.SetExternalEndBeat(0);
             RefreshNavigationMarkerUi();
             miniNoteCountText.Text = "0";

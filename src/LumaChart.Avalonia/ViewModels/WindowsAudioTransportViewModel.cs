@@ -290,6 +290,9 @@ public sealed class WindowsAudioTransportViewModel : IAsyncDisposable
                 : current.PlayAsync(cancellationToken),
             "播放 / 暂停音频失败");
 
+    public Task PauseAsync(CancellationToken cancellationToken = default) =>
+        RunLoadedCommandAsync(current => current.PauseAsync(cancellationToken), "暂停音频失败");
+
     public Task StopAsync(CancellationToken cancellationToken = default) =>
         RunLoadedCommandAsync(
             current => current.StopAsync(cancellationToken),

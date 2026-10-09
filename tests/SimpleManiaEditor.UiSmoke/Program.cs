@@ -322,6 +322,7 @@ internal static class Program
         Pump(100);
         RequestedWorkflowSpecs.Run(window, screenshots);
         WorkbenchRegressionSpecs.Run(window, screenshots);
+        WorkbenchSafetySpecs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

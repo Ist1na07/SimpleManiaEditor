@@ -47,6 +47,14 @@ public sealed class DifficultyOverviewSurface : Control
     private double endBeat = 1;
     private double currentBeat;
     private bool seeking;
+    private IReadOnlyList<EditorMetricSample> fallback = [];
+    private double fallbackMaximum = 1;
+    public void SetFallback(IReadOnlyList<EditorMetricSample> samples)
+    {
+        fallback = samples;
+        fallbackMaximum = Math.Max(1, samples.Count == 0 ? 1 : samples.Max(s => s.Value));
+        InvalidateVisual();
+    }
 
     public DifficultyOverviewSurface()
     {
@@ -106,6 +114,13 @@ public sealed class DifficultyOverviewSurface : Control
         var bounds = new Rect(Bounds.Size);
         context.DrawRectangle(BackgroundBrush, BorderPen, bounds, 2, 2);
         if (Bounds.Width <= 1 || Bounds.Height <= 1) return;
+
+        if (result == null)
+            foreach (var sample in fallback)
+            {
+                var y = BeatToY(sample.Beat, endBeat, Bounds.Height);
+                context.DrawLine(DashPen, new Point(2, y), new Point(2 + sample.Value / fallbackMaximum * Math.Max(1, Bounds.Width - 4), y));
+            }
 
         using (context.PushClip(bounds))
         {
@@ -224,7 +239,7 @@ public sealed class DifficultyOverviewSurface : Control
     {
         ToolTip.SetTip(this, peak == null
             ? result == null
-                ? "运行难度分析后，这里会按颜色标出高难区段"
+                ? "全局实验负荷（非官方星级 / Sunny 7K）；4K 可运行 Rework 分析"
                 : AvaloniaLocalizationCatalog.Format("Rework {0:0.00}★ · 点击或拖动定位", result.StarRating)
             : AvaloniaLocalizationCatalog.Format("{0} · 局部强度 {1:0.00}", peak.Beat, peak.Intensity));
     }

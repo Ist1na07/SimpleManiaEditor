@@ -18,7 +18,8 @@ internal static class WindowsRenderingConfiguration
             ],
             CompositionMode =
             [
-                Win32CompositionMode.LowLatencyDxgiSwapChain,
+                // Present complete editor frames through the desktop compositor.
+                // The direct low-latency swapchain exposed tearing on some displays.
                 Win32CompositionMode.WinUIComposition,
                 Win32CompositionMode.DirectComposition,
                 Win32CompositionMode.RedirectionSurface
