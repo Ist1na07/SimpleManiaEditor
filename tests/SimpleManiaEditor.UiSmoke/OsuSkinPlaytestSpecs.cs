@@ -134,7 +134,7 @@ internal static class OsuSkinPlaytestSpecs
         Require(safe.Notes[0] == null, "external skin texture path accepted");
 
         var game = new PlaytestWindow(document,null,Path.Combine(root,"preview.mc"),0,imported.Settings.With(autoPlay:false),new WindowsKeySoundSettings(),1,true,.8f,60,1,1,false);
-        game.Show(); Program.Pump(200);
+        game.Show(); Program.PumpUntil(() => Field<bool>(game,"skinSoundReady"));
         game.KeyPress(Key.F11,RawInputModifiers.None,PhysicalKey.F11,"F11");
         game.KeyPress(Key.F11,RawInputModifiers.None,PhysicalKey.F11,"F11");
         game.KeyRelease(Key.F11,RawInputModifiers.None,PhysicalKey.F11,"F11");
