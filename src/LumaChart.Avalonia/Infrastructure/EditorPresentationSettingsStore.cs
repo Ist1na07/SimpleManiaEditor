@@ -14,6 +14,10 @@ public static class EditorPresentationSettingsStore
 
     public static EditorGridNotation LoadGridNotation() => ReadPreferences().GridNotation;
     public static int LoadLayoutRevision() => ReadPreferences().LayoutRevision;
+    public static double LoadPlaytestRate() => ReadPreferences().PlaytestRate;
+    public static bool LoadSnapAll() => ReadPreferences().SnapAll;
+    public static void SavePlaytestRate(double value) { var preferences = ReadPreferences(); preferences.PlaytestRate = value; Save(preferences); }
+    public static void SaveSnapAll(bool value) { var preferences = ReadPreferences(); preferences.SnapAll = value; Save(preferences); }
 
     private static Preferences ReadPreferences()
     {
@@ -23,6 +27,7 @@ public static class EditorPresentationSettingsStore
             var value = JsonSerializer.Deserialize<Preferences>(bytes) ?? new();
             if (!Enum.IsDefined(value.NoteStyle)) value.NoteStyle = EditorNoteStyle.Osu;
             if (!Enum.IsDefined(value.GridNotation)) value.GridNotation = EditorGridNotation.Osu;
+            if (!double.IsFinite(value.PlaytestRate) || value.PlaytestRate is < .2 or > 2) value.PlaytestRate = 1;
             return value;
         }
         catch (Exception exception)
@@ -75,5 +80,7 @@ public static class EditorPresentationSettingsStore
         public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
         public EditorGridNotation GridNotation { get; set; } = EditorGridNotation.Osu;
         public int LayoutRevision { get; set; }
+        public double PlaytestRate { get; set; } = 1;
+        public bool SnapAll { get; set; } = true;
     }
 }

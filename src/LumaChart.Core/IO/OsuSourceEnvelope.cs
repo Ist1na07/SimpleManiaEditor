@@ -138,9 +138,9 @@ public static class OsuSourceEnvelope
             var line = SerializeNote(note, after.KeyCount, before.KeyCount, oldMap);
             var parts = line.Split(',');
             var start = double.Parse(parts[2], Invariant);
-            note.Beat = PreciseBeat(newMap.MillisecondsToBeat(start).Value);
+            note.Beat = newMap.MillisecondsToBeat(start, BeatPosition.MaximumPreservedDenominator);
             if (old.IsHold)
-                note.EndBeat = PreciseBeat(newMap.MillisecondsToBeat(double.Parse(parts[5].Split(':')[0], Invariant)).Value);
+                note.EndBeat = newMap.MillisecondsToBeat(double.Parse(parts[5].Split(':')[0], Invariant), BeatPosition.MaximumPreservedDenominator);
             // Keep current audio/property edits, but update the timestamp anchor.
             AttachNote(note, line, after.KeyCount);
         }
@@ -157,6 +157,11 @@ public static class OsuSourceEnvelope
             var source = t.UnknownData?[ObjectKey] as JsonObject;
             if (untouchedPosition && source != null && Math.Abs(time - source["time"]!.GetValue<double>()) < 1e-6)
                 time = double.Parse(source["line"]!.GetValue<string>().Split(',')[0], Invariant);
+            if (t.UnknownData?["_sme_requested_timing_ms"] is JsonValue requested)
+            {
+                time = requested.GetValue<double>();
+                t.UnknownData.Remove("_sme_requested_timing_ms");
+            }
             return (Timing: t, Time: time);
         }).ToArray();
         var red = targets.Where(t => t.Timing.Bpm.HasValue).OrderBy(t => t.Time).ToArray();
@@ -169,7 +174,7 @@ public static class OsuSourceEnvelope
         }
         var map = new TimingMap(after.Timing);
         foreach (var target in targets.Where(t => !t.Timing.Bpm.HasValue))
-            target.Timing.Beat = PreciseBeat(map.MillisecondsToBeat(target.Time).Value);
+            target.Timing.Beat = map.MillisecondsToBeat(target.Time, BeatPosition.MaximumPreservedDenominator);
         foreach (var target in targets)
             if (target.Timing.UnknownData?[ObjectKey] is JsonObject source)
                 source["time"] = map.BeatToMilliseconds(target.Timing.Beat);
@@ -235,11 +240,12 @@ public static class OsuSourceEnvelope
                 if (parts.Length < 8) Array.Resize(ref parts, 8);
                 for (var i = 2; i < 8; i++) parts[i] ??= i == 2 ? "4" : i == 5 ? "100" : "0";
                 if (source == null || Math.Abs(time - source["time"]!.GetValue<double>()) > 1e-7)
-                    parts[0] = time.ToString("0.############", Invariant);
+                    parts[0] = Math.Round(time, MidpointRounding.AwayFromZero).ToString("0", Invariant);
                 var value = t.Bpm.HasValue ? 60_000d / t.Bpm.Value : -100d / t.EffectValue;
                 if (!Number(parts[1], out var oldValue) || Math.Abs(value - oldValue) > 1e-9 * Math.Max(1, Math.Abs(value)))
                     parts[1] = value.ToString("0.############", Invariant);
                 parts[6] = t.Bpm.HasValue ? "1" : "0";
+                OsuTimingPointSettings.WriteFields(t, parts);
                 return (Time: double.Parse(parts[0], Invariant), Order: order, Line: string.Join(',', parts));
             }).OrderBy(row => row.Time).ThenBy(row => row.Order).Select(row => row.Line).ToArray();
     }
@@ -247,7 +253,8 @@ public static class OsuSourceEnvelope
     private static string NoteSignature(ChartDocument document) => JsonSerializer.Serialize(document.Notes.Where(n => !n.IsDraft)
         .Select(n => new { n.Lane, Beat = n.Beat.Value, End = n.EndBeat?.Value, n.Volume, n.Sound }));
     private static string TimingSignature(ChartDocument document) => JsonSerializer.Serialize(document.Timing
-        .Select(t => new { Beat = t.Beat.Value, t.Bpm, t.Delay, t.Effect, t.EffectValue }));
+        .Select(t => new { Beat = t.Beat.Value, t.Bpm, t.Delay, t.Effect, t.EffectValue,
+            Settings = t.UnknownData?[OsuTimingPointSettings.Key], RequestedTime = t.UnknownData?["_sme_requested_timing_ms"] }));
     private static bool Number(string value, out double number) => double.TryParse(value, NumberStyles.Float, Invariant, out number) && double.IsFinite(number);
     private static bool IsTiming(string line) { var parts = line.Split(','); return parts.Length >= 2 && Number(parts[0], out _) && Number(parts[1], out _); }
     private static bool IsBackground(string line) => line.StartsWith("0,0,", StringComparison.Ordinal) || line.StartsWith("Background,", StringComparison.OrdinalIgnoreCase);

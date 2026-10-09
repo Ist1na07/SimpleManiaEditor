@@ -220,15 +220,10 @@ internal static class BasicChartEditingSpecs
                new BeatPosition(1, 0, 1),
             "a group nudge partially moved notes after the earliest note reached beat zero");
 
-        var denominatorRejected = false;
-        try
-        {
-            _ = BasicChartEditingService.ApplyRelativeMove(
-                BeatPosition.Preserve(0, 1, 999_983),
-                new RelativeBeatMove(1, 1920));
-        }
-        catch (InvalidOperationException) { denominatorRejected = true; }
-        Assert(denominatorRejected, "movement silently reduced an LCM beyond the denominator ceiling");
+        var largeOrigin = BeatPosition.Preserve(0, 1, 999_983);
+        var boundedMove = BasicChartEditingService.ApplyRelativeMove(largeOrigin, new RelativeBeatMove(1, 1920));
+        Assert(Math.Abs(boundedMove.Value - largeOrigin.Value - 1d / 1920) <= .0000005 && boundedMove.Denominator <= BeatPosition.MaximumPreservedDenominator,
+            "large imported denominator did not move with bounded sub-microbeat error");
 
         Assert(BasicChartEditingService.Paste(session, clipboard!, 2, BeatPosition.FromDouble(4)) == 2 &&
                session.Selection.Count == 2,

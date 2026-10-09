@@ -29,6 +29,8 @@ public sealed class EditorSession
     public bool IsDirty => Interlocked.Read(ref changeSerial) != Interlocked.Read(ref savedChangeSerial);
     public long ChangeSerial => Interlocked.Read(ref changeSerial);
     public int SnapDivision { get; set; } = 4;
+    public bool CanUndo => !IsReadOnly && interactiveStart == null && undo.Count > 0;
+    public bool CanRedo => !IsReadOnly && interactiveStart == null && redo.Count > 0;
     public bool IsInteractiveMutationActive => interactiveStart != null;
     public event EventHandler? Changed;
     public event EventHandler<string>? PermissionDenied;
@@ -622,11 +624,13 @@ public sealed class EditorSession
         TimingEffectKind? Effect,
         double EffectValue,
         string EffectValueText,
-        string EffectFieldName)
+        string EffectFieldName,
+        string NativeSettings)
     {
         public static ProtectedTimingState FromTiming(TimingEvent timing) => new(
             timing.Beat, timing.Bpm, timing.Delay, timing.Effect, timing.EffectValue,
-            timing.EffectValueText, timing.EffectFieldName);
+            timing.EffectValueText, timing.EffectFieldName,
+            OsuTimingPointSettings.Read(timing).ToString());
     }
 }
 

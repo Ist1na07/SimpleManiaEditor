@@ -21,7 +21,7 @@ internal static class OfficialPlaytestLauncher
         Directory.CreateDirectory(scratch);
         var practice = snapshot.Clone();
         var timing = new TimingMap(practice.Timing);
-        var start = Math.Max(0, timing.BeatToMilliseconds(BeatPosition.FromDouble(Math.Max(0, startBeat))));
+        var start = Math.Max(0, timing.BeatToMilliseconds(BeatPosition.FromDouble(startBeat)));
         // Slice the disposable copy, so prior objects are not missed/scored when starting mid-song.
         // Timing, SV, background, full audio and hitsounds retain their original timestamps.
         OsuFullPackageExportResult? package = null;

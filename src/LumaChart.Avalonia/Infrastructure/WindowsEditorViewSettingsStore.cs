@@ -73,7 +73,7 @@ public sealed class WindowsEditorViewSettings
         double trackOpacity = DefaultTrackOpacity)
     {
         GridLaneWidth = Math.Clamp(FiniteOr(gridLaneWidth, DefaultGridLaneWidth), 32, 180);
-        GridBeatHeight = Math.Clamp(FiniteOr(gridBeatHeight, DefaultGridBeatHeight), 12, 3840);
+        GridBeatHeight = Math.Clamp(FiniteOr(gridBeatHeight, DefaultGridBeatHeight), 12, 4480);
         MainEditorHorizontalOffset = Math.Clamp(
             Math.Round(FiniteOr(mainEditorHorizontalOffset, 0)),
             -600,

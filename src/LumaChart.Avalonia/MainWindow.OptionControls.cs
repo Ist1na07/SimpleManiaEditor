@@ -48,7 +48,7 @@ public sealed partial class MainWindow
             () => proGridColumnSlider.Value = Math.Max(proGridColumnSlider.Minimum, AvaloniaAppPaths.DefaultProGridColumns));
         foreach (var (box, value) in new (CheckBox?, bool)[]
         {
-            (autoBackupEnabledBox, true), (audioPreservePitchBox, true), (reverseTimeWheelBox, true),
+            (snapAllBox, true), (autoBackupEnabledBox, true), (audioPreservePitchBox, true), (reverseTimeWheelBox, true),
             (keySoundEnabledBox, false), (keySoundLongNoteEndBox, false),
             (waveformBackgroundBox, false), (spectrogramBackgroundBox, false),
             (cacheBackupFilesBox, false), (cacheEditingFilesBox, false), (cacheResourceFilesBox, false)
@@ -74,6 +74,7 @@ public sealed partial class MainWindow
             () => Close(timeline.PixelsPerBeat, defaults.GridBeatHeight), () => timeline.SetZoom(defaults.GridBeatHeight));
         foreach (var rate in new Control?[] { fixedRatePicker, fixedRateSlider }) if (rate != null)
             AddOptionReset(rate, () => Close(audioTransport.PlaybackRate, 1), () => _ = ApplyFixedPlaybackRateAsync(1));
+        if (playtestRatePicker != null) AddOptionReset(playtestRatePicker, () => Close(playtestRate, 1), () => playtestRatePicker.SelectedItem = 1d);
         if (anchorLineButton.Parent is Control anchors)
             AddOptionReset(anchors, () => editorViewSettings.NoteAnchor == defaults.NoteAnchor, () =>
             {

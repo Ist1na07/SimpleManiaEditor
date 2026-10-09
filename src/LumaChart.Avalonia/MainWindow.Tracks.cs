@@ -360,6 +360,7 @@ public sealed partial class MainWindow
                     surface.NoteStyle = timeline.NoteStyle;
                     surface.InteractionProfile = timeline.InteractionProfile;
                     surface.ReverseTimeWheel = timeline.ReverseTimeWheel;
+                    surface.SnapAllNotes = timeline.SnapAllNotes;
                     surface.Session!.SnapDivision = tab.Session.SnapDivision;
                     if (anchor.HasValue && surface.Bounds.Height > 0 && surface.TranslatePoint(new Point(), trackPanels) is { } origin)
                         surface.SetViewportAnchor((anchor.Value.Y - origin.Y) / surface.Bounds.Height);
@@ -367,7 +368,7 @@ public sealed partial class MainWindow
                     if (view.TimingSerial != surface.Session.ChangeSerial)
                     { view.Timing = new TimingMap(surface.Session.Document.Timing); view.TimingSerial = surface.Session.ChangeSerial; }
                     surface.SetTimeAxisProjection(view.Timing, GetAudioTimingMap(tab));
-                    surface.SetCurrentBeat(Math.Max(0, view.Timing!.MillisecondsToBeat(milliseconds).Value));
+                    surface.SetCurrentBeat(view.Timing!.MillisecondsToBeat(milliseconds).Value);
                     surface.SetZoom(timeline.PixelsPerBeat);
                     surface.SetPlaybackActive(timeline.IsPlaybackActive);
                 }
@@ -405,8 +406,11 @@ public sealed partial class MainWindow
         SetQuickShortcutEnabled("Paste", editable && viewModel.HasMixedSelectionClipboard);
         var historyEditable = activeSecondaryTrack.Track.Kind == EditorTrackKind.Hitsound
             ? viewModel.ActiveTab?.Session.IsReadOnly == false : editable;
-        SetQuickShortcutEnabled("Undo", historyEditable);
-        SetQuickShortcutEnabled("Redo", historyEditable);
+        var history = activeSecondaryTrack.Track.Kind == EditorTrackKind.Hitsound ? viewModel.ActiveTab?.Session : session;
+        SetQuickShortcutEnabled("Undo", historyEditable && history?.CanUndo == true);
+        if (toolbarUndoButton != null) toolbarUndoButton.IsEnabled = historyEditable && history?.CanUndo == true;
+        SetQuickShortcutEnabled("Redo", historyEditable && history?.CanRedo == true);
+        if (toolbarRedoButton != null) toolbarRedoButton.IsEnabled = historyEditable && history?.CanRedo == true;
         SetQuickShortcutEnabled("SelectAll", true);
         if (quickMirrorButton != null) quickMirrorButton.IsEnabled = editable;
     }

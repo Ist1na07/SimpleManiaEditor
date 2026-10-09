@@ -188,7 +188,7 @@ public sealed class ChartDocument
                     : Math.Min(bpm, MaximumTimingBpm);
             }
         }
-        Timing.RemoveAll(t => t.Beat.Value < 0 || (!t.Bpm.HasValue && !t.Effect.HasValue));
+        Timing.RemoveAll(t => (!nativeOsu && t.Beat.Value < 0) || (!t.Bpm.HasValue && !t.Effect.HasValue));
         if (!Timing.Any(t => t.Bpm.HasValue)) Timing.Add(new TimingEvent { Bpm = 120 });
         if (!IsTimingSorted())
         {

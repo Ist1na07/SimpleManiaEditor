@@ -25,8 +25,7 @@ public static class TimelinePlacementGeometry
     public static BeatPosition NearestGrid(double beat, int division)
     {
         division = Math.Clamp(division, 1, 1920);
-        var units = (long)Math.Round(Math.Max(0, double.IsFinite(beat) ? beat : 0) * division, MidpointRounding.AwayFromZero);
-        return BeatPosition.Preserve(checked((int)(units / division)), checked((int)(units % division)), division);
+        return BeatPosition.FromDouble(double.IsFinite(beat) ? beat : 0, division).Snap(division);
     }
     public static BeatPosition CellCenterBeat(double rawBeat, int snapDivision) =>
         BeatPosition.SnapToCellCenter(

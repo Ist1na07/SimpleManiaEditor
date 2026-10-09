@@ -83,14 +83,14 @@ public static class WindowsProEditorCommand
             var destinationEnd = note.EndBeat.HasValue
                 ? BasicChartEditingService.ApplyRelativeMove(note.EndBeat.Value, beatMove)
                 : destinationBeat;
-            if (destinationBeat.CompareTo(BeatPosition.Zero) < 0)
+            if (destinationBeat.CompareTo(BeatPosition.Zero) < 0 && !LumaChart.Core.IO.OsuSourceEnvelope.HasSource(session.Document))
                 throw new InvalidOperationException("移动后的 Beat 不能早于 0。");
             if (!session.AllowOwnerProtectedEdits &&
                 session.IntersectsOwnerProtectedRegion(destinationBeat, destinationEnd))
                 throw new InvalidOperationException("目标位置位于房主锁定选区，成员不能移动 Note");
         }
 
-        if (columnDelta == 0 && beatMove.Steps == 0) return 0;
+        if (columnDelta == 0 && beatMove.Steps == 0 && beatMove.Correction == 0 && !beatMove.SnapAbsolute) return 0;
         var ids = selected.Select(note => note.Id).ToHashSet();
         var serial = session.ChangeSerial;
         session.Mutate(document =>
@@ -138,7 +138,7 @@ public static class WindowsProEditorCommand
         BeatPosition? end = endBeat.HasValue
             ? ResolveBeat(session, endBeat.Value, placementPolicy)
             : null;
-        if (start.CompareTo(BeatPosition.Zero) < 0) return null;
+        if (start.CompareTo(BeatPosition.Zero) < 0 && !LumaChart.Core.IO.OsuSourceEnvelope.HasSource(session.Document)) return null;
         if (end.HasValue && end.Value.CompareTo(start) <= 0)
             throw new ArgumentException("LN End Beat 必须晚于 Beat。", nameof(endBeat));
         if (session.Document.Notes.Any(note =>

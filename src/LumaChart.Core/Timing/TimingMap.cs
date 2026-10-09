@@ -67,7 +67,7 @@ public sealed class TimingMap
         return segment.StartMilliseconds + (value - segment.StartBeat) * 60_000d / segment.Bpm;
     }
 
-    public BeatPosition MillisecondsToBeat(double milliseconds)
+    public BeatPosition MillisecondsToBeat(double milliseconds, int precision = 1920)
     {
         var segmentIndex = FindTimeSegment(milliseconds);
         var segment = segments[segmentIndex];
@@ -78,7 +78,7 @@ public sealed class TimingMap
             beat = segments[segmentIndex + 1].StartBeat;
         // A very fast final segment can map a late audio position past the int
         // bar range; BeatPosition.FromDouble would throw during playback/seek.
-        return BeatPosition.FromDouble(Math.Clamp(beat, -MaximumMappedBeat, MaximumMappedBeat));
+        return BeatPosition.FromDouble(Math.Clamp(beat, -MaximumMappedBeat, MaximumMappedBeat), precision);
     }
 
     public double BpmAt(BeatPosition beat) => segments[FindBeatSegment(beat.Value)].Bpm;

@@ -8,7 +8,7 @@ using System.Collections.Immutable;
 namespace SimpleManiaEditor.OsuHost;
 
 /// <summary>Only --verify hosts inject keys; they traverse the official input queue.</summary>
-internal partial class VerificationInputManager : UserInputManager
+internal partial class VerificationInputManager(Func<Key, bool> invoke) : PracticeInputManager(invoke)
 {
     private readonly VerificationKeyboard keyboard = new();
     protected override ImmutableArray<InputHandler> InputHandlers => base.InputHandlers.Add(keyboard);

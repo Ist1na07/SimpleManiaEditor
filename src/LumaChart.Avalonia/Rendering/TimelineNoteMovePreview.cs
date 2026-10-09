@@ -13,8 +13,8 @@ public readonly record struct TimelineNoteMoveOrigin(
     BeatPosition? EndBeat);
 
 /// <summary>
-/// A pure Note drag preview. The exact relative move is reused for every selected
-/// Note so authored rational expressions retain their denominators.
+/// A pure Note drag preview. The same absolute-snap or relative policy is reused
+/// for rendering and commit, including every selected LN endpoint.
 /// </summary>
 public readonly record struct TimelineNoteMovePreviewState(
     int LaneDelta,
@@ -52,7 +52,9 @@ public static class TimelineNoteMovePreview
         ProEditorColumnRange allowedColumns,
         int snapDivision,
         int requestedColumnDelta,
-        double requestedBeatDelta)
+        double requestedBeatDelta,
+        bool snapAbsolute = false,
+        bool allowNegative = false)
     {
         if (allowedColumns.Count == 0)
             throw new ArgumentOutOfRangeException(nameof(allowedColumns));
@@ -64,7 +66,14 @@ public static class TimelineNoteMovePreview
             anchorOrigin,
             snapDivision,
             requestedBeatDelta,
-            minimumOriginBeat);
+            allowNegative ? double.PositiveInfinity : minimumOriginBeat);
+        if (snapAbsolute && Math.Abs(requestedBeatDelta) > 1e-8)
+        {
+            var target = BeatPosition.FromDouble(anchorOrigin.Value + requestedBeatDelta, snapDivision).Snap(snapDivision).Value;
+            var delta = target - anchorOrigin.Value;
+            if (!allowNegative) delta = Math.Max(delta, -minimumOriginBeat);
+            beatMove = beatMove with { Correction = delta - beatMove.Delta, SnapAbsolute = true };
+        }
         return new TimelineNoteMovePreviewState(laneDelta, beatMove);
     }
 

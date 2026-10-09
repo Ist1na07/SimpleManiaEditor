@@ -45,12 +45,14 @@ internal static class WorkbenchRegressionSpecs
         window.MouseWheel(point, new Vector(0, 1), RawInputModifiers.Shift);
         Program.PumpUntil(() => transport.PlaybackSnapshot?.PlaybackRate == 1.25);
         Require(timeline.CurrentBeat == beat && tab.Session.SnapDivision == 4, "Shift wheel changed time/grid instead of speed");
-        var gridTick = Button(window, "Editor.Adjustment.Grid.Tick.15");
+        var gridTick = Button(window, "Editor.Adjustment.Grid.Tick.10");
         Click(gridTick);
-        Require(tab.Session.SnapDivision == 64 && grid.SelectedItem is int displayed && displayed == 64, "grid tick failed to synchronize dropdown and internal grid");
+        Require(tab.Session.SnapDivision == 48 && grid.SelectedItem is int displayed && displayed == 48, "grid tick failed to synchronize dropdown and internal grid");
+        grid.SelectedItem = 64;
+        Require(tab.Session.SnapDivision == 64, "manual 1/64 dropdown option is missing");
         var zoom = timeline.PixelsPerBeat;
         Click(Button(window, "Editor.Adjustment.Zoom.Tick.7"));
-        Require(timeline.PixelsPerBeat == 1920, "zoom tick did not select its declared scale");
+        Require(timeline.PixelsPerBeat == 2240, "zoom tick did not select its declared scale");
         timeline.SetZoom(zoom);
         notation.SelectedIndex = 0;
         grid.SelectedItem = 4;

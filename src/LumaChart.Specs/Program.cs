@@ -61,6 +61,7 @@ var tests = new (string Name, Action Body)[]
     ("Malody BGM note compatibility", TestMalodyBackgroundMusicNote),
     ("osu!mania compatibility", TestOsu),
     ("Native osu edits preserve source fields, absolute time, backups and recovery", OsuPreservationSpecs.Run),
+    ("Native millisecond Timing/Kiai recovery, before-offset notes and history bounds", OsuTimingExperienceSpecs.Run),
     ("osu duplicate fields and sections are tolerated", TestOsuDuplicateFields),
     ("osu unspecified preview normalizes for MC editing", TestOsuUnspecifiedPreview),
     ("osu OD and HP round-trip/export override", TestOsuDifficultySettings),

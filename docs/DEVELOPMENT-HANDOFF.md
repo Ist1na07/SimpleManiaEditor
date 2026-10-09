@@ -5,7 +5,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.14；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.15；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。
@@ -99,3 +99,11 @@ PlaytestWindowActivation 在 RunAsync 发出 open 后等待自有子进程可见
 ## 0.1.14 试玩与选项交互
 
 官方游戏 Content 顶层 PracticeShortcutHandler 在 replay/ruleset 输入之前接管 Shift 快速暂停/继续和 Esc 直接 ReturnToEditor；不改官方渲染、皮肤、计分。--verify 的 VerificationInputManager 注入标准 KeyboardKeyInput 走完整队列，检查左右 Shift、按住不重复、暂停时钟停止、Esc 返回和连续三次完美演奏（artifacts/resident-playtest/d26fb72f25084ef6b82541d9f842b2ab）。MainWindow.OptionControls 统一滚轮和逐项默认值按钮，显式引用出厂值；逻辑树要 Distinct，调整卡片的复原放在标题行保证滑条与刻度对齐。外观 Expander 默认收起，编辑器皮肤从快捷键区移入。OD/HP 原已有模型/读写但控件未入 UI，现在进入元数据页；提交前两项都校验 0–10，原子提交/撤销。底板两侧 padding=Viewport.Width；重建轨道临时缩小 extent 会强制偏移，因此 RestoreBoardPanAfterLayout 在最终布局后恢复平移。UiSmoke --workbench-test 提供快速编辑器回归（输出在隔离临时截图目录），完整脚本仍覆盖历史音频/皮肤用例。
+
+## 0.1.15 输入修正与原生 Timing
+
+0.1.14 的 Content 级 PracticeShortcutHandler 在真实输入中可能被全局 Back 抢先处理，已经移除。PracticeInputManager 在 HandleKeyboardKeyStateChange 拦截 Shift/Esc，其他行为对应 upstream OsuUserInputManager；VerificationInputManager 继承它，验证和实际输入走同一路径。Shift 调用官方 Pause/Resume；官方 Pause 拒绝 replay，所以自动演奏薄覆写 Stop+PauseOverlay.Show，仍使用官方面板和 Resume。真实 GPU 回归覆盖播放中、自动暂停和手动暂停面板中的 Escape。
+
+独立 playtestRate 和 SnapAll 存于 editor-presentation.json。RelativeBeatMove 支持绝对吸附修正，导入大分母使用当前分度；已写入的合法细分用 <=1920 的公共网格保留，防止粗网格压短 LN。未吸附移动的 LCM 超限使用半微拍误差以内的有界表达。原生负拍允许编辑；MinimumEditableBeat 按 session/serial 缓存，避免逐帧建 TimingMap。调整卡片默认仅跨工具/底板的前三列，避免遮住右侧栏。
+
+OsuTimingEditingService 使用绝对整数毫秒 DTO，草稿弹窗不占历史。_sme_requested_timing_ms 由原生 ReanchorTiming 消费，再重新建立时间映射，保留旧音符绝对时间。OsuTimingPointSettings 在 UnknownData 中保留节拍数/bank/index/volume/effects；原生写入现有字段，MC recovery 的红/绿线均保存。新增事件继承当时音效/Kiai 设置，编辑 Kiai 保留其他 effects 位。UI 原生 Offset 对 Malody Delay 在捕获/填表边界反号；BPM 显示六位小数，时间一毫秒，原文件未编辑行继续保真。MainWindow.TimingExperience 和 Dialogs/OsuTimingDialog 隔离新功能，MC 保留原来的 Timing 表单。

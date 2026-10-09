@@ -12,6 +12,7 @@ using osu.Game.Rulesets.Mods;
 using System.Text.Json;
 using osu.Game.Rulesets.Mania.Replays;
 using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
 
 namespace SimpleManiaEditor.OsuHost;
 
@@ -25,6 +26,7 @@ internal partial class PracticePlayer(double startTime, string preferencesPath, 
     private readonly EmptyGameplayLeaderboardProvider leaderboard = new();
     public bool GameplayReady => LoadedBeatmapSuccessfully;
     internal bool QuickPaused => GameplayClockContainer.IsPaused.Value;
+    internal bool PausePanelVisible => PauseOverlay.State.Value == Visibility.Visible;
     protected override bool CheckModsAllowFailure() => false;
     protected override bool PauseOnFocusLost => !verify;
     protected override void PrepareReplay()
@@ -85,8 +87,17 @@ internal partial class PracticePlayer(double startTime, string preferencesPath, 
 
     internal void ToggleQuickPause()
     {
-        if (GameplayClockContainer.IsPaused.Value) GameplayClockContainer.Start();
-        else GameplayClockContainer.Stop();
+        if (PausePanelVisible) Resume();
+        else Pause();
+    }
+    public override bool Pause()
+    {
+        // Upstream treats replay Esc as exit, so its Pause() rejects autoplay.
+        // Practice keeps the upstream overlay usable for both manual and auto play.
+        if (!AutoPlaying) return base.Pause();
+        GameplayClockContainer.Stop();
+        PauseOverlay.Show();
+        return true;
     }
 
     public void OnReleased(KeyBindingReleaseEvent<GlobalAction> e) { }

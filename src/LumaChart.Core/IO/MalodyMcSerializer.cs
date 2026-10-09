@@ -10,6 +10,14 @@ namespace LumaChart.Core.IO;
 
 public static class MalodyMcSerializer
 {
+    private static JsonObject? ReadEffectUnknown(JsonObject item, JsonNode? endBeat)
+    {
+        var result = new JsonObject();
+        if (endBeat != null) result["endbeat"] = endBeat.DeepClone();
+        foreach (var key in new[] { "_sme_osu_object", OsuTimingPointSettings.Key })
+            if (item[key] is { } value) result[key] = value.DeepClone();
+        return result.Count == 0 ? null : result;
+    }
     private static readonly JsonSerializerOptions Options = new(JsonSerializerOptions.Default)
     {
         // Match Malody's canonical export shape: compact UTF-8 JSON with no
@@ -143,7 +151,7 @@ public static class MalodyMcSerializer
                         EffectFieldName = kind == TimingEffectKind.Custom ? name : string.Empty,
                         EffectValue = number,
                         EffectValueText = value.ToJsonString(),
-                        UnknownData = endBeat is null ? null : new JsonObject { ["endbeat"] = endBeat.DeepClone() }
+                        UnknownData = ReadEffectUnknown(item, endBeat)
                     });
                     foundEffect = true;
                 }
@@ -155,6 +163,7 @@ public static class MalodyMcSerializer
                     foreach (var pair in item.Where(pair => pair.Key is not ("beat" or "endbeat") &&
                                  pair.Value is JsonValue value && value.TryGetValue<double>(out _)).ToArray())
                         preserved.Remove(pair.Key);
+                    preserved.Remove("_sme_osu_object"); preserved.Remove(OsuTimingPointSettings.Key);
                     if (preserved.Any(pair => pair.Key is not ("beat" or "endbeat")))
                         document.UnknownEffects.Add(preserved);
                 }
@@ -349,6 +358,8 @@ public static class MalodyMcSerializer
             // only an effect-only row carries the imported effect endbeat.
             if (!t.Bpm.HasValue && t.UnknownData?["endbeat"] is { } endBeat)
                 effect["endbeat"] = endBeat.DeepClone();
+            foreach (var key in new[] { "_sme_osu_object", OsuTimingPointSettings.Key })
+                if (t.UnknownData?[key] is { } data) effect[key] = data.DeepClone();
             effect[name] = number;
             return (JsonNode)effect;
         }).Concat(document.UnknownEffects.Select(e => (JsonNode)e.DeepClone())).ToArray();

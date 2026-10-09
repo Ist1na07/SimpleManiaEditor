@@ -51,9 +51,13 @@ public sealed partial class MainWindow
     private void ApplyTimingMetadata()
     {
         if (viewModel.ActiveTab is not { } tab) return;
+        if (!double.TryParse(metadataOffsetBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var offset) || !double.IsFinite(offset) ||
+            !double.TryParse(metadataBpmBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bpm) || !double.IsFinite(bpm) || bpm <= 0)
+        { viewModel.SetStatus("请输入有效 BPM 和毫秒 Offset，再点击应用。"); return; }
+        metadataOffsetBox.Text = FormatTimingMilliseconds(offset);
         var pendingForm = CaptureMetadataEditorDraft(tab);
         var draft = ChartMetadataEditingService.Capture(tab.Session.Document) with
-            { Bpm = metadataBpmBox.Text ?? "", Offset = metadataOffsetBox.Text ?? "" };
+            { Bpm = metadataBpmBox.Text ?? "", Offset = ReadTimingOffsetDraft(tab) };
         if (!ChartMetadataEditingService.TryParseDraftForLocalPreservation(draft, tab.Session.Document, out var edit, out var error) || edit == null)
         { viewModel.SetStatus(error); return; }
         try
@@ -74,11 +78,11 @@ public sealed partial class MainWindow
     private Control BuildAdjustmentSliders()
     {
         var panel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 6 };
-        panel.Children.Add(PresetAdjustment("网格", QuickSnapDivisions.Length, out fixedGridSlider, out fixedGridText,
-            index => GridLabel(QuickSnapDivisions[index]), "Editor.Adjustment.Grid", out adjustmentGridTicks));
+        panel.Children.Add(PresetAdjustment("网格", adjustmentGridDivisions.Length, out fixedGridSlider, out fixedGridText,
+            index => GridLabel(adjustmentGridDivisions[index]), "Editor.Adjustment.Grid", out adjustmentGridTicks));
         fixedGridSlider!.ValueChanged += (_, e) =>
         {
-            if (!syncingFixedGridPicker) SetQuickSnapDivision(QuickSnapDivisions[(int)Math.Round(e.NewValue)]);
+            if (!syncingFixedGridPicker) SetQuickSnapDivision(adjustmentGridDivisions[(int)Math.Round(e.NewValue)]);
         };
         panel.Children.Add(PresetAdjustment("缩放", workbenchZooms.Length, out adjustmentZoomSlider, out adjustmentZoomText,
             index => $"{workbenchZooms[index] / 140:0.##}x", "Editor.Adjustment.Zoom", out _));
@@ -137,10 +141,10 @@ public sealed partial class MainWindow
     private void RefreshAdjustmentGridTicks()
     {
         if (adjustmentGridTicks == null) return;
-        for (var index = 0; index < QuickSnapDivisions.Length; index++)
+        for (var index = 0; index < adjustmentGridDivisions.Length; index++)
         {
             var tick = (Button)adjustmentGridTicks.Children[index];
-            var label = GridLabel(QuickSnapDivisions[index]);
+            var label = GridLabel(adjustmentGridDivisions[index]);
             tick.Content = label[2..];
             ToolTip.SetTip(tick, "网格 " + label);
         }

@@ -351,7 +351,24 @@ public sealed class TimelineSurface : Control
     public bool ReverseTimeWheel { get; set; } = true;
     public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
     public const double MinimumZoom = 12;
-    public const double MaximumZoom = 3840;
+    public const double MaximumZoom = 4480;
+    public bool SnapAllNotes { get; set; } = true;
+    private bool AllowsNegativeBeats => session != null && LumaChart.Core.IO.OsuSourceEnvelope.HasSource(session.Document);
+    private long minimumBeatSerial = long.MinValue;
+    private double minimumBeatCache;
+    private double MinimumEditableBeat
+    {
+        get
+        {
+            if (!AllowsNegativeBeats) return 0;
+            if (minimumBeatSerial != session!.ChangeSerial)
+            {
+                minimumBeatCache = Math.Min(-4, new TimingMap(session.Document.Timing).MillisecondsToBeat(0).Value - 4);
+                minimumBeatSerial = session.ChangeSerial;
+            }
+            return minimumBeatCache;
+        }
+    }
     public const double PlaybackWheelStepMilliseconds = 500;
     public event EventHandler<int>? SnapDivisionChangeRequested;
     public event EventHandler<int>? PlaybackRateChangeRequested;
@@ -494,6 +511,7 @@ public sealed class TimelineSurface : Control
             InvalidateAudioScene();
             placementEvidenceProbe = null;
             session = value;
+            minimumBeatSerial = long.MinValue;
             if (session != null) session.Changed += Session_Changed;
             indexedChangeSerial = long.MinValue;
             chartIssues = [];
@@ -951,7 +969,7 @@ public sealed class TimelineSurface : Control
 
     public void SetCurrentBeat(double beat)
     {
-        beat = double.IsFinite(beat) ? Math.Max(0, beat) : 0;
+        beat = double.IsFinite(beat) ? Math.Max(MinimumEditableBeat, beat) : 0;
         if (Math.Abs(CurrentBeat - beat) < 1e-9) return;
         CurrentBeat = beat;
         InvalidateVisual();
@@ -966,7 +984,7 @@ public sealed class TimelineSurface : Control
         SetCurrentBeat(beat);
     }
 
-    public void NavigateToBeat(double beat) => SetCurrentBeatFromManualNavigation(Math.Max(0, beat));
+    public void NavigateToBeat(double beat) => SetCurrentBeatFromManualNavigation(Math.Max(MinimumEditableBeat, beat));
 
     public void SetViewportAnchor(double position)
     {
@@ -1362,10 +1380,10 @@ public sealed class TimelineSurface : Control
             EnsureIndex();
 
             var geometry = GetGeometry(session.Document.KeyCount);
-        var minimumBeat = Math.Max(0, BeatAtY(Bounds.Height + noteHeight, geometry));
+        var minimumBeat = Math.Max(MinimumEditableBeat, BeatAtY(Bounds.Height + noteHeight, geometry));
         var maximumBeat = Math.Max(minimumBeat, BeatAtY(-noteHeight, geometry));
         var minimumStoredBeat = Math.Max(
-            0,
+            MinimumEditableBeat,
             minimumBeat - GetMaximumStoredRenderBeatAdjustment());
             DrawChartBackground(context);
             // The track mask dims the chart background image so Notes stay
@@ -1769,7 +1787,7 @@ public sealed class TimelineSurface : Control
                 session.Selection.IntersectWith(movableIds);
             }
             dragStartPoint = point;
-            if (!BeginNoteMove())
+            if (!BeginNoteMove(hit.Beat))
             {
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
                 if (hadTimingSelection) TimingSelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -2289,10 +2307,11 @@ public sealed class TimelineSurface : Control
                 var map = audioVisualizationTimingMap ?? new TimingMap(session.Document.Timing);
                 var milliseconds = map.BeatToMilliseconds(BeatPosition.FromDouble(CurrentBeat)) +
                     (ReverseTimeWheel ? -eventArgs.Delta.Y : eventArgs.Delta.Y) * PlaybackWheelStepMilliseconds;
-                SetCurrentBeatFromManualNavigation(Math.Max(0, map.MillisecondsToBeat(milliseconds).Value));
+                SetCurrentBeatFromManualNavigation(Math.Max(MinimumEditableBeat, map.MillisecondsToBeat(milliseconds).Value));
             }
-            else SetCurrentBeatFromManualNavigation(TimelineGridNavigation.Step(
-                CurrentBeat, session.SnapDivision, direction).Value);
+            else SetCurrentBeatFromManualNavigation(AllowsNegativeBeats
+                ? TimelinePlacementGeometry.NearestGrid(CurrentBeat + direction / (double)session.SnapDivision, session.SnapDivision).Value
+                : TimelineGridNavigation.Step(CurrentBeat, session.SnapDivision, direction).Value);
         }
         eventArgs.Handled = true;
     }
@@ -3311,7 +3330,7 @@ public sealed class TimelineSurface : Control
                 GetWorkspaceColumnRange(),
                 session.SnapDivision,
                 requestedLaneDelta,
-                requestedBeatDelta);
+                requestedBeatDelta, SnapAllNotes && InteractionProfile == EditorInteractionProfile.OsuMania, AllowsNegativeBeats);
             if (!session.AllowOwnerProtectedEdits && session.OwnerProtectedRegions.Count > 0)
             {
                 candidate = TimelineNoteMovePreview.KeepLastLegal(
@@ -3348,7 +3367,7 @@ public sealed class TimelineSurface : Control
         previewBeatDelta = candidate.BeatDelta;
     }
 
-    private bool BeginNoteMove()
+    private bool BeginNoteMove(BeatPosition anchor)
     {
         if (session == null) return false;
         ClearNoteMoveState();
@@ -3361,7 +3380,7 @@ public sealed class TimelineSurface : Control
         session.Selection.IntersectWith(targets.Select(note => note.Id));
         foreach (var note in targets)
         {
-            if (noteMoveOrigins.Count == 0) noteMoveAnchorOrigin = note.Beat;
+            noteMoveAnchorOrigin = anchor;
             noteMoveOrigins.Add(new TimelineNoteMoveOrigin(
                 ProEditorWorkspaceGeometry.GetColumn(note),
                 note.Beat,
@@ -3798,7 +3817,7 @@ public sealed class TimelineSurface : Control
     private void DrawGrid(DrawingContext context, TimelineGeometry geometry)
     {
         if (session == null) return;
-        var minimumBeat = Math.Max(0, BeatAtY(Bounds.Height, geometry));
+        var minimumBeat = Math.Max(MinimumEditableBeat, BeatAtY(Bounds.Height, geometry));
         var maximumBeat = Math.Max(minimumBeat, BeatAtY(0, geometry));
         if (!double.IsFinite(minimumBeat) || !double.IsFinite(maximumBeat)) return;
         var division = Math.Clamp(session.SnapDivision, 1, 1920);
@@ -3807,8 +3826,8 @@ public sealed class TimelineSurface : Control
         // the conversion (or wrapping the loop counter), and every drawn step
         // still fits the int-based grid policy, including its checked measure+1.
         const double maximumGridStep = int.MaxValue - 1;
-        var firstStep = (long)Math.Clamp(Math.Floor(minimumBeat * division), 0, maximumGridStep);
-        var lastStep = (long)Math.Clamp(Math.Ceiling(maximumBeat * division), 0, maximumGridStep);
+        var firstStep = (long)Math.Clamp(Math.Floor(minimumBeat * division), -maximumGridStep, maximumGridStep);
+        var lastStep = (long)Math.Clamp(Math.Ceiling(maximumBeat * division), -maximumGridStep, maximumGridStep);
         var minimumPixelSpacing = PixelsPerBeat / division;
         var stride = Math.Max(1, (int)Math.Ceiling(5 / Math.Max(.001, minimumPixelSpacing)));
         DrawMeasureNumberRail(context, geometry);
@@ -4692,7 +4711,7 @@ public sealed class TimelineSurface : Control
         if (session == null) return BeatPosition.Zero;
         var geometry = GetGeometry(session.Document.KeyCount);
         if (InteractionProfile == EditorInteractionProfile.OsuMania)
-            return TimelinePlacementGeometry.NearestGrid(BeatAtY(y, geometry), session.SnapDivision);
+            return TimelinePlacementGeometry.NearestGrid(Math.Max(MinimumEditableBeat, BeatAtY(y, geometry)), session.SnapDivision);
         return TimelinePlacementGeometry.PointerToStoredBeat(
             BeatAtY(y, geometry),
             EffectiveNoteAnchor,

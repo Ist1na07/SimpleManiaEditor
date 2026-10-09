@@ -43,7 +43,7 @@ internal static class OptionControlsSpecs
         timeline.SetZoom(WindowsEditorViewSettings.DefaultGridBeatHeight);
         var zoom = Field<Slider>(window, "adjustmentZoomSlider");
         Wheel(window, zoom, 1);
-        Require(timeline.PixelsPerBeat == 480, "adjustment slider wheel did not select the next zoom preset");
+        Require(timeline.PixelsPerBeat == 560, "adjustment slider wheel did not select the next zoom preset");
         Click(Reset(window, "Editor.Adjustment.Zoom"));
         Require(timeline.PixelsPerBeat == 280 && !Reset(window, "Editor.Adjustment.Zoom").IsVisible, "zoom reset is not the actual factory zoom");
         timeline.SetZoom(300);

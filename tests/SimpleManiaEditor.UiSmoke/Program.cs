@@ -192,8 +192,10 @@ internal static class Program
             Require(window.GetVisualDescendants().OfType<Slider>().Single(c => AutomationProperties.GetAutomationId(c) == id).GetVisualAncestors().Contains(adjustmentCard), "adjustment control is outside the movable card");
         Require(!adjustmentCard.GetVisualAncestors().Contains(unifiedBar), "adjustments remain in the top bar");
         var cardOrigin = adjustmentCard.TranslatePoint(new Point(), window)!.Value;
-        Require(cardOrigin.X > window.Bounds.Width / 2 && cardOrigin.Y > window.Bounds.Height / 2,
-            "adjustment card is not initially at bottom right");
+        var inspectorPanel = (Control)typeof(MainWindow).GetField("inspectorPanel", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        var inspectorLeft = inspectorPanel.TranslatePoint(new Point(), window)!.Value.X;
+        Require(cardOrigin.X + adjustmentCard.Bounds.Width <= inspectorLeft && inspectorLeft - cardOrigin.X - adjustmentCard.Bounds.Width < 80 && cardOrigin.Y > window.Bounds.Height / 2,
+            $"adjustment card is not at the editor's bottom right or covers the settings sidebar: origin={cardOrigin}, width={adjustmentCard.Bounds.Width}, inspectorLeft={inspectorLeft}, window={window.Bounds}");
         var cardHeader = (Control)((StackPanel)adjustmentCard.Child!).Children[0];
         var dragOrigin = cardHeader.TranslatePoint(new Point(30, 14), window)!.Value;
         window.MouseDown(dragOrigin, MouseButton.Left);
@@ -314,6 +316,11 @@ internal static class Program
         Require(timeline.NoteStyle == EditorNoteStyle.Osu && EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Osu,
             "skin selector did not restore/persist osu default");
         OptionControlsSpecs.Run(window, screenshots);
+        var shortcuts = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => Equals(e.Header, "快捷键"));
+        Require(!shortcuts.IsExpanded, "shortcut settings should be collapsed by default");
+        shortcuts.IsExpanded = true;
+        Pump(100);
+        RequestedWorkflowSpecs.Run(window, screenshots);
         WorkbenchRegressionSpecs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);

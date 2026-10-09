@@ -55,18 +55,23 @@ internal partial class PlaytestGame : OsuGame
     private VerificationInputManager? verificationInput;
     private bool verifiedQuickPause;
     private bool verificationEscapeRequested;
-    protected override UserInputManager CreateUserInputManager() => verify
-        ? verificationInput = new VerificationInputManager() : base.CreateUserInputManager();
-    protected override void LoadComplete()
+    private int verificationPlayCount;
+    private bool verificationEscapeFromPause;
+    private bool verificationManualPause;
+    protected override UserInputManager CreateUserInputManager()
     {
-        base.LoadComplete();
-        Add(new PracticeShortcutHandler(key =>
-        {
-            if (player?.GameplayReady != true || !player.IsCurrentScreen()) return false;
-            if (key == Key.Escape) { if (resident) ReturnToEditor(); else Host.Exit(); return true; }
-            if (key is Key.ShiftLeft or Key.ShiftRight) { player.ToggleQuickPause(); return true; }
-            return false;
-        }) { RelativeSizeAxes = osu.Framework.Graphics.Axes.Both, Depth = float.MinValue });
+        PracticeInputManager input = verify
+            ? verificationInput = new VerificationInputManager(HandlePracticeKey)
+            : new PracticeInputManager(HandlePracticeKey);
+        input.PlayingState.BindTo(UserPlayingState);
+        return input;
+    }
+    private bool HandlePracticeKey(Key key)
+    {
+        if (player?.GameplayReady != true || !player.IsCurrentScreen()) return false;
+        if (key == Key.Escape) { if (resident) ReturnToEditor(); else Host.Exit(); return true; }
+        if (key is Key.ShiftLeft or Key.ShiftRight) { player.ToggleQuickPause(); return true; }
+        return false;
     }
     internal void Enqueue(Action action) => Scheduler.Add(action);
 
@@ -328,6 +333,7 @@ internal partial class PlaytestGame : OsuGame
         }));
         report?.Invoke(new("ready", requestPath, launchClock.Elapsed.TotalMilliseconds));
         if (verify) VerifyQuickPauseKeys();
+        if (verify) verificationPlayCount++;
         if (verify) Scheduler.AddDelayed(async () =>
         {
             try
@@ -341,14 +347,21 @@ internal partial class PlaytestGame : OsuGame
                 else if (resident)
                 {
                     if (!verifiedQuickPause) throw new InvalidOperationException("Shift pause/resume input was not verified.");
-                    verificationEscapeRequested = true;
-                    var verificationPath = requestPath;
-                    verificationInput!.Stroke(Key.Escape);
+                    verificationEscapeFromPause = verificationPlayCount % 3 != 1;
+                    verificationManualPause = verificationPlayCount % 3 == 0;
+                    if (verificationManualPause) verificationInput!.Stroke(Key.Tab);
                     Scheduler.AddDelayed(() =>
                     {
-                        if (!residentIdle && requestPath == verificationPath)
-                            Fail(new InvalidOperationException("Escape did not return directly to the editor."));
-                    }, 300);
+                        if (verificationManualPause && player!.AutoPlaying)
+                        { Fail(new InvalidOperationException("Tab did not leave autoplay for manual pause verification.")); return; }
+                        if (verificationEscapeFromPause) verificationInput!.Stroke(Key.ShiftLeft);
+                        Scheduler.AddDelayed(() =>
+                        {
+                            if (verificationEscapeFromPause && !player!.PausePanelVisible)
+                            { Fail(new InvalidOperationException("Shift did not open the pause panel before Escape.")); return; }
+                            VerifyEscapeReturn();
+                        }, verificationEscapeFromPause ? 150 : 0);
+                    }, verificationManualPause ? 150 : 0);
                 }
                 else Host.Exit();
             }
@@ -364,7 +377,7 @@ internal partial class PlaytestGame : OsuGame
             verificationInput!.Press(Key.ShiftLeft);
             Scheduler.AddDelayed(() =>
             {
-                if (!player!.QuickPaused) { Fail(new InvalidOperationException("Left Shift did not pause through the official input queue.")); return; }
+                if (!player!.QuickPaused || !player.PausePanelVisible) { Fail(new InvalidOperationException("Left Shift did not open the official pause panel through production input routing.")); return; }
                 var pausedTime = player.SongTime;
                 Scheduler.AddDelayed(() =>
                 {
@@ -373,12 +386,23 @@ internal partial class PlaytestGame : OsuGame
                     verificationInput.Release(Key.ShiftLeft); verificationInput.Stroke(Key.ShiftRight);
                     Scheduler.AddDelayed(() =>
                     {
-                        if (player.QuickPaused) { Fail(new InvalidOperationException("Right Shift did not resume.")); return; }
+                        if (player.PausePanelVisible) { Fail(new InvalidOperationException("Right Shift did not dismiss the official pause panel.")); return; }
                         verifiedQuickPause = true;
                     }, 100);
                 }, 350);
             }, 100);
         }, 500);
+    }
+    private void VerifyEscapeReturn()
+    {
+        verificationEscapeRequested = true;
+        var verificationPath = requestPath;
+        verificationInput!.Stroke(Key.Escape);
+        Scheduler.AddDelayed(() =>
+        {
+            if (!residentIdle && requestPath == verificationPath)
+                Fail(new InvalidOperationException("Escape did not return directly to the editor."));
+        }, 300);
     }
 
     private void VerifySkinSelector()
@@ -432,7 +456,8 @@ internal partial class PlaytestGame : OsuGame
             Host.MaximumInactiveHz = 10;
             Host.Window.Hide();
             if (verify && verificationEscapeRequested)
-                File.WriteAllText(requestPath + ".shortcuts.json", JsonSerializer.Serialize(new { ShiftPauseResume = true, EscapeReturn = true }));
+                File.WriteAllText(requestPath + ".shortcuts.json", JsonSerializer.Serialize(new
+                { ShiftPauseResume = true, PausePanelShown = true, EscapeReturn = true, EscapeFromPause = verificationEscapeFromPause, ManualPause = verificationManualPause }));
             report?.Invoke(new("done", requestPath));
         }
         Schedule(FinishReturn);

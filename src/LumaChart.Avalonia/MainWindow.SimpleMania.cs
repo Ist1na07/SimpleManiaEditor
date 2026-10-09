@@ -24,7 +24,10 @@ public sealed partial class MainWindow
     private ComboBox? fixedRatePicker;
     private EditorGridNotation gridNotation;
     private readonly double[] workbenchRates = [.2, .25, .5, .75, .9, 1, 1.1, 1.25, 1.5, 2];
-    private readonly double[] workbenchZooms = [12, 24, 70, 140, 280, 480, 960, 1920, 3840];
+    private readonly double[] workbenchZooms = [14, 35, 70, 140, 280, 560, 1120, 2240, 4480];
+    private static readonly int[] adjustmentGridDivisions = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
+    private double playtestRate = EditorPresentationSettingsStore.LoadPlaytestRate();
+    private ComboBox? playtestRatePicker;
     private Slider? adjustmentZoomSlider;
     private TextBlock? adjustmentZoomText;
     private StackPanel? fixedToolRailBody;
@@ -189,8 +192,17 @@ public sealed partial class MainWindow
         var playtest = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat));
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtest, "Editor.Toolbar.Playtest");
         ToolTip.SetTip(playtest, "官方 osu!mania 试玩 · 设置与导入位于右侧设置栏");
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right,
-            Children = { playtest, ToolbarLabel("倍速"), fixedRatePicker, ToolbarLabel("网格"), fixedGridPicker } };
+        playtestRatePicker = new ComboBox { Width = 85, ItemsSource = workbenchRates, SelectedItem = playtestRate,
+            ItemTemplate = new FuncDataTemplate<double>((rate, _) => new TextBlock { Text = $"{rate:0.##}x" }) };
+        global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtestRatePicker, "Editor.Playtest.Rate");
+        ToolTip.SetTip(playtestRatePicker, "试玩倍速（独立于编辑播放倍速，保持音高）");
+        playtestRatePicker.SelectionChanged += (_, _) =>
+        {
+            if (playtestRatePicker.SelectedItem is not double rate) return;
+            playtestRate = rate; EditorPresentationSettingsStore.SavePlaytestRate(rate); RefreshOptionResets();
+        };
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { playtest, playtestRatePicker, ToolbarLabel("倍速"), fixedRatePicker, ToolbarLabel("网格"), fixedGridPicker } };
         return new Border { Background = RaisedBrush, Padding = new Thickness(10, 6), MinHeight = 48,
             BorderBrush = StrokeBrush, BorderThickness = new Thickness(0, 0, 0, 1),
             Child = new Grid { Children = { controls } } };
@@ -342,8 +354,8 @@ public sealed partial class MainWindow
         syncingFixedGridPicker = true;
         try
         {
-            var index = Array.IndexOf(QuickSnapDivisions, division);
-            if (fixedGridSlider != null) fixedGridSlider.Value = Math.Max(0, index >= 0 ? index : Array.FindLastIndex(QuickSnapDivisions, value => value < division));
+            if (fixedGridSlider != null) fixedGridSlider.Value = Enumerable.Range(0, adjustmentGridDivisions.Length)
+                .MinBy(i => Math.Abs(adjustmentGridDivisions[i] - division));
             if (fixedGridText != null) fixedGridText.Text = GridLabel(division);
             if (fixedGridPicker != null)
             {

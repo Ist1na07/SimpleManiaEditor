@@ -56,9 +56,9 @@ public sealed record BasicTimingEdit(
     double Delay = 0,
     string CustomFieldName = "");
 
-public readonly record struct RelativeBeatMove(int Steps, int Division)
+public readonly record struct RelativeBeatMove(int Steps, int Division, double Correction = 0, bool SnapAbsolute = false)
 {
-    public double Delta => Division <= 0 ? 0 : (double)Steps / Division;
+    public double Delta => Division <= 0 ? 0 : (double)Steps / Division + Correction;
 }
 
 public sealed class ChartNoteClipboard
@@ -374,16 +374,29 @@ public static class BasicChartEditingService
 
     public static BeatPosition ApplyRelativeMove(BeatPosition origin, RelativeBeatMove move)
     {
+        if (!double.IsFinite(move.Correction)) throw new ArgumentOutOfRangeException(nameof(move));
         if (origin.Denominator == 0) origin = BeatPosition.Zero;
-        if (move.Steps == 0) return origin;
+        if (move.Steps == 0 && move.Correction == 0 && !move.SnapAbsolute) return origin;
         if (move.Division is < 1 or > 1920) throw new ArgumentOutOfRangeException(nameof(move));
+        if (move.SnapAbsolute)
+        {
+            // A coarse editing grid must not erase a previously authored finer
+            // subdivision or collapse its short LN. Imported millisecond fractions
+            // above the grid range use the current grid rather than an unbounded LCM.
+            var division = move.Division;
+            if (origin.Denominator is >= 1 and <= 1920)
+            {
+                var common = origin.Denominator / GreatestCommonDivisor(origin.Denominator, division) * division;
+                if (common <= 1920) division = (int)common;
+            }
+            return BeatPosition.FromDouble(origin.Value + move.Delta, division).Snap(division);
+        }
         try
         {
             var divisor = GreatestCommonDivisor(origin.Denominator, move.Division);
             var denominator = checked((long)origin.Denominator / divisor * move.Division);
             if (denominator > BeatPosition.MaximumPreservedDenominator)
-                throw new InvalidOperationException(
-                    LocalizationCatalog.Format("移动后的公分母 {0} 超过上限 {1}；请改用兼容分度。", denominator, BeatPosition.MaximumPreservedDenominator));
+                return BeatPosition.FromDouble(origin.Value + move.Delta, BeatPosition.MaximumPreservedDenominator);
 
             var numerator = checked(
                 (long)origin.Numerator * (denominator / origin.Denominator) +

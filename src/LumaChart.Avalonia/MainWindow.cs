@@ -82,7 +82,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private static readonly int[] QuickSnapDivisions =
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32, 48, 64];
-    private static readonly int[] WheelSnapDivisions = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
+    private static readonly int[] WheelSnapDivisions = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
     private static readonly double[] QuickGridScales = [.5, 1, 1.5, 2, 2.5, 3];
     private static readonly double[] QuickPlaybackRates = [.2, .4, .6, 1];
     private static readonly Color WindowColor = Color.Parse("#111315");
@@ -5250,14 +5250,14 @@ public sealed partial class MainWindow : PlatformWindow
         commandLayout.Children.Add(separator);
 
         var editCommands = new StackPanel { Orientation = Orientation.Horizontal };
-        var undoButton = CommandIconButton(
+        var undoButton = toolbarUndoButton = CommandIconButton(
             "M6,4 L2,8 L6,12 M3,8 H9 C12.5,8 15,10 15,14",
             (_, _) => ExecuteHistoryCommand(redo: false));
         AutomationProperties.SetAutomationId(undoButton, "Editor.Command.Undo");
         AutomationProperties.SetName(undoButton, "撤销");
         ToolTip.SetTip(undoButton, "撤销");
         editCommands.Children.Add(undoButton);
-        var redoButton = CommandIconButton(
+        var redoButton = toolbarRedoButton = CommandIconButton(
             "M12,4 L16,8 L12,12 M15,8 H9 C5.5,8 3,10 3,14",
             (_, _) => ExecuteHistoryCommand(redo: true));
         AutomationProperties.SetAutomationId(redoButton, "Editor.Command.Redo");
@@ -5615,7 +5615,7 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetRow(fixedToolbar, 0);
         workbench.Children.Add(fixedToolbar);
         var adjustmentCard = BuildQuickValuesPalette();
-        Grid.SetColumnSpan(adjustmentCard, 5);
+        Grid.SetColumnSpan(adjustmentCard, 3);
         Grid.SetRow(adjustmentCard, 1);
         workbench.Children.Add(adjustmentCard);
         ApplyQuickValuesPaletteLayout();
@@ -6674,12 +6674,12 @@ public sealed partial class MainWindow : PlatformWindow
 
             await PauseAllEditorPlaybackAsync();
             var settings = WindowsPlaytestSettingsStore.Load();
-            var safeStartBeat = double.IsFinite(startBeat) ? Math.Max(0, startBeat) : 0;
+            var safeStartBeat = double.IsFinite(startBeat) ? startBeat : 0;
             StopEditorHighRateFramePump();
             viewModel.SetStatus("正在启动官方 osu!mania 试玩…");
             await OfficialPlaytestLauncher.RunAsync(snapshot,
                 File.Exists(tab.SourcePath) ? tab.SourcePath : tab.WorkingPath, safeStartBeat,
-                settings, audioTransport.PlaybackRate, audioTransport.PreservePitch, audioTransport.Volume, settingsOnly);
+                settings, playtestRate, true, audioTransport.Volume, settingsOnly);
             viewModel.SetStatus(
                 AvaloniaLocalizationCatalog.Format("测试演奏已退出 · 源谱未写入 · 缓存 {0}", Path.GetFileName(tab.WorkingPath)));
         }
@@ -9726,10 +9726,9 @@ public sealed partial class MainWindow : PlatformWindow
             BuildOfficialPlaytestSettings(),
             BuildLanguageSettings(),
             BuildEditorViewSettings(),
-            BuildDisplayScaleSettings(),
             BuildBackupCacheSettings(),
             BuildShortcutSettings(),
-            BuildAudioTransport(),
+            SettingsSection("音量与音频", "编辑音乐、打击音；试玩中可使用官方音量设置", "Settings.AudioSection", BuildAudioTransport()),
             BuildApplicationInformationSettings()
         };
         for (var index = 0; index < sections.Length; index++)
@@ -10394,7 +10393,7 @@ public sealed partial class MainWindow : PlatformWindow
                 TimingField("小节线粗细", barLineThicknessSlider), barLineThicknessValueText,
                 TimingField("分度线粗细（保留层级）", subdivisionLineThicknessSlider), subdivisionLineThicknessValueText,
                 TimingField("判定线位置（画面高度）", judgementLinePositionSlider), judgementLinePositionValueText,
-                judgementStyleGrid
+                judgementStyleGrid, BuildDisplayScaleSettings()
             } }
         };
         AutomationProperties.SetAutomationId(appearance, "Settings.Appearance");
@@ -10404,6 +10403,7 @@ public sealed partial class MainWindow : PlatformWindow
             "Settings.EditorViewSection",
             TimingField("网格分度", settingsSnapBox),
             TimingField("固定分度", settingsFixedSnapBox),
+            BuildSnapAllOption(),
             appearance,
             TimingField("ProEditor 总列数", proGridColumnSlider),
             proGridColumnText);
@@ -10821,15 +10821,19 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(shortcutStatusText, "Settings.Shortcuts.Status");
         RefreshShortcutButtons();
         RefreshShortcutLabels();
-        return new Border
+        return new Expander
         {
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(0),
-            Child = new StackPanel
+            Header = "快捷键", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch,
+            Content = new Border
             {
-                Spacing = 10,
-                Children = { header, BuildInteractionProfileSelector(), shortcutListPanel, shortcutStatusText }
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                Child = new StackPanel
+                {
+                    Spacing = 10,
+                    Children = { header, BuildInteractionProfileSelector(), shortcutListPanel, shortcutStatusText }
+                }
             }
         };
     }
@@ -12299,8 +12303,10 @@ public sealed partial class MainWindow : PlatformWindow
         timingMetadataSection = new StackPanel { Spacing = 8, Margin = new Thickness(16, 12), Children =
         {
             new TextBlock { Text = "参考 BPM / 音频 Offset", FontSize = 16, Foreground = Brushes.White },
-            TimingField("参考 BPM（显示/速度补偿）", metadataBpmBox),
-            TimingField("音频 Offset（ms）", metadataOffsetBox),
+            TimingField("参考 BPM（显示/速度补偿）", MetadataActionRow(metadataBpmBox,
+                CommandButton("应用", (_, _) => ApplyTimingMetadata()), 62)),
+            TimingField("音频 Offset（ms，1 ms）", MetadataActionRow(metadataOffsetBox,
+                CommandButton("应用", (_, _) => ApplyTimingMetadata()), 62)),
             analysisButtons, metadataAudioAnalysisText,
             PrimaryButton("应用 Timing 基础信息", (_, _) => ApplyTimingMetadata())
         } };
@@ -13428,7 +13434,12 @@ public sealed partial class MainWindow : PlatformWindow
             InputElement.KeyDownEvent,
             TimingList_KeyDown,
             RoutingStrategies.Tunnel);
-        timingList.DoubleTapped += (_, _) => JumpToSelectedTiming();
+        timingList.DoubleTapped += async (_, _) =>
+        {
+            if (viewModel.ActiveTab is { } tab && OsuSourceEnvelope.HasSource(tab.Session.Document) && timingList.SelectedItem is TimingListItem selected)
+                await EditNativeTimingAsync(selected.Id);
+            else JumpToSelectedTiming();
+        };
 
         timingAddButton = InspectorActionButton(
             WindowsInspectorParityPolicy.Wpf110TimingActionLabels[0],
@@ -13504,14 +13515,14 @@ public sealed partial class MainWindow : PlatformWindow
                                 FontSize = 9
                             }
                         },
-                        new TextBlock
+                        (timingLayoutCaption = new TextBlock
                         {
                             Text = "Beat · Delay · BPM · Effect",
                             Foreground = MutedBrush,
                             FontSize = 11,
                             Margin = new Thickness(8, 0, 0, 0),
                             VerticalAlignment = VerticalAlignment.Center
-                        }
+                        })
                     }
                 },
                 timingPermissionText
@@ -13593,7 +13604,11 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetRow(effectAndList, 2);
         root.Children.Add(effectAndList);
         Grid.SetRow(actions, 3);
+        var nativeActions = BuildNativeTimingActions();
+        header.Children.Add(nativeActions);
         root.Children.Add(actions);
+        timingEditorRoot = root;
+        legacyTimingControls.AddRange([beatDelayBpm, effectFields, customFieldPanel, actions]);
         AutomationProperties.SetAutomationId(root, "Inspector.Timing.Root");
         timingList.MinHeight = 160;
         timingList.MaxHeight = 240;
@@ -18070,7 +18085,7 @@ public sealed partial class MainWindow : PlatformWindow
             metadataVersionBox.Text ?? string.Empty,
             metadataPreviewTimeBox.Text ?? string.Empty,
             metadataBpmBox.Text ?? string.Empty,
-            metadataOffsetBox.Text ?? string.Empty,
+            ReadTimingOffsetDraft(tab),
             metadataKeyCountBox.SelectedItem is WindowsMetadataKeyCountOption keyCount
                 ? keyCount.Value
                 : tab.Session.Document.KeyCount,
@@ -18094,8 +18109,10 @@ public sealed partial class MainWindow : PlatformWindow
             metadataCreatorBox.Text = draft.Creator;
             metadataVersionBox.Text = draft.Version;
             metadataPreviewTimeBox.Text = draft.PreviewTime;
-            metadataBpmBox.Text = draft.Bpm;
-            metadataOffsetBox.Text = draft.Offset;
+            metadataBpmBox.Text = double.TryParse(draft.Bpm, NumberStyles.Float, CultureInfo.InvariantCulture, out var bpm)
+                ? bpm.ToString("0.######", CultureInfo.InvariantCulture) : draft.Bpm;
+            metadataOffsetBox.Text = double.TryParse(draft.Offset, NumberStyles.Float, CultureInfo.InvariantCulture, out var offset)
+                ? FormatTimingMilliseconds(OsuSourceEnvelope.HasSource(tab.Session.Document) ? -offset : offset) : draft.Offset;
             metadataKeyCountBox.SelectedItem =
                 WindowsInspectorParityPolicy.Wpf110MetadataKeyCountOptions
                     .FirstOrDefault(option => option.Value == draft.KeyCount);
@@ -19028,8 +19045,8 @@ public sealed partial class MainWindow : PlatformWindow
         suppressMetadataEditorControls = true;
         try
         {
-            metadataOffsetBox.Text = offset.ToString("0.###", CultureInfo.InvariantCulture);
-            if (updateBpm) metadataBpmBox.Text = bpm.ToString("R", CultureInfo.InvariantCulture);
+            metadataOffsetBox.Text = FormatTimingMilliseconds(OsuSourceEnvelope.HasSource(tab.Session.Document) ? -offset : offset);
+            if (updateBpm) metadataBpmBox.Text = bpm.ToString("0.######", CultureInfo.InvariantCulture);
         }
         finally
         {
@@ -20031,8 +20048,10 @@ public sealed partial class MainWindow : PlatformWindow
         var canPaste = session != null && !session.IsReadOnly && viewModel.HasMixedSelectionClipboard &&
                        (viewModel.MixedClipboardNoteCount == 0 || session.CanEditNotes) &&
                        (viewModel.MixedClipboardEffectCount == 0 || session.CanEditTiming);
-        SetQuickShortcutEnabled("Undo", session != null && !session.IsReadOnly);
-        SetQuickShortcutEnabled("Redo", session != null && !session.IsReadOnly);
+        SetQuickShortcutEnabled("Undo", session?.CanUndo == true);
+        if (toolbarUndoButton != null) toolbarUndoButton.IsEnabled = session?.CanUndo == true;
+        SetQuickShortcutEnabled("Redo", session?.CanRedo == true);
+        if (toolbarRedoButton != null) toolbarRedoButton.IsEnabled = session?.CanRedo == true;
         SetQuickShortcutEnabled(
             "Cut",
             canMutateMixedSelection && (selectedNoteCount > 0 || selectedEffectCount > 0));
@@ -20081,6 +20100,7 @@ public sealed partial class MainWindow : PlatformWindow
         groupShowAllButton.IsEnabled = session != null;
         groupHideNonzeroButton.IsEnabled = session != null;
         groupClearSelectedButton.IsEnabled = canEditNotes;
+        UpdateNativeTimingControls(session);
         if (timingAddButton != null) timingAddButton.IsEnabled = canEditTiming;
         if (timingApplyButton != null)
             timingApplyButton.IsEnabled = canEditTiming && timingList.SelectedItem != null;
@@ -20660,12 +20680,13 @@ public sealed partial class MainWindow : PlatformWindow
         if (!force && timingListTabId == tab.Id && timingListChangeSerial == tab.Session.ChangeSerial)
             return;
 
+        var nativeTimingMap = OsuSourceEnvelope.HasSource(tab.Session.Document) ? new TimingMap(tab.Session.Document.Timing) : null;
         var items = tab.Session.Document.Timing
             .Select((timing, index) => new { Timing = timing, Index = index })
             .OrderBy(entry => entry.Timing.Beat)
             .ThenBy(entry => entry.Timing.Bpm.HasValue ? 0 : 1)
             .ThenBy(entry => entry.Index)
-            .Select(entry => CreateTimingListItem(entry.Timing))
+            .Select(entry => nativeTimingMap != null ? CreateNativeTimingListItem(entry.Timing, nativeTimingMap) : CreateTimingListItem(entry.Timing))
             .ToArray();
         suppressTimingSelection = true;
         try

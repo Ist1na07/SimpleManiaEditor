@@ -52,7 +52,9 @@ try{
         $result=Get-Content ($path+'.verified.json') -Raw | ConvertFrom-Json
         if(-not $result.AutoPlay -or $result.Accuracy -lt .999){throw 'Resident replay did not judge perfectly'}
         $keys=Get-Content ($path+'.shortcuts.json') -Raw | ConvertFrom-Json
-        if(-not $keys.ShiftPauseResume -or -not $keys.EscapeReturn){throw 'Shift/Escape keyboard verification failed'}
+        if(-not $keys.ShiftPauseResume -or -not $keys.PausePanelShown -or -not $keys.EscapeReturn){throw 'Shift/pause-panel/Escape keyboard verification failed'}
+        if($iteration -ge 1 -and -not $keys.EscapeFromPause){throw 'Escape from official pause panel was not verified'}
+        if($iteration -eq 2 -and -not $keys.ManualPause){throw 'Manual gameplay pause/Escape was not verified'}
         if($process.HasExited){throw 'Resident restarted/exited between requests'}
     }
     $request.SettingsOnly=$true;$path=Join-Path $testRoot 'settings.json'
