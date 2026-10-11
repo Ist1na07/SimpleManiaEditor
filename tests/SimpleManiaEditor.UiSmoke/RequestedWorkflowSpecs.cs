@@ -55,7 +55,7 @@ internal static class RequestedWorkflowSpecs
         var tabs = Field<TabControl>(window, "editorInspectorTabs");
         tabs.SelectedItem = Field<TabItem>(window, "timingInspectorTab"); Program.Pump(100);
         session.ReplaceDocument(original.Clone()); Program.Pump(100);
-        Require(!Find<Button>(window, "Editor.QuickUndo").IsEnabled && !Find<Button>(window, "Editor.Command.Redo").IsEnabled,
+        Require(!Find<Button>(window, "Editor.Command.Undo").IsEnabled && !Find<Button>(window, "Editor.Command.Redo").IsEnabled,
             "empty history buttons remain enabled");
         var count = session.Document.Timing.Count;
         Click(Find<Button>(window, "Timing.Native.Add"));
@@ -74,7 +74,7 @@ internal static class RequestedWorkflowSpecs
         using (var shot = dialog.CaptureRenderedFrame()!) shot.Save(Path.Combine(screenshots, "timing-draft.png"), PngBitmapEncoderOptions.Default);
         Click(Find<Button>(dialog, "Timing.Dialog.Apply"));
         Program.PumpUntil(() => session.Document.Timing.Count == count + 1);
-        Require(session.CanUndo && Find<Button>(window, "Editor.QuickUndo").IsEnabled && !Find<Button>(window, "Editor.Command.Redo").IsEnabled,
+        Require(session.CanUndo && Find<Button>(window, "Editor.Command.Undo").IsEnabled && !Find<Button>(window, "Editor.Command.Redo").IsEnabled,
             "history buttons did not follow a committed timing command");
         var green = session.Document.Timing.Single(t => t.Effect == TimingEffectKind.Scroll && t.EffectValue == 1.5);
         Require(OsuTimingPointSettings.Read(green).Kiai, "timing dialog did not apply Kiai");

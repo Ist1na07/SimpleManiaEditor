@@ -184,7 +184,7 @@ public sealed partial class MainWindow : PlatformWindow
     private readonly Button commandMenuButton = new();
     private Button? commandPlayButton;
     private Button? commandStopButton;
-    private Button? quickPlayPauseButton;
+
     private Button? commandFullscreenButton;
     private Button? difficultyAnalysisButton;
     private readonly TextBlock proModeLabel = new();
@@ -229,8 +229,7 @@ public sealed partial class MainWindow : PlatformWindow
     private bool roomChatInitialized;
     private bool roomChatSendInProgress;
     private long latestRoomMessageId;
-    private TextBlock? quickPlayLabel;
-    private AvaloniaPath? quickPlayIcon;
+
     private TextBlock? quickGroupLabel;
     private TextBlock? quickOwnerLockLabel;
     private readonly Grid editorWorkbench = new();
@@ -7058,18 +7057,6 @@ public sealed partial class MainWindow : PlatformWindow
     private Control BuildQuickEditPalette()
     {
         var left = new StackPanel { Spacing = 1 };
-        var quickUndoButton = QuickPaletteButton(
-            "撤销", "M6,3 L2,7 L6,11 M3,7 H10 C13,7 15,9 15,12",
-            (_, _) => ExecuteHistoryCommand(redo: false), out _);
-        AutomationProperties.SetAutomationId(quickUndoButton, "Editor.QuickUndo");
-        RegisterQuickShortcutButton("Undo", "撤销", quickUndoButton);
-        left.Children.Add(quickUndoButton);
-        var quickRedoButton = QuickPaletteButton(
-            "重做", "M11,3 L15,7 L11,11 M14,7 H7 C4,7 2,9 2,12",
-            (_, _) => ExecuteHistoryCommand(redo: true), out _);
-        AutomationProperties.SetAutomationId(quickRedoButton, "Editor.QuickRedo");
-        RegisterQuickShortcutButton("Redo", "重做", quickRedoButton);
-        left.Children.Add(quickRedoButton);
         var quickCutButton = QuickPaletteButton(
             "剪切", "M5,2 A2.5,2.5 0 1 0 5,7 A2.5,2.5 0 1 0 5,2 M5,10 A2.5,2.5 0 1 0 5,15 A2.5,2.5 0 1 0 5,10 M7,6 L15,14 M7,11 L15,3",
             (_, _) => CutMixedSelection(), out _);
@@ -7103,21 +7090,6 @@ public sealed partial class MainWindow : PlatformWindow
         left.Children.Add(mirrorButton);
 
         var right = new StackPanel { Spacing = 1 };
-        quickPlayPauseButton = QuickPaletteButton(
-            "播放", "M2,1 L13,7.5 L2,14 Z",
-            async (_, _) =>
-            {
-                await ToggleAudioPlaybackAsync();
-                timeline.Focus();
-            },
-            out var playLabel,
-            out var playIcon,
-            filledIcon: true);
-        quickPlayLabel = playLabel;
-        quickPlayIcon = playIcon;
-        AutomationProperties.SetAutomationId(quickPlayPauseButton, "Editor.QuickPlayPause");
-        RegisterQuickShortcutButton("PlayPause", "播放 / 暂停", quickPlayPauseButton);
-        right.Children.Add(quickPlayPauseButton);
         AddQuickTimelineToolButton(
             right, TimelineTool.Select, "选择", "M1,1 L13,9 L8.5,10 L11,15 L8.5,16 L5.8,11 L1,14 Z", true);
         AddQuickTimelineToolButton(
@@ -12557,6 +12529,7 @@ public sealed partial class MainWindow : PlatformWindow
                 laneVolume,
                 TimingField("Key 音文件", soundRow),
                 TimingField("Group（0 为未分组）", noteGroupBox),
+                BuildNoteCodeImport(),
                 actions,
                 new Border
                 {
@@ -15805,22 +15778,6 @@ public sealed partial class MainWindow : PlatformWindow
                         keySoundRuntime.Snapshot.IsSilentPlaying ||
                         editorSeekPending && editorSeekResumeRequested;
         ConfigureEditorFrameRateRuntime();
-        if (quickPlayLabel != null)
-            quickPlayLabel.Text = isPlaying ? "暂停" : "播放";
-        if (quickPlayIcon != null)
-        {
-            quickPlayIcon.Data = StreamGeometry.Parse(isPlaying
-                ? "M2,1 H6 V16 H2 Z M10,1 H14 V16 H10 Z"
-                : "M2,1 L13,7.5 L2,14 Z");
-            AutomationProperties.SetHelpText(
-                quickPlayIcon,
-                isPlaying ? "Icon=Pause" : "Icon=Play");
-        }
-        if (quickShortcutButtons.TryGetValue("PlayPause", out var quickPlay))
-        {
-            AutomationProperties.SetName(quickPlay.Button, isPlaying ? "暂停" : "播放");
-            ApplyQuickPaletteModeState(quickPlay.Button, isPlaying);
-        }
         RefreshQuickValuesPaletteValues();
     }
 
@@ -16518,8 +16475,7 @@ public sealed partial class MainWindow : PlatformWindow
                 AutomationProperties.SetHelpText(commandPlayButton, transportDiagnostics);
             if (commandStopButton != null)
                 AutomationProperties.SetHelpText(commandStopButton, transportDiagnostics);
-            if (quickPlayPauseButton != null)
-                AutomationProperties.SetHelpText(quickPlayPauseButton, transportDiagnostics);
+
             ToolTip.SetTip(audioStatusText, snapshot?.SourcePath);
         }
         finally
@@ -16856,7 +16812,13 @@ public sealed partial class MainWindow : PlatformWindow
     {
         var previous = settingProgrammaticPlaybackBeat;
         settingProgrammaticPlaybackBeat = true;
-        try { timeline.SetCurrentBeat(beat); }
+        try
+        {
+            timeline.SetCurrentBeat(beat);
+            // Persist the exact displayed transport position, even between the
+            // slower inspector updates. A note edit refresh must not rewind it.
+            viewModel.UpdateCurrentBeat(beat);
+        }
         finally { settingProgrammaticPlaybackBeat = previous; }
     }
 
@@ -20118,7 +20080,7 @@ public sealed partial class MainWindow : PlatformWindow
         var canMutateMixedSelection = session != null && !session.IsReadOnly &&
                                       (!needsNotePermission || session.CanEditNotes) &&
                                       (!needsTimingPermission || session.CanEditTiming);
-        var canPaste = session != null && !session.IsReadOnly && viewModel.HasMixedSelectionClipboard &&
+        var canPaste = session != null && !session.IsReadOnly && (session.CanEditNotes || viewModel.HasMixedSelectionClipboard) &&
                        (viewModel.MixedClipboardNoteCount == 0 || session.CanEditNotes) &&
                        (viewModel.MixedClipboardEffectCount == 0 || session.CanEditTiming);
         SetQuickShortcutEnabled("Undo", session?.CanUndo == true);
@@ -20317,7 +20279,8 @@ public sealed partial class MainWindow : PlatformWindow
         if (viewModel.ActiveTab == null) return;
         try
         {
-            _ = viewModel.CopyMixedSelection(timeline.SelectedTimingIds);
+            var copied = viewModel.CopyMixedSelection(timeline.SelectedTimingIds);
+            WriteNoteClipboard(viewModel.ActiveTab.Session.Document, copied.SnapshotNotes());
             UpdateEditorAvailability();
         }
         catch (InvalidOperationException exception)
@@ -20333,6 +20296,7 @@ public sealed partial class MainWindow : PlatformWindow
         try
         {
             var clipboard = viewModel.CopyMixedSelection(timeline.SelectedTimingIds);
+            WriteNoteClipboard(viewModel.ActiveTab.Session.Document, clipboard.SnapshotNotes());
             if (clipboard.IsEmpty) return;
             var result = viewModel.DeleteMixedSelection(timeline.SelectedTimingIds);
             if (!result.Applied) return;
@@ -20652,7 +20616,9 @@ public sealed partial class MainWindow : PlatformWindow
         }
     }
 
-    private void PasteMixedSelection()
+    private void PasteMixedSelection() => _ = PasteNoteClipboardAsync();
+
+    private void PasteInternalSelection()
     {
         if (TryExecuteTrackCommand("Paste")) return;
         var tab = viewModel.ActiveTab;

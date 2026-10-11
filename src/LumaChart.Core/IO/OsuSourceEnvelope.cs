@@ -197,6 +197,8 @@ public static class OsuSourceEnvelope
         return Math.Round(map.BeatToMilliseconds(note.Beat));
     }
 
+    public static string ExportNoteLine(ChartNote note, int keys, TimingMap map) => SerializeNote(note, keys, keys, map);
+
     private static string SerializeNote(ChartNote note, int keys, int originalKeys, TimingMap map)
     {
         var source = note.UnknownData?[ObjectKey] as JsonObject;

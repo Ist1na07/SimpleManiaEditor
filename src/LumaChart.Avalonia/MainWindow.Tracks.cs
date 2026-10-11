@@ -298,6 +298,7 @@ public sealed partial class MainWindow
         if (view.Track.Kind == EditorTrackKind.Reference)
             clipboard = clipboard.PatternOnly();
         viewModel.SetEditorClipboard(clipboard);
+        WriteNoteClipboard(session.Document, clipboard.SnapshotNotes());
         viewModel.SetStatus($"已从{view.Track.Name}复制 {clipboard.NoteCount} 个按键");
     }
 
@@ -404,7 +405,7 @@ public sealed partial class MainWindow
         var editable = !session.IsReadOnly && session.CanEditNotes;
         SetQuickShortcutEnabled("Copy", selected);
         SetQuickShortcutEnabled("Cut", selected && editable);
-        SetQuickShortcutEnabled("Paste", editable && viewModel.HasMixedSelectionClipboard);
+        SetQuickShortcutEnabled("Paste", editable);
         var historyEditable = activeSecondaryTrack.Track.Kind == EditorTrackKind.Hitsound
             ? viewModel.ActiveTab?.Session.IsReadOnly == false : editable;
         var history = activeSecondaryTrack.Track.Kind == EditorTrackKind.Hitsound ? viewModel.ActiveTab?.Session : session;

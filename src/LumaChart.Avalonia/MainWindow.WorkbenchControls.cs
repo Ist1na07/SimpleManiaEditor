@@ -176,7 +176,8 @@ public sealed partial class MainWindow
             column.Children.Clear();
             foreach (var button in buttons)
             {
-                if (quickTimelineToolButtons.Values.Contains(button)) continue;
+                if (quickTimelineToolButtons.Values.Contains(button) ||
+                    quickShortcutButtons.Any(pair => pair.Value.Button == button && pair.Key is "Undo" or "Redo" or "PlayPause")) continue;
                 var row = index / 2;
                 if (commands.RowDefinitions.Count <= row) commands.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
                 button.Width = double.NaN;
@@ -190,5 +191,6 @@ public sealed partial class MainWindow
         fixedToolRailBody.Children.Add(new Border { Height = 1, Background = StrokeBrush, Margin = new Thickness(0, 8) });
         fixedToolRailBody.Children.Add(ToolbarLabel("快捷编辑"));
         fixedToolRailBody.Children.Add(commands);
+        fixedToolRailBody.Children.Add(BuildSymmetryToolButton());
     }
 }

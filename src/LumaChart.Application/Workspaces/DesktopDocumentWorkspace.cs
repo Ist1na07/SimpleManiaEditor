@@ -589,7 +589,8 @@ public sealed class DesktopDocumentWorkspace
     {
         var tab = Tabs.FirstOrDefault(candidate => candidate.Id == tabId);
         if (tab == null) return false;
-        tab.CurrentBeat = double.IsFinite(currentBeat) ? Math.Max(0, currentBeat) : 0;
+        tab.CurrentBeat = double.IsFinite(currentBeat)
+            ? OsuSourceEnvelope.HasSource(tab.Session.Document) ? currentBeat : Math.Max(0, currentBeat) : 0;
         return true;
     }
 
@@ -1238,7 +1239,8 @@ public sealed class DesktopDocumentWorkspace
             osuTimingImportMode)
         {
             RequiresRecoverySaveAs = requiresRecoverySaveAs,
-            CurrentBeat = double.IsFinite(item.CurrentBeat) ? Math.Max(0, item.CurrentBeat) : 0,
+            CurrentBeat = double.IsFinite(item.CurrentBeat)
+                ? OsuSourceEnvelope.HasSource(session.Document) ? item.CurrentBeat : Math.Max(0, item.CurrentBeat) : 0,
             SourceSha256 = dirty && sourceChanged ? item.SourceSha256 : currentSourceHash ?? item.SourceSha256,
             WorkingSha256 = currentWorkingHash ?? item.WorkingSha256,
             SourceMissing = !sourceExists,

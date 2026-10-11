@@ -84,7 +84,7 @@ public sealed class WindowsEditorShortcutSettings
         new("ToolTap", "单键工具", true),
         new("ToolHold", "长键工具", true),
         new("ToolErase", "擦除工具", true),
-        new("ToggleSymmetry", "启用 / 关闭中心对车", true),
+        new("ToggleSymmetry", "划定 / 关闭中心对称", true),
         new("PlayPause", "播放 / 暂停", true),
         new("Delete", "删除 Note", true),
         new("StepForward", "向前一格", true),

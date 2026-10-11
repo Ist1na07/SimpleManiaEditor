@@ -35,10 +35,9 @@ internal static class CenterSymmetrySpecs
         session.Undo(); Require(session.Document.Notes.Count == 2, "selection completion was not one undo");
         session.Mutate(d => d.Notes.Add(new ChartNote { Lane = 6, Beat = new(15, 0, 1), EndBeat = new(16, 0, 1) }));
         serial = session.ChangeSerial;
-        try { CenterSymmetryService.CompleteSelection(session, settings); throw new Exception("conflict accepted"); }
-        catch (InvalidOperationException) { }
-        Require(serial == session.ChangeSerial && session.Document.Notes.Count == 3, "conflict partially changed chart");
-        session.Undo(); session.AllowOwnerProtectedEdits = false; session.AddOwnerProtectedRegion(new(14, 0, 1), new(16, 0, 1));
+        Require(CenterSymmetryService.CompleteSelection(session, settings) == 1 && session.Document.Notes.Count == 4,
+            "occupied mirrored head blocked the other free companion");
+        session.Undo(); session.Undo(); session.AllowOwnerProtectedEdits = false; session.AddOwnerProtectedRegion(new(14, 0, 1), new(16, 0, 1));
         try { CenterSymmetryService.CompleteSelection(session, settings); throw new Exception("protected region accepted"); }
         catch (InvalidOperationException) { }
         Require(session.Document.Notes.Count == 2, "protected destination partially changed chart");

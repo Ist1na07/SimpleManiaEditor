@@ -494,6 +494,8 @@ public sealed partial class TimelineSurface : Control
         set
         {
             if (ReferenceEquals(session, value)) return;
+            IsDefiningSymmetry = false; symmetryFirstPoint = null; symmetryDragEdge = null;
+            symmetryPointer?.Capture(null); symmetryPointer = null; SymmetrySettings = null;
             if (resizingHoldTail) FinishHoldTailResize(releaseCapture: false);
             if (erasingStroke) FinishEraseStroke();
             ReleaseInteractionCapture();
@@ -1476,6 +1478,7 @@ public sealed partial class TimelineSurface : Control
         var point = eventArgs.GetPosition(this);
         var geometry = GetGeometry(session.Document.KeyCount);
         var drawingTool = InteractionProfile == EditorInteractionProfile.OsuMania && (Tool is TimelineTool.Tap or TimelineTool.Hold);
+        if (HandleSymmetryPress(eventArgs, point, geometry)) return;
         if (middlePressed && !drawingTool || leftPressed && spacePanModifier && proEditorEnabled)
         {
             workspacePanning = true;
@@ -1807,6 +1810,7 @@ public sealed partial class TimelineSurface : Control
     {
         base.OnPointerMoved(eventArgs);
         placementHoverPoint = eventArgs.GetPosition(this);
+        if (HandleSymmetryMove(eventArgs)) return;
         if (Tool is TimelineTool.Tap or TimelineTool.Hold) InvalidateVisual();
         if (session == null) return;
         if (eventArgs.Pointer.Type == PointerType.Touch &&
@@ -2040,6 +2044,7 @@ public sealed partial class TimelineSurface : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs eventArgs)
     {
         base.OnPointerReleased(eventArgs);
+        if (HandleSymmetryRelease(eventArgs)) return;
         if (eventArgs.Pointer.Type == PointerType.Touch)
         {
             touchContacts.Remove(eventArgs.Pointer.Id);
@@ -2196,6 +2201,11 @@ public sealed partial class TimelineSurface : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs eventArgs)
     {
         base.OnPointerCaptureLost(eventArgs);
+        if (symmetryDragEdge != null)
+        {
+            symmetryDragEdge = null; symmetryPointer = null;
+            SymmetryRangeChanged?.Invoke(this, SymmetrySettings);
+        }
         touchContacts.Remove(eventArgs.Pointer.Id);
         EndTouchScrollIfLifted();
         interactionPointer = null;
@@ -2299,6 +2309,8 @@ public sealed partial class TimelineSurface : Control
     protected override void OnKeyDown(KeyEventArgs eventArgs)
     {
         base.OnKeyDown(eventArgs);
+        if (eventArgs.Key == Key.Escape && IsDefiningSymmetry)
+        { CancelSymmetryRange(); eventArgs.Handled = true; return; }
         if (session == null) return;
         var direction = eventArgs.Key switch
         {
@@ -2865,7 +2877,9 @@ public sealed partial class TimelineSurface : Control
     private void DeleteHitNote(ChartNote hit)
     {
         if (session == null || !CanBeginNoteEdit("删除")) return;
-        if (!session.AllowOwnerProtectedEdits && session.IsOwnerProtected(hit))
+        var ids = session.Selection.Count > 1
+            ? session.Selection.ToHashSet() : new HashSet<Guid> { hit.Id };
+        if (!session.AllowOwnerProtectedEdits && session.Document.Notes.Any(n => ids.Contains(n.Id) && session.IsOwnerProtected(n)))
         {
             StatusChanged?.Invoke(this, "该 Note 位于房主锁定选区，成员不能删除");
             return;
@@ -2873,12 +2887,12 @@ public sealed partial class TimelineSurface : Control
         var serial = session.ChangeSerial;
         try
         {
-            session.Selection.Remove(hit.Id);
-            session.Mutate(document => document.Notes.RemoveAll(note => note.Id == hit.Id));
+            session.Mutate(document => document.Notes.RemoveAll(note => ids.Contains(note.Id)));
+            session.Selection.ExceptWith(ids);
             if (session.ChangeSerial != serial)
             {
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
-                StatusChanged?.Invoke(this, "已删除 1 个 Note");
+                StatusChanged?.Invoke(this, $"已删除 {ids.Count} 个 Note");
             }
         }
         catch (Exception exception) when (IsExpectedEditException(exception))
@@ -3422,6 +3436,8 @@ public sealed partial class TimelineSurface : Control
 
     public void CancelInteraction()
     {
+        IsDefiningSymmetry = false; symmetryFirstPoint = null;
+        symmetryDragEdge = null; symmetryPointer?.Capture(null); symmetryPointer = null;
         ReleaseInteractionCapture();
         ResetPointerInteraction();
         InvalidateVisual();

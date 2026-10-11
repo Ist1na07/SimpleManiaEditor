@@ -1,7 +1,7 @@
 @echo off
-if not exist "%~dp0dist\SimpleManiaEditor-0.1.19\SimpleManiaEditor.exe" (
+if not exist "%~dp0dist\SimpleManiaEditor-0.1.20\SimpleManiaEditor.exe" (
   echo The portable build is missing. See README.md for build instructions.
   pause
   exit /b 1
 )
-start "" "%~dp0dist\SimpleManiaEditor-0.1.19\SimpleManiaEditor.exe" "%~dp0dist\SimpleManiaEditor-0.1.19\examples\7K-Sandbox\7K Sandbox.osu"
+start "" "%~dp0dist\SimpleManiaEditor-0.1.20\SimpleManiaEditor.exe" "%~dp0dist\SimpleManiaEditor-0.1.20\examples\7K-Sandbox\7K Sandbox.osu"

@@ -7,7 +7,7 @@ public sealed record CenterSymmetrySettings(BeatPosition Start, BeatPosition End
     public void Validate(int keyCount)
     {
         if (Start.Denominator <= 0 || End.Denominator <= 0 || End.CompareTo(Start) <= 0)
-            throw new ArgumentException("中心对车的终点必须晚于起点。");
+            throw new ArgumentException("中心对称的终点必须晚于起点。");
         if (Columns.Count == 0 || Columns.Distinct().Count() != Columns.Count || Columns.Any(c => c < 0 || c >= keyCount))
             throw new ArgumentException("请选择有效且不重复的参与列。");
     }
@@ -41,8 +41,8 @@ public static class CenterSymmetryService
             throw new InvalidOperationException("中心对称位置早于当前谱面允许范围，未放置任何新按键。");
         if (!session.AllowOwnerProtectedEdits && session.IntersectsOwnerProtectedRegion(candidate.Beat, candidate.EndBeat ?? candidate.Beat))
             throw new InvalidOperationException("中心对称位置位于锁定范围，未放置任何新按键。");
-        if (occupied.Any(n => !SamePosition(n, candidate)))
-            throw new InvalidOperationException("中心对称位置已有不同按键；请先处理该按键或关闭中心对车。");
+        // Any occupied head is left intact, including a tap at the mirrored LN
+        // head. Drawing a source must not fail just because its pair is occupied.
         return occupied.Count == 0;
     }
 
