@@ -23,7 +23,8 @@ public sealed partial class MainWindow
         foreach (var control in this.GetLogicalDescendants().OfType<Control>().Distinct().ToArray())
         {
             if (control is ComboBox picker) EnableOptionWheel(picker);
-            else if (control is Slider slider && slider != audioPositionSlider) EnableOptionWheel(slider);
+            else if (control is Slider slider && slider != audioPositionSlider)
+            { EnableOptionWheel(slider); ConfigureSmoothSlider(slider); }
         }
         var defaults = WindowsEditorViewSettings.Default;
         foreach (var (slider, value) in new (Slider, double)[]
@@ -103,6 +104,21 @@ public sealed partial class MainWindow
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
         RefreshOptionResets();
+    }
+
+    internal static void ConfigureSmoothSlider(Slider slider)
+    {
+        if (AutomationProperties.GetAutomationId(slider) == "Editor.Adjustment.Grid") return;
+        slider.IsSnapToTickEnabled = false;
+        slider.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
+        {
+            // Thumb drag is continuous; clicks on the track select marked values.
+            var source = e.Source as Control;
+            var thumb = source is Thumb || (source != null && global::Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(source).Any(a => a is Thumb));
+            slider.IsSnapToTickEnabled = !thumb;
+        }, RoutingStrategies.Tunnel);
+        slider.AddHandler(InputElement.PointerReleasedEvent, (_, _) => slider.IsSnapToTickEnabled = false, RoutingStrategies.Bubble, handledEventsToo: true);
+        slider.PointerCaptureLost += (_, _) => slider.IsSnapToTickEnabled = false;
     }
 
     private static bool Close(double first, double second) => Math.Abs(first - second) < .0001;

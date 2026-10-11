@@ -40,12 +40,15 @@ public sealed partial class MainWindow
 
     private Control CreateUnifiedBoard(Control mainContent)
     {
+        InitializeGlobalOverviewVisibility();
         mainTrackFrame = RegisterBoardFrame("main", "主轨", 640, mainContent);
         // Initialize existing overview behavior, then reparent the renderers into common compact containers.
         _ = BuildOverviewPanel(); _ = BuildDifficultyOverviewPanel();
         DetachControl(editorOverview); DetachControl(difficultyOverview);
         globalDensityPanel = (Border)BuildGlobalOverview(editorOverview, "全局密度", "Density", globalDensityBox);
         globalDifficultyPanel = (Border)BuildGlobalOverview(difficultyOverview, "全局难度", "Difficulty", globalDifficultyBox);
+        globalDensityPanel.IsVisible = globalDensityBox.IsChecked == true;
+        globalDifficultyPanel.IsVisible = globalDifficultyBox.IsChecked == true;
         globalOverviewPanel.Children.Add(globalDensityPanel); globalOverviewPanel.Children.Add(globalDifficultyPanel);
         waveformSideSurface.IsHitTestVisible = true;
         spectrogramSideSurface.IsHitTestVisible = true;

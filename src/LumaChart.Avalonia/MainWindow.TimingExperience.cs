@@ -78,7 +78,7 @@ public sealed partial class MainWindow
         var native = session != null && OsuSourceEnvelope.HasSource(session.Document);
         if (timingEditorRoot != null) timingEditorRoot.MinHeight = native ? 0 : 420;
         timingList.MinHeight = native ? 80 : 160;
-        if (timingLayoutCaption != null) timingLayoutCaption.Text = native ? "ms · BPM / SV · 音量 · Kiai" : "Beat · Delay · BPM · Effect";
+        if (timingLayoutCaption != null) timingLayoutCaption.Text = native ? (osuMinimalMode ? "ms · BPM · Kiai" : "ms · BPM / SV · 音量 · Kiai") : "Beat · Delay · BPM · Effect";
         if (nativeTimingActions != null) nativeTimingActions.IsVisible = native;
         foreach (var control in legacyTimingControls) control.IsVisible = !native;
         var editable = session != null && !session.IsReadOnly && session.CanEditTiming;
@@ -91,14 +91,14 @@ public sealed partial class MainWindow
     {
         if (viewModel.ActiveTab is not { } tab || !OsuSourceEnvelope.HasSource(tab.Session.Document)) return;
         var existing = id.HasValue ? tab.Session.Document.Timing.FirstOrDefault(t => t.Id == id) : null;
-        if (id.HasValue && existing == null) return;
+        if (id.HasValue && (existing == null || osuMinimalMode && !existing.Bpm.HasValue)) return;
         var map = new TimingMap(tab.Session.Document.Timing);
         var milliseconds = existing == null ? map.BeatToMilliseconds(BeatPosition.FromDouble(timeline.CurrentBeat)) : map.BeatToMilliseconds(existing.Beat);
         var inherited = existing ?? tab.Session.Document.Timing.Where(t => map.BeatToMilliseconds(t.Beat) <= milliseconds)
             .OrderBy(t => t.Beat).ThenBy(t => t.Bpm.HasValue ? 0 : 1).LastOrDefault();
         var initial = new OsuTimingEdit(milliseconds, existing?.Bpm.HasValue ?? true, existing?.Bpm ?? existing?.EffectValue ?? map.BpmAt(BeatPosition.FromDouble(timeline.CurrentBeat)),
             inherited == null ? new OsuTimingPointSettings() : OsuTimingPointSettings.Read(inherited));
-        var result = await new OsuTimingDialog(id.HasValue, initial).ShowDialog<OsuTimingEdit?>(this);
+        var result = await new OsuTimingDialog(id.HasValue, initial, osuMinimalMode).ShowDialog<OsuTimingEdit?>(this);
         if (result == null) return;
         try
         {

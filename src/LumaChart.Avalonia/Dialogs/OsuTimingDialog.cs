@@ -25,19 +25,20 @@ internal sealed class OsuTimingDialog : Window
     private readonly TextBlock error = new() { Foreground = Brushes.OrangeRed, TextWrapping = TextWrapping.Wrap };
     private readonly int originalEffects;
 
-    internal OsuTimingDialog(bool editing, OsuTimingEdit initial)
+    internal OsuTimingDialog(bool editing, OsuTimingEdit initial, bool minimal = false)
     {
         Title = editing ? "编辑 Timing 事件" : "新增 Timing 事件";
         Width = 410; SizeToContent = SizeToContent.Height; CanResize = false; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = new SolidColorBrush(Color.Parse("#1B2023")); Foreground = Brushes.White;
         originalEffects = initial.Settings.Effects;
-        type.ItemsSource = new[] { "BPM（红线）", "SV / 音效（绿线）" }; type.SelectedIndex = initial.IsBpm ? 0 : 1;
+        type.ItemsSource = minimal ? new[] { "BPM（红线）" } : new[] { "BPM（红线）", "SV / 音效（绿线）" }; type.SelectedIndex = initial.IsBpm ? 0 : 1;
         sampleSet.ItemsSource = new[] { "默认", "Normal", "Soft", "Drum" }; sampleSet.SelectedIndex = initial.Settings.SampleSet;
         var roundedTime = Math.Round(initial.Milliseconds, MidpointRounding.AwayFromZero);
         time.Text = (roundedTime == 0 ? 0 : roundedTime).ToString("0", CultureInfo.InvariantCulture);
         value.Text = initial.Value.ToString("0.######", CultureInfo.InvariantCulture);
         meter.Text = initial.Settings.Meter.ToString(CultureInfo.InvariantCulture);
         sampleIndex.Text = initial.Settings.SampleIndex.ToString(CultureInfo.InvariantCulture);
+        MainWindow.ConfigureSmoothSlider(volume);
         volume.Value = initial.Settings.Volume; kiai.IsChecked = initial.Settings.Kiai;
         var volumeText = new TextBlock { Text = $"{volume.Value:0}%" };
         volume.ValueChanged += (_, e) => volumeText.Text = $"{e.NewValue:0}%";
@@ -67,6 +68,12 @@ internal sealed class OsuTimingDialog : Window
             Field("事件音量", volume), volumeText, kiai, error,
             new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Children = { cancel, apply } }
         } };
+        if (minimal && Content is StackPanel fields)
+        {
+            // Preserve inherited audio fields internally; only expose BPM, meter and Kiai.
+            foreach (var field in fields.Children.OfType<StackPanel>().Where(p => p.Children.Contains(sampleSet) || p.Children.Contains(sampleIndex) || p.Children.Contains(volume))) field.IsVisible = false;
+            volumeText.IsVisible = false;
+        }
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { Close(); e.Handled = true; } else if (e.Key == Key.Enter) { Apply(); e.Handled = true; } };
     }
     private void Apply()

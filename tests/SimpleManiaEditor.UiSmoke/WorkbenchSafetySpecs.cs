@@ -33,7 +33,7 @@ internal static class WorkbenchSafetySpecs
         var position = global.TranslatePoint(new Point(), window)!.Value;
         bar.Value = bar.Maximum; Program.Pump(100);
         Require(global.TranslatePoint(new Point(), window) == position && !global.GetVisualAncestors().Contains(scroller), "global density moves with board");
-        var visibility = Find<CheckBox>(window, "Settings.GlobalDensity");
+        var visibility = ((Control)((Flyout)Find<Button>(window, "Editor.Views").Flyout!).Content!).GetLogicalDescendants().OfType<CheckBox>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Views.GlobalDensity");
         visibility.IsChecked = false; Program.Pump(50);
         Require(!global.IsVisible && !EditorPresentationSettingsStore.LoadGlobalDensity(), "global density hide did not persist");
         visibility.IsChecked = true;

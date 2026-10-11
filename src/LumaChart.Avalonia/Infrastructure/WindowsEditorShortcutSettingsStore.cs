@@ -45,6 +45,9 @@ public enum WindowsEditorShortcutRoute
     ToolHold,
     ToolErase,
     ToggleSymmetry,
+    Mirror,
+    Flip,
+    AddBookmark,
     PlayPause,
     Delete,
     StepForward,
@@ -84,6 +87,9 @@ public sealed class WindowsEditorShortcutSettings
         new("ToolTap", "单键工具", true),
         new("ToolHold", "长键工具", true),
         new("ToolErase", "擦除工具", true),
+        new("Mirror", "左右镜像", true),
+        new("Flip", "上下翻转", true),
+        new("AddBookmark", "在当前位置添加跳转标记", true),
         new("ToggleSymmetry", "划定 / 关闭中心对称", true),
         new("PlayPause", "播放 / 暂停", true),
         new("Delete", "删除 Note", true),
@@ -92,16 +98,6 @@ public sealed class WindowsEditorShortcutSettings
         new("GoHome", "回到开头", true),
         new("TogglePro", "切换 ProEditor", true),
         new("ToggleFullscreen", "全屏 / 退出全屏", true),
-        new("Group0", "切换分组 0", true),
-        new("Group1", "切换分组 1", true),
-        new("Group2", "切换分组 2", true),
-        new("Group3", "切换分组 3", true),
-        new("Group4", "切换分组 4", true),
-        new("Group5", "切换分组 5", true),
-        new("Group6", "切换分组 6", true),
-        new("Group7", "切换分组 7", true),
-        new("Group8", "切换分组 8", true),
-        new("Group9", "切换分组 9", true),
         new("SnapIncrease", "加分度", true),
         new("SnapDecrease", "减分度", true),
         new("SnapSetFixed", "切换到固定分度", true)
@@ -142,6 +138,9 @@ public sealed class WindowsEditorShortcutSettings
             ["ToolHold"] = "E",
             ["ToolErase"] = "R",
             ["ToggleSymmetry"] = "F6",
+            ["Mirror"] = "Ctrl+H",
+            ["Flip"] = "Ctrl+G",
+            ["AddBookmark"] = "Ctrl+B",
             ["PlayPause"] = "Space",
             ["Delete"] = "Delete",
             ["StepForward"] = "Up",
@@ -149,16 +148,6 @@ public sealed class WindowsEditorShortcutSettings
             ["GoHome"] = "Home",
             ["TogglePro"] = "P",
             ["ToggleFullscreen"] = "F11",
-            ["Group0"] = "D0",
-            ["Group1"] = "D1",
-            ["Group2"] = "D2",
-            ["Group3"] = "D3",
-            ["Group4"] = "D4",
-            ["Group5"] = "D5",
-            ["Group6"] = "D6",
-            ["Group7"] = "D7",
-            ["Group8"] = "D8",
-            ["Group9"] = "D9",
             ["SnapIncrease"] = "=",
             ["SnapDecrease"] = "-",
             ["SnapSetFixed"] = "Ctrl+="
@@ -172,7 +161,6 @@ public sealed class WindowsEditorShortcutSettings
         bindings["ToolTap"] = "D2";
         bindings["ToolHold"] = "D3";
         bindings["ToolErase"] = "D4";
-        for (var i = 0; i <= 9; i++) bindings[$"Group{i}"] = $"Alt+D{i}";
         return bindings;
     }
 
@@ -190,7 +178,7 @@ public sealed class WindowsEditorShortcutSettings
             StringComparer.OrdinalIgnoreCase);
         foreach (var pair in CreateDefaults(Profile))
             if (!Bindings.TryGetValue(pair.Key, out var value) || value == null)
-                Bindings[pair.Key] = pair.Key == "ToggleSymmetry" && Bindings.Any(existing =>
+                Bindings[pair.Key] = Bindings.Any(existing =>
                     existing.Key != pair.Key && string.Equals(existing.Value, pair.Value, StringComparison.OrdinalIgnoreCase))
                     ? string.Empty : pair.Value;
     }
@@ -375,6 +363,9 @@ public static class WindowsEditorShortcutRouting
             "ToolTap" => new(WindowsEditorShortcutRoute.ToolTap),
             "ToolHold" => new(WindowsEditorShortcutRoute.ToolHold),
             "ToolErase" => new(WindowsEditorShortcutRoute.ToolErase),
+            "Mirror" => new(WindowsEditorShortcutRoute.Mirror),
+            "Flip" => new(WindowsEditorShortcutRoute.Flip),
+            "AddBookmark" => new(WindowsEditorShortcutRoute.AddBookmark),
             "ToggleSymmetry" => new(WindowsEditorShortcutRoute.ToggleSymmetry),
             "PlayPause" => new(WindowsEditorShortcutRoute.PlayPause),
             "Delete" => new(WindowsEditorShortcutRoute.Delete),

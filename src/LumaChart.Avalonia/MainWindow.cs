@@ -5296,7 +5296,7 @@ public sealed partial class MainWindow : PlatformWindow
         extensionMenuButton = CommandButton("拓展功能", (_, _) => ToggleExtensionPalette());
         AutomationProperties.SetAutomationId(extensionMenuButton, "Editor.Extension.Toggle");
         ToolTip.SetTip(extensionMenuButton, "打开可移动的谱面拓展工具");
-        editCommands.Children.Add(extensionMenuButton);
+
 
         Grid.SetColumn(editCommands, 2);
         commandLayout.Children.Add(editCommands);
@@ -5512,7 +5512,6 @@ public sealed partial class MainWindow : PlatformWindow
             metadataInspectorTab,
             timingInspectorTab,
             noteInspectorTab,
-            groupInspectorTab,
             settingsInspectorTab
         };
         editorInspectorTabs.ItemsSource = inspectorTabs;
@@ -5764,6 +5763,7 @@ public sealed partial class MainWindow : PlatformWindow
                     issue,
                     tab.HiddenGroups));
         };
+        editorOverview.NavigationMarkerDeleteRequested += RemoveNavigationMarker;
         AutomationProperties.SetAutomationId(editorOverview, "Editor.Overview");
         AutomationProperties.SetName(editorOverview, "Note 密度峰值");
         miniNoteCountText.Text = "0";
@@ -6135,6 +6135,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         viewModel.ReplaceNavigationMarkers(tab.Id, updated);
         editorOverview.SetNavigationMarkers(tab.NavigationMarkers);
+        difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
         RefreshEventTimeRuler();
         RefreshNavigationMarkerUi();
         ScheduleNavigationMarkerSave();
@@ -6152,6 +6153,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (updated.Count == tab.NavigationMarkers.Count) return;
         viewModel.ReplaceNavigationMarkers(tab.Id, updated);
         editorOverview.SetNavigationMarkers(tab.NavigationMarkers);
+        difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
         RefreshEventTimeRuler();
         RefreshNavigationMarkerUi();
         ScheduleNavigationMarkerSave();
@@ -6765,7 +6767,7 @@ public sealed partial class MainWindow : PlatformWindow
             : null;
         var document = tab.Session.Document;
         difficultyOverview.SetResult(result);
-        difficultyOverview.SetEndBeat(Math.Max(1, document.EndBeat));
+        difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
         difficultyOverview.SetCurrentBeat(timeline.CurrentBeat);
         difficultyStarText.Text = document.KeyCount != 4
             ? "N/A"
@@ -7086,8 +7088,12 @@ public sealed partial class MainWindow : PlatformWindow
             (_, _) => MirrorVisibleSelection(), out _);
         quickMirrorButton = mirrorButton;
         AutomationProperties.SetAutomationId(mirrorButton, "Editor.QuickMirror");
-        ToolTip.SetTip(mirrorButton, "水平镜像选中的可见 Note");
+        RegisterQuickShortcutButton("Mirror", "左右镜像选中的 Note", mirrorButton);
         left.Children.Add(mirrorButton);
+        var flip = QuickPaletteButton("翻转", "M1,8 H16 M4,5 L8,1 L12,5 M4,11 L8,15 L12,11", (_, _) => FlipVisibleSelection(), out _);
+        AutomationProperties.SetAutomationId(flip, "Editor.QuickFlip");
+        RegisterQuickShortcutButton("Flip", "上下翻转选中的 Note", flip);
+        left.Children.Add(flip);
 
         var right = new StackPanel { Spacing = 1 };
         AddQuickTimelineToolButton(
@@ -7108,14 +7114,14 @@ public sealed partial class MainWindow : PlatformWindow
         quickGroupLabel = groupLabel;
         AutomationProperties.SetAutomationId(quickGroupButton, "Editor.QuickGroup");
         ToolTip.SetTip(quickGroupButton, "设置当前放置分组");
-        right.Children.Add(quickGroupButton);
+        quickGroupButton.IsVisible = false;
         var effectButton = QuickPaletteButton(
             "效果", "M8.5,2 V15 M2,8.5 H15",
             (_, _) => BeginQuickEffectEdit(), out _);
         quickEffectButton = effectButton;
         AutomationProperties.SetAutomationId(effectButton, "Editor.QuickEffect");
         ToolTip.SetTip(effectButton, "在红线位置准备添加 Effect");
-        right.Children.Add(effectButton);
+        right.Children.Add(FullModeOnly(effectButton));
         quickOwnerLockButton = QuickPaletteButton(
             "锁定选区", "M5,8 V5.5 A3.5,3.5 0 0 1 12,5.5 V8 M3,8 H14 V15 H3 Z",
             async (_, _) => await ToggleOwnerLockSelectionAsync(), out var ownerLockLabel);
@@ -9720,7 +9726,7 @@ public sealed partial class MainWindow : PlatformWindow
             BuildOfficialPlaytestSettings(),
             BuildLanguageSettings(),
             BuildEditorViewSettings(),
-            BuildGlobalOverviewSettings(),
+            BuildEditorModeSettings(),
             BuildBackupCacheSettings(),
             BuildShortcutSettings(),
             SettingsSection("音量与音频", "编辑音乐、打击音；试玩中可使用官方音量设置", "Settings.AudioSection", BuildAudioTransport()),
@@ -12479,7 +12485,7 @@ public sealed partial class MainWindow : PlatformWindow
             Children =
             {
                 TimingField("主轨 1–K；草稿写 D:列号", noteLaneBox),
-                TimingField("音量 0–100", noteVolumeBox)
+                FullModeOnly(TimingField("音量 0–100", noteVolumeBox))
             }
         };
         Grid.SetColumn(laneVolume.Children[1], 2);
@@ -12527,8 +12533,8 @@ public sealed partial class MainWindow : PlatformWindow
                 TimingField("Beat", noteBeatBox),
                 TimingField("End Beat（Tap 可留空）", noteEndBeatBox),
                 laneVolume,
-                TimingField("Key 音文件", soundRow),
-                TimingField("Group（0 为未分组）", noteGroupBox),
+                FullModeOnly(TimingField("Key 音文件", soundRow)),
+
                 BuildNoteCodeImport(),
                 actions,
                 new Border
@@ -13108,7 +13114,7 @@ public sealed partial class MainWindow : PlatformWindow
             {
                 TimingField("音乐音量", audioVolumeSlider),
                 audioVolumeText,
-                BuildKeySoundPanel(),
+                FullModeOnly(BuildKeySoundPanel()),
                 audioPreservePitchBox,
                 new TextBlock
                 {
@@ -15567,7 +15573,16 @@ public sealed partial class MainWindow : PlatformWindow
                 ToggleFullscreen();
                 break;
             case WindowsEditorShortcutRoute.Group:
-                SetPlacementGroup(command.Group ?? 0);
+                // Group editing is temporarily unavailable.
+                break;
+            case WindowsEditorShortcutRoute.Mirror:
+                MirrorVisibleSelection();
+                break;
+            case WindowsEditorShortcutRoute.Flip:
+                FlipVisibleSelection();
+                break;
+            case WindowsEditorShortcutRoute.AddBookmark:
+                AddNavigationMarker();
                 break;
             case WindowsEditorShortcutRoute.SnapIncrease:
                 AdjustQuickSnap(1);
@@ -16372,9 +16387,7 @@ public sealed partial class MainWindow : PlatformWindow
             ? GetAudioTimingMap(tab).MillisecondsToBeat(duration.TotalMilliseconds).Value
             : 0;
         editorOverview.SetExternalEndBeat(overviewAudioEndBeat);
-        difficultyOverview.SetEndBeat(Math.Max(
-            tab != null ? GetDocumentEndBeat(tab) : 1,
-            overviewAudioEndBeat));
+        difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
         suppressAudioControls = true;
         try
         {
@@ -17666,6 +17679,7 @@ public sealed partial class MainWindow : PlatformWindow
             editorOverview.Session = activeTab.Session;
             editorOverview.SetIssues(timeline.ChartIssues);
             editorOverview.SetNavigationMarkers(activeTab.NavigationMarkers);
+            difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
             eventTimeRuler.SetDocument(activeTab.Session, GetAudioTimingMap(activeTab), audioTransport.PlaybackSnapshot?.Duration.TotalMilliseconds ?? 0, activeTab.NavigationMarkers);
             editorOverview.SetCurrentBeat(IsEditorPlaybackActive() && ReferenceEquals(activeTab, keySoundActiveTab) ? timeline.CurrentBeat : activeTab.CurrentBeat);
             RefreshNavigationMarkerUi();
@@ -17676,7 +17690,8 @@ public sealed partial class MainWindow : PlatformWindow
                 persistedProGridColumns,
                 activeTab.Session.Document.KeyCount);
             timeline.SetProGridColumnCount(persistedProGridColumns);
-            timeline.PlacementGroup = activeTab.ActivePlacementGroup;
+            activeTab.HiddenGroups.Clear(); activeTab.ActivePlacementGroup = 0;
+            timeline.PlacementGroup = 0;
             if (quickGroupLabel != null)
                 quickGroupLabel.Text = AvaloniaLocalizationCatalog.Format("分组 {0}", activeTab.ActivePlacementGroup);
             timeline.SetHiddenGroups(activeTab.HiddenGroups);
@@ -19197,7 +19212,8 @@ public sealed partial class MainWindow : PlatformWindow
 
         var snapshot = WindowsGroupManagerCommand.ReadSnapshot(tab);
         SyncKeySoundHiddenGroups(tab);
-        timeline.PlacementGroup = snapshot.ActivePlacementGroup;
+        timeline.PlacementGroup = 0;
+        tab.HiddenGroups.Clear();
         timeline.SetHiddenGroups(tab.HiddenGroups);
         currentPlacementGroupText.Text = snapshot.ActivePlacementGroup == 0
             ? "未分组（0）"
@@ -20721,6 +20737,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         var nativeTimingMap = OsuSourceEnvelope.HasSource(tab.Session.Document) ? new TimingMap(tab.Session.Document.Timing) : null;
         var items = tab.Session.Document.Timing
+            .Where(timing => !osuMinimalMode || timing.Bpm.HasValue)
             .Select((timing, index) => new { Timing = timing, Index = index })
             .OrderBy(entry => entry.Timing.Beat)
             .ThenBy(entry => entry.Timing.Bpm.HasValue ? 0 : 1)
@@ -24098,7 +24115,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         var optionsDialog = new ChartExportDialog(
             displayScaleSettings.UiScale,
-            displayScaleSettings.FontScale);
+            displayScaleSettings.FontScale, tab.Session.Document.Metadata.OverallDifficulty, tab.Session.Document.Metadata.HpDrainRate);
         if (!await optionsDialog.ShowDialog<bool>(this) ||
             optionsDialog.Options is not { } options)
             return;

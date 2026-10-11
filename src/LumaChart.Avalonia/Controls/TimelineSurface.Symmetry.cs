@@ -55,8 +55,8 @@ public sealed partial class TimelineSurface
         if (SymmetrySettings is not { } settings) return false;
         var rect = SymmetryBounds(settings, geometry);
         const double grip = 6;
-        if (point.X >= rect.Left - grip && point.X <= rect.Right + grip && Math.Abs(point.Y - rect.Top) <= grip) symmetryDragEdge = "end";
-        else if (point.X >= rect.Left - grip && point.X <= rect.Right + grip && Math.Abs(point.Y - rect.Bottom) <= grip) symmetryDragEdge = "start";
+        if (Tool == TimelineTool.Select && point.X >= rect.Left - grip && point.X <= rect.Right + grip && Math.Abs(point.Y - rect.Top) <= grip) symmetryDragEdge = "end";
+        else if (Tool == TimelineTool.Select && point.X >= rect.Left - grip && point.X <= rect.Right + grip && Math.Abs(point.Y - rect.Bottom) <= grip) symmetryDragEdge = "start";
         else if (point.Y >= rect.Top && point.Y <= rect.Bottom && Math.Abs(point.X - rect.Left) <= grip) symmetryDragEdge = "left";
         else if (point.Y >= rect.Top && point.Y <= rect.Bottom && Math.Abs(point.X - rect.Right) <= grip) symmetryDragEdge = "right";
         else return false;

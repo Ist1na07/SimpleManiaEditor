@@ -57,6 +57,7 @@ internal static class RequestedWorkflowSpecs
         session.ReplaceDocument(original.Clone()); Program.Pump(100);
         Require(!Find<Button>(window, "Editor.Command.Undo").IsEnabled && !Find<Button>(window, "Editor.Command.Redo").IsEnabled,
             "empty history buttons remain enabled");
+        Find<ComboBox>(window, "Settings.EditorMode").SelectedIndex = 1;
         var count = session.Document.Timing.Count;
         Click(Find<Button>(window, "Timing.Native.Add"));
         Program.PumpUntil(() => window.OwnedWindows.OfType<OsuTimingDialog>().Any());
@@ -98,6 +99,7 @@ internal static class RequestedWorkflowSpecs
         Require(session.Document.GetOrCreateSongOffsetTiming().Delay == -813 && offset.Text == "813", "osu offset did not apply its timestamp/normalize to 1 ms");
         session.ReplaceDocument(original); Program.Pump(100);
         tabs.SelectedItem = Field<TabItem>(window, "settingsInspectorTab"); Program.Pump(100);
+        Find<ComboBox>(window, "Settings.EditorMode").SelectedIndex = 0;
         RunPointer(screenshots);
         Console.WriteLine("PASS independent persisted playtest rate, filtered grids, collapsed display settings, native Timing draft/cancel/apply/Kiai and history limits");
     }

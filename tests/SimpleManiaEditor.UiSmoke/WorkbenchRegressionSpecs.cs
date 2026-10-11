@@ -207,6 +207,7 @@ internal static class WorkbenchRegressionSpecs
         Require(timeline.CurrentBeat == 4, "independent reference navigation moved main chart");
         timeline.NavigateToBeat(10);
         Require(referenceSurface.CurrentBeat == 6, "main scroll changed an unsynchronized reference");
+        window.GetLogicalDescendants().OfType<ComboBox>().Distinct().Single(c => AutomationProperties.GetAutomationId(c) == "Settings.EditorMode").SelectedIndex = 1;
         Add(window, EditorTrackKind.Hitsound);
         var hitsound = workspace.Tracks.Single(t => t.Kind == EditorTrackKind.Hitsound);
         var hitView = View(window, hitsound.Id);
@@ -238,6 +239,7 @@ internal static class WorkbenchRegressionSpecs
         using (var frame = window.CaptureRenderedFrame()!) frame.Save(Path.Combine(screenshots, "workbench-tracks.png"), PngBitmapEncoderOptions.Default);
         Field<ComboBox>(window, "fixedRatePicker").SelectedItem = 1d;
         Program.PumpUntil(() => transport.PlaybackSnapshot?.PlaybackRate == 1);
+        window.GetLogicalDescendants().OfType<ComboBox>().Distinct().Single(c => AutomationProperties.GetAutomationId(c) == "Settings.EditorMode").SelectedIndex = 0;
         Console.WriteLine("PASS grid notation, Shift speed, marked sliders, category layout, editable/recoverable draft, reference time sync, hitsound and metric tracks");
     }
 

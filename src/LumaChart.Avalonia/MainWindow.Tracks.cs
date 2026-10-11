@@ -56,6 +56,7 @@ public sealed partial class MainWindow
             (EditorTrackKind.Reference, "添加其他谱面对照轨…"), (EditorTrackKind.Hitsound, "添加 hitsound 编辑轨"),
             (EditorTrackKind.Density, "添加局部密度轨"), (EditorTrackKind.Difficulty, "添加局部难度轨（实验）") })
         {
+            if (osuMinimalMode && kind == EditorTrackKind.Hitsound) continue;
             var item = new MenuItem { Header = name };
             AutomationProperties.SetAutomationId(item, $"Editor.AddTrack.{kind}");
             item.Click += async (_, _) =>
@@ -66,7 +67,7 @@ public sealed partial class MainWindow
             };
             items.Add(item);
         }
-        foreach (var hidden in activeTrackWorkspace?.Tracks.Where(t => !t.Visible) ?? [])
+        foreach (var hidden in activeTrackWorkspace?.Tracks.Where(t => !t.Visible && (!osuMinimalMode || t.Kind != EditorTrackKind.Hitsound)) ?? [])
         {
             var item = new MenuItem { Header = "显示：" + hidden.Name };
             item.Click += (_, _) => { hidden.Visible = true; activeTrackWorkspace!.MarkLayoutChanged(); RebuildTrackViews(); };
@@ -143,7 +144,7 @@ public sealed partial class MainWindow
         foreach (var frame in trackPanels.Children.OfType<EditorTrackPanel>().Where(p => p.TrackKey.StartsWith("track:", StringComparison.Ordinal)).ToArray())
         { trackPanels.Children.Remove(frame); boardFrames.Remove(frame.TrackKey); }
         if (activeTrackWorkspace != null)
-            foreach (var track in activeTrackWorkspace.Tracks.Where(t => t.Visible))
+            foreach (var track in activeTrackWorkspace.Tracks.Where(t => t.Visible && (!osuMinimalMode || t.Kind != EditorTrackKind.Hitsound)))
             {
                 var view = new TrackView(track);
                 secondaryTrackViews.Add(track.Id, view);
@@ -363,6 +364,7 @@ public sealed partial class MainWindow
                     surface.InteractionProfile = timeline.InteractionProfile;
                     surface.ReverseTimeWheel = timeline.ReverseTimeWheel;
                     surface.SnapAllNotes = timeline.SnapAllNotes;
+                    surface.HideSvEditing = osuMinimalMode;
                     surface.Session!.SnapDivision = tab.Session.SnapDivision;
                     if (anchor.HasValue && surface.Bounds.Height > 0 && surface.TranslatePoint(new Point(), trackPanels) is { } origin)
                         surface.SetViewportAnchor((anchor.Value.Y - origin.Y) / surface.Bounds.Height);
@@ -421,7 +423,7 @@ public sealed partial class MainWindow
     {
         if (activeSecondaryTrack is not { Surface: { } surface } view) return false;
         var session = view.Track.Session!;
-        if (action is "Copy" or "Cut" or "Paste" or "Delete" or "SelectAll" or "Undo" or "Redo" or "Mirror" or "StepForward" or "StepBack" or "GoHome" or "ToolSelect" or "ToolTap" or "ToolHold" or "ToolErase")
+        if (action is "Copy" or "Cut" or "Paste" or "Delete" or "SelectAll" or "Undo" or "Redo" or "Mirror" or "Flip" or "StepForward" or "StepBack" or "GoHome" or "ToolSelect" or "ToolTap" or "ToolHold" or "ToolErase")
         {
             if (action == "Copy") CopyTrackSelection(view);
             else if (action == "ToolSelect") surface.Tool = TimelineTool.Select;
@@ -443,6 +445,7 @@ public sealed partial class MainWindow
             else if (action == "Redo") session.Redo();
             else if (action == "Paste") PasteTrackSelection(view);
             else if (action == "Mirror") NoteMirrorEditingService.MirrorSelection(session, session.Selection);
+            else if (action == "Flip") NoteTimeFlipEditingService.FlipSelection(session, session.Selection);
             else if (action is "Delete" or "Cut")
             {
                 if (action == "Cut") CopyTrackSelection(view);

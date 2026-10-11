@@ -80,6 +80,11 @@ public sealed class EditorOverviewSurface : Control
     public event Action<BeatPosition>? SeekRequested;
     public event Action<BeatPosition>? NavigationMarkerSeekRequested;
     public event Action<ChartIssue>? IssueSeekRequested;
+    public event Action<Guid>? NavigationMarkerDeleteRequested;
+    public double DisplayEndBeat => Math.Max(1, Math.Max(externalEndBeat,
+        Math.Max(session?.Document.EndBeat ?? 1, navigationMarkers.Count == 0 ? 0 : navigationMarkers.Max(m => m.Beat.Value))));
+    public double PlayheadY => BeatToY(currentBeat);
+
 
     public void SetIssues(IReadOnlyList<ChartIssue>? value)
     {
@@ -176,6 +181,14 @@ public sealed class EditorOverviewSurface : Control
     protected override void OnPointerPressed(PointerPressedEventArgs eventArgs)
     {
         base.OnPointerPressed(eventArgs);
+        if (session != null && eventArgs.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            EnsureDensityCache();
+            var point = eventArgs.GetPosition(this);
+            if (Math.Abs(point.X - Math.Max(8, Bounds.Width - 13)) <= 10 && NearestNavigationMarker(point.Y) is { } marker)
+                NavigationMarkerDeleteRequested?.Invoke(marker.Id);
+            eventArgs.Handled = true; return;
+        }
         if (session == null ||
             !eventArgs.GetCurrentPoint(this).Properties.IsLeftButtonPressed ||
             Bounds.Height <= 1) return;

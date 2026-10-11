@@ -546,6 +546,7 @@ public sealed partial class TimelineSurface : Control
     public double SubdivisionLineThickness => subdivisionLineThickness;
     public bool SubdivisionCheckEnabled => subdivisionCheckEnabled;
     public bool HideLongNoteBodies => hideLongNoteBodies;
+    public bool HideSvEditing { get; set; }
     public int PlacementGroup { get; set; }
     public bool ProEditorEnabled => proEditorEnabled;
     public int ProGridColumnCount => proGridColumnCount;
@@ -1394,6 +1395,13 @@ public sealed partial class TimelineSurface : Control
             DrawGrid(context, geometry);
             DrawSymmetryRange(context, geometry);
 
+            using (context.PushOpacity(judgementLineOpacity))
+            {
+                context.DrawLine(
+                    judgementPen,
+                    new Point(geometry.GridLeft, geometry.JudgementY),
+                    new Point(geometry.GridRight, geometry.JudgementY));
+            }
             visited = noteIndex.Query(
                 minimumStoredBeat,
                 maximumBeat,
@@ -1416,13 +1424,6 @@ public sealed partial class TimelineSurface : Control
             DrawPlacementPreview(context, geometry);
             DrawPlacementHover(context, geometry);
             DrawTiming(context, geometry, minimumBeat, maximumBeat);
-        using (context.PushOpacity(judgementLineOpacity))
-        {
-            context.DrawLine(
-                judgementPen,
-                new Point(geometry.GridLeft, geometry.JudgementY),
-                new Point(geometry.GridRight, geometry.JudgementY));
-        }
             if (marqueeSelecting)
                 context.DrawRectangle(MarqueeFillBrush, MarqueePen, marqueeRect);
             DrawCreatorHoverToolTip(context);
@@ -1506,7 +1507,7 @@ public sealed partial class TimelineSurface : Control
         var tailHit = !leftPressed || rightPressed || timingHit.HasValue || Tool == TimelineTool.Erase
             ? null
             : HitTestHoldTail(point, geometry);
-        var bodyHit = rightPressed || drawingTool ? HitTestVisibleNote(point, geometry) : lane == NoWorkspaceColumn
+        var bodyHit = leftPressed && drawingTool ? HitTestPlacementReplacement(lane, point, geometry) : rightPressed || drawingTool ? HitTestVisibleNote(point, geometry) : lane == NoWorkspaceColumn
             ? null
             : HitTestDisplayedNote(
                 lane,
@@ -4018,10 +4019,6 @@ public sealed partial class TimelineSurface : Control
                         3);
                 }
             }
-            // Group is a plain int on the model and GetGroupBrush throws outside
-            // 1..65535; an exception escaping Render closes the application.
-            if (note.Group is >= 1 and <= ushort.MaxValue)
-                DrawGroupBadge(context, note.Group, left + width / 2, headY);
             if (WindowsOnlineCreatorMarkerPolicy.ShouldDraw(
                     isPlaybackActive,
                     note.OnlineCreatorUserId))
@@ -4396,6 +4393,7 @@ public sealed partial class TimelineSurface : Control
             timingDrawEvents.AddRange(visibleTimings);
             timingDrawEvents.AddRange(visibleTimingMovePreviews);
             timingDrawEvents.Sort(CompareTimingDrawOrder);
+            if (HideSvEditing) timingDrawEvents.RemoveAll(t => !t.Bpm.HasValue);
             TimelineTimingLayout.BuildLabels(
                 timingDrawEvents,
                 geometry.TrackLeft - MeasureNumberRailWidth,
@@ -4472,6 +4470,7 @@ public sealed partial class TimelineSurface : Control
     {
         EnsureIndex();
         _ = timingIndex.Query(minimumBeat, maximumBeat, visibleTimings);
+        if (HideSvEditing) visibleTimings.RemoveAll(t => !t.Bpm.HasValue);
         TimelineTimingLayout.BuildLabels(
             visibleTimings,
             geometry.TrackLeft - MeasureNumberRailWidth,
@@ -4637,6 +4636,17 @@ public sealed partial class TimelineSurface : Control
             bestDistance = distance;
         }
         return best;
+    }
+
+    // Drawing replaces a head in the snapped grid cell, including the area
+    // below its bottom anchor. Deletion and middle-button movement remain visual.
+    private ChartNote? HitTestPlacementReplacement(int lane, Point point, TimelineGeometry geometry)
+    {
+        var snapped = PointerToNoteBeat(point.Y);
+        noteIndex.Query(snapped.Value - .000002, snapped.Value + .000002, hitScratch, includeDrafts: proEditorEnabled);
+        var head = hitScratch.FirstOrDefault(n => !hiddenGroups.Contains(n.Group) &&
+            (n.IsDraft ? n.DraftColumn : n.Lane) == lane && Math.Abs(n.Beat.Value - snapped.Value) < .000002);
+        return head ?? HitTestVisibleNote(point, geometry);
     }
 
     // Destructive input uses the drawn rectangle, never the forgiving resize handle.

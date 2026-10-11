@@ -65,11 +65,11 @@ public sealed partial class MainWindow
     {
         var hide = new Button { Content = "×", Padding = new Thickness(3, 0), FontSize = 11 };
         hide.Click += (_, _) => toggle.IsChecked = false;
-        ToolTip.SetTip(hide, "隐藏；可在设置中重新显示");
+        ToolTip.SetTip(hide, "隐藏；可在上方显示 / 布局中重新显示");
         var header = new DockPanel { Margin = new Thickness(4), LastChildFill = true };
         DockPanel.SetDock(hide, Dock.Right); header.Children.Add(hide);
         header.Children.Add(new TextBlock { Text = title, FontSize = 10, VerticalAlignment = VerticalAlignment.Center });
-        var body = new Grid { RowDefinitions = new RowDefinitions(id == "Density" ? "32,28,*" : "32,0,*") };
+        var body = new Grid { RowDefinitions = new RowDefinitions("32,28,*") };
         body.Children.Add(header);
         if (id == "Density")
         {
@@ -84,7 +84,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(result, "Editor.Global." + id);
         return result;
     }
-    private Control BuildGlobalOverviewSettings()
+    private void InitializeGlobalOverviewVisibility()
     {
         globalDensityBox.IsChecked = EditorPresentationSettingsStore.LoadGlobalDensity();
         globalDifficultyBox.IsChecked = EditorPresentationSettingsStore.LoadGlobalDifficulty();
@@ -98,7 +98,6 @@ public sealed partial class MainWindow
         globalDensityBox.IsCheckedChanged += (_, _) => { Apply(); EditorPresentationSettingsStore.SaveGlobalDensity(globalDensityBox.IsChecked == true); };
         globalDifficultyBox.IsCheckedChanged += (_, _) => { Apply(); EditorPresentationSettingsStore.SaveGlobalDifficulty(globalDifficultyBox.IsChecked == true); };
         Apply();
-        return SettingsSection("全局分析", "固定显示整张谱面；局部分析轨随底板滚动。难度暂无结果时显示实验负荷。", "Settings.GlobalAnalysis",
-            new StackPanel { Children = { globalDensityBox, globalDifficultyBox } });
+
     }
 }

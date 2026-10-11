@@ -76,7 +76,7 @@ public static class CenterSymmetryService
         (first.EndBeat.HasValue == second.EndBeat.HasValue) &&
         (!first.EndBeat.HasValue || first.EndBeat.Value.CompareTo(second.EndBeat!.Value) == 0);
 
-    private static BeatPosition Reflect(BeatPosition start, BeatPosition end, BeatPosition value)
+    internal static BeatPosition Reflect(BeatPosition start, BeatPosition end, BeatPosition value)
     {
         long division = start.Denominator;
         foreach (var next in new[] { end.Denominator, value.Denominator })

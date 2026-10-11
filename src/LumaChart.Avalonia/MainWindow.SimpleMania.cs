@@ -319,7 +319,7 @@ public sealed partial class MainWindow
         try
         {
             var rate = audioTransport.PlaybackRate;
-            if (fixedRateSlider != null) fixedRateSlider.Value = NearestPreset(workbenchRates, rate);
+            if (fixedRateSlider != null) fixedRateSlider.Value = PresetPosition(workbenchRates, rate);
             if (fixedRateText != null) fixedRateText.Text = $"{rate:0.##}x";
             if (fixedRatePicker != null)
             {
@@ -334,7 +334,7 @@ public sealed partial class MainWindow
     {
         if (!fixedRatePointerDown || fixedRateSlider == null) return;
         fixedRatePointerDown = false;
-        await ApplyFixedPlaybackRateAsync(workbenchRates[(int)Math.Round(fixedRateSlider.Value)]);
+        await ApplyFixedPlaybackRateAsync(InterpolatePreset(workbenchRates, fixedRateSlider.Value));
     }
 
     private async Task ApplyFixedPlaybackRateAsync(double value)

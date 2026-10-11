@@ -22,6 +22,8 @@ public static class EditorPresentationSettingsStore
     public static void SaveRenderBackend(EditorRenderBackend value) { var preferences = ReadPreferences(); preferences.RenderBackend = value; Save(preferences); }
     public static void SaveGlobalDensity(bool value) { var preferences = ReadPreferences(); preferences.GlobalDensity = value; Save(preferences); }
     public static void SaveGlobalDifficulty(bool value) { var preferences = ReadPreferences(); preferences.GlobalDifficulty = value; Save(preferences); }
+    public static bool LoadMinimalMode() => ReadPreferences().MinimalMode;
+    public static void SaveMinimalMode(bool value) { var preferences = ReadPreferences(); preferences.MinimalMode = value; Save(preferences); }
     public static bool LoadSnapAll() => ReadPreferences().SnapAll;
     public static void SavePlaytestRate(double value) { var preferences = ReadPreferences(); preferences.PlaytestRate = value; Save(preferences); }
     public static void SaveSnapAll(bool value) { var preferences = ReadPreferences(); preferences.SnapAll = value; Save(preferences); }
@@ -90,6 +92,7 @@ public static class EditorPresentationSettingsStore
         public EditorGridNotation GridNotation { get; set; } = EditorGridNotation.Osu;
         public int LayoutRevision { get; set; }
         public double PlaytestRate { get; set; } = 1;
+        public bool MinimalMode { get; set; } = true;
         public bool SnapAll { get; set; } = true;
         public bool GlobalDensity { get; set; } = true;
         public bool GlobalDifficulty { get; set; } = true;

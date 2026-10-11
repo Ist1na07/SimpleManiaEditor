@@ -32,6 +32,7 @@ public sealed class EventTimeRuler : Control
     public double EndMilliseconds { get; private set; } = 1000;
     public event Action<double>? SeekRequested;
     public event Action<Guid>? EditEventRequested;
+    public event Action<Guid>? BookmarkDeleteRequested;
     private static readonly IBrush Background = new SolidColorBrush(Color.Parse("#171C20"));
     private static readonly IBrush Kiai = new SolidColorBrush(Color.Parse("#725B461E"));
     private static readonly IPen Bpm = new Pen(new SolidColorBrush(Color.Parse("#D97878")), 1.5);
@@ -80,7 +81,16 @@ public sealed class EventTimeRuler : Control
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || map == null) return;
+        if (map == null) return;
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            var point = e.GetPosition(this);
+            var marker = bookmarks.OrderBy(m => Math.Abs(X(map.BeatToMilliseconds(m.Beat)) - point.X)).Take(1).ToArray();
+            if (point.Y <= 16 && marker.Length > 0 && Math.Abs(X(map.BeatToMilliseconds(marker[0].Beat)) - point.X) <= 8)
+                BookmarkDeleteRequested?.Invoke(marker[0].Id);
+            e.Handled = true; return;
+        }
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         var nearest = Events.MinBy(t => Math.Abs(X(t.Milliseconds) - e.GetPosition(this).X));
         if (e.ClickCount >= 2 && nearest != null && Math.Abs(X(nearest.Milliseconds) - e.GetPosition(this).X) < 8)
         { EditEventRequested?.Invoke(nearest.Id); e.Handled = true; return; }

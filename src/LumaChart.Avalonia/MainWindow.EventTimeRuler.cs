@@ -8,9 +8,11 @@ public sealed partial class MainWindow
     private readonly EventTimeRuler eventTimeRuler = new();
     private Control BuildEventTimeRuler()
     {
+        eventTimeRuler.BookmarkDeleteRequested += RemoveNavigationMarker;
         eventTimeRuler.EditEventRequested += async id =>
         {
             if (playtestInProgress || viewModel.ActiveTab == null) return;
+            if (osuMinimalMode && !viewModel.ActiveTab.Session.Document.Timing.Any(t => t.Id == id && t.Bpm.HasValue)) return;
             timeline.SetSelectedTiming(id);
             editorInspectorTabs.SelectedItem = timingInspectorTab;
             await EditNativeTimingAsync(id);

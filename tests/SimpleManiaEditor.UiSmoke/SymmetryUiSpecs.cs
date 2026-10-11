@@ -29,11 +29,13 @@ internal static class SymmetryUiSpecs
         surface.BeginSymmetryRange(); Click(At(3.04)); Click(At(5.04));
         Require(surface.SymmetrySettings?.Start.Value == 3 && surface.SymmetrySettings.End.Value == 5 && session.Document.Notes.Count == 0,
             $"two snapped range clicks: {surface.SymmetrySettings?.Start} / {surface.SymmetrySettings?.End}, notes={session.Document.Notes.Count}, defining={surface.IsDefiningSymmetry}");
+        surface.Tool = TimelineTool.Select;
         Drag(At(5), At(5.5)); Require(surface.SymmetrySettings!.End.Value == 5.5, "top edge did not snap/resize");
         var laneWidth = surface.GridLaneWidth; var left = target.SurfacePoint.X - (target.Lane + .5) * laneWidth;
         Drag(At(4, left), At(4, left + laneWidth));
         Require(surface.SymmetrySettings.Columns.SequenceEqual(Enumerable.Range(1, 6)), "left edge did not adjust participating columns");
         surface.CancelSymmetryRange(); surface.SymmetrySettings = new(BeatPosition.Zero, new(8, 0, 1), Enumerable.Range(0, 7).ToArray());
+        surface.Tool = TimelineTool.Tap;
         Drag(At(3.5), At(3.5));
         Require(session.Document.Notes.Count == 2 && session.Document.Notes.Any(n => n.Lane == target.Lane && n.Beat.Value == 3.5) &&
             session.Document.Notes.Any(n => n.Lane == 6 - target.Lane && n.Beat.Value == 4.5), "pointer tap did not create pair");

@@ -70,6 +70,7 @@ var tests = new (string Name, Action Body)[]
     ("osu import calibration preserves offsets and common subdivisions", OsuBeatCalibrationSpecs.Run),
     ("Explicit grid snapping includes LN endpoints, negative beats and one undo", NoteGridSnapSpecs.Run),
     ("Center symmetry preserves LN direction, columns, rational grids and atomic completion", CenterSymmetrySpecs.Run),
+    ("Selection time flip preserves rational LN endpoints and atomic undo", NoteTimeFlipSpecs.Run),
     ("osu note text code preserves timestamps, samples, variable tempo and atomic undo", NoteTextCodeSpecs.Run),
     ("Pure stream/text chart imports preserve cancellation path and ownership boundaries", ChartDocumentImporterSpecs.Run),
     ("Batch move is one undo operation", TestBatchMoveUndo),

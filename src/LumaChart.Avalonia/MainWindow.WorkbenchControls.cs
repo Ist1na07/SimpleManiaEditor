@@ -88,14 +88,14 @@ public sealed partial class MainWindow
             index => $"{workbenchZooms[index] / 140:0.##}x", "Editor.Adjustment.Zoom", out _));
         adjustmentZoomSlider!.ValueChanged += (_, e) =>
         {
-            if (!syncingAdjustmentZoom) timeline.SetZoom(workbenchZooms[(int)Math.Round(e.NewValue)]);
+            if (!syncingAdjustmentZoom) timeline.SetZoom(InterpolatePreset(workbenchZooms, e.NewValue));
         };
         panel.Children.Add(PresetAdjustment("倍速", workbenchRates.Length, out fixedRateSlider, out fixedRateText,
             index => $"{workbenchRates[index]:0.##}", "Editor.Adjustment.Rate", out _));
         fixedRateSlider!.ValueChanged += async (_, e) =>
         {
             if (syncingFixedRate) return;
-            var value = workbenchRates[(int)Math.Round(e.NewValue)];
+            var value = InterpolatePreset(workbenchRates, e.NewValue);
             fixedRateText!.Text = $"{value:0.##}x";
             if (!fixedRatePointerDown) await ApplyFixedPlaybackRateAsync(value);
         };
@@ -117,7 +117,7 @@ public sealed partial class MainWindow
         Grid.SetColumn(value, 1);
         header.Children.Add(value);
         slider = new Slider { Minimum = 0, Maximum = count - 1, TickFrequency = 1,
-            TickPlacement = TickPlacement.BottomRight, IsSnapToTickEnabled = true, SmallChange = 1, LargeChange = 1, Height = 30 };
+            TickPlacement = TickPlacement.BottomRight, IsSnapToTickEnabled = title == "网格", SmallChange = 1, LargeChange = 1, Height = 30 };
         AutomationProperties.SetAutomationId(slider, id);
         optionResetHeaders[slider] = header;
         ticks = new Grid { ColumnDefinitions = new ColumnDefinitions(string.Join(',', Enumerable.Repeat("*", count))) };
@@ -156,10 +156,24 @@ public sealed partial class MainWindow
         syncingAdjustmentZoom = true;
         try
         {
-            adjustmentZoomSlider.Value = NearestPreset(workbenchZooms, timeline.PixelsPerBeat);
+            adjustmentZoomSlider.Value = PresetPosition(workbenchZooms, timeline.PixelsPerBeat);
             adjustmentZoomText.Text = $"{timeline.PixelsPerBeat / 140:0.##}x · {timeline.PixelsPerBeat:0} DIP/beat";
         }
         finally { syncingAdjustmentZoom = false; RefreshOptionResets(); }
+    }
+
+    private static double InterpolatePreset(IReadOnlyList<double> values, double position)
+    {
+        position = Math.Clamp(position, 0, values.Count - 1);
+        var index = (int)Math.Floor(position); var next = Math.Min(index + 1, values.Count - 1);
+        return values[index] + (values[next] - values[index]) * (position - index);
+    }
+    private static double PresetPosition(IReadOnlyList<double> values, double value)
+    {
+        if (value <= values[0]) return 0;
+        for (var i = 1; i < values.Count; i++)
+            if (value <= values[i]) return i - 1 + (value - values[i - 1]) / (values[i] - values[i - 1]);
+        return values.Count - 1;
     }
 
     private static int NearestPreset(IReadOnlyList<double> presets, double value) =>
@@ -192,5 +206,6 @@ public sealed partial class MainWindow
         fixedToolRailBody.Children.Add(ToolbarLabel("快捷编辑"));
         fixedToolRailBody.Children.Add(commands);
         fixedToolRailBody.Children.Add(BuildSymmetryToolButton());
+        if (extensionMenuButton != null) { DetachControl(extensionMenuButton); fixedToolRailBody.Children.Add(extensionMenuButton); }
     }
 }

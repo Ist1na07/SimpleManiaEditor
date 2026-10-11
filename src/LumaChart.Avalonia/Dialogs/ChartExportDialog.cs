@@ -20,9 +20,7 @@ internal sealed record FullPackageExportDialogScaleDiagnostics(
     bool UsesLayoutTransform);
 
 /// <summary>
-/// WPF-compatible four-mode export chooser for Malody and osu!mania. Stable
-/// legacy automation identifiers are retained so the already-authoritative
-/// FullPackage GUI paths remain observable while the additional modes are added.
+/// osu!mania export chooser. Difficulty comes from the document, not a second form.
 /// </summary>
 internal sealed class ChartExportDialog : PlatformWindow
 {
@@ -40,13 +38,9 @@ internal sealed class ChartExportDialog : PlatformWindow
     private static readonly IBrush MutedBrush = new SolidColorBrush(Color.Parse("#7F8B90"));
     private static readonly IBrush LabelBrush = new SolidColorBrush(Color.Parse("#9AA5A9"));
     private readonly ScaleTransform rootScale;
-    private ComboBox formatBox = null!;
     private ComboBox modeBox = null!;
-    private Border osuDifficultyPanel = null!;
     private Border singleRatePanel = null!;
     private Border ratePackPanel = null!;
-    private TextBox overallDifficultyBox = null!;
-    private TextBox hpDrainRateBox = null!;
     private TextBox rateBox = null!;
     private TextBox minimumRateBox = null!;
     private TextBox maximumRateBox = null!;
@@ -56,8 +50,11 @@ internal sealed class ChartExportDialog : PlatformWindow
     private AvaloniaPath preservePitchIndicatorMark = null!;
     private TextBlock validationText = null!;
 
-    public ChartExportDialog(double uiScale, double fontScale)
+    private readonly double chartOd;
+    private readonly double chartHp;
+    public ChartExportDialog(double uiScale, double fontScale, double overallDifficulty = 8, double hpDrainRate = 8)
     {
+        chartOd = overallDifficulty; chartHp = hpDrainRate;
         if (!double.IsFinite(uiScale)) uiScale = 1;
         if (!double.IsFinite(fontScale)) fontScale = 1;
         uiScale = Math.Clamp(uiScale, .75, 2);
@@ -75,7 +72,7 @@ internal sealed class ChartExportDialog : PlatformWindow
         Background = PanelBrush;
         FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft YaHei UI");
         FontSize = 12 * fontScale;
-        AutomationProperties.SetAutomationId(this, "Export.MalodyFullPackage.Dialog");
+        AutomationProperties.SetAutomationId(this, "Export.Osu.Dialog");
 
         var transformedRoot = new LayoutTransformControl
         {
@@ -174,7 +171,7 @@ internal sealed class ChartExportDialog : PlatformWindow
         close.VerticalAlignment = VerticalAlignment.Stretch;
         close.FontFamily = new FontFamily("Segoe UI Symbol");
         close.FontSize = 19 * fontScale;
-        AutomationProperties.SetAutomationId(close, "Export.MalodyFullPackage.Dialog.Close");
+        AutomationProperties.SetAutomationId(close, "Export.Osu.Dialog.Close");
         Grid.SetColumn(close, 1);
         headerGrid.Children.Add(close);
         grid.Children.Add(header);
@@ -201,91 +198,16 @@ internal sealed class ChartExportDialog : PlatformWindow
         });
         var summary = new TextBlock
         {
-            Text = "Malody 是工作格式；osu!mania 使用 v14。整谱与倍速模式会连同资源打包。",
+            Text = "导出 osu!mania v14；OD / HP 使用谱面设置。整谱与倍速模式会连同资源打包。",
             Foreground = MutedBrush,
             FontSize = 12 * fontScale,
             Margin = new Thickness(0, 5, 0, 4),
             TextWrapping = TextWrapping.Wrap
         };
-        AutomationProperties.SetAutomationId(summary, "Export.MalodyFullPackage.Dialog.Summary");
+        AutomationProperties.SetAutomationId(summary, "Export.Osu.Dialog.Summary");
         body.Children.Add(summary);
 
-        body.Children.Add(CreateLabel("目标格式", fontScale));
-        formatBox = new ComboBox
-        {
-            Height = WindowsChartExportDialogParityPolicy.ComboBoxHeight,
-            MinHeight = 0,
-            Padding = new Thickness(9, 0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Background = ComboBrush,
-            Foreground = ComboTextBrush,
-            BorderBrush = ComboStrokeBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            FontSize = 12 * fontScale,
-            SelectedIndex = 0,
-            ItemsSource = new[]
-            {
-                "Malody (.mc / .mcz)",
-                "osu!mania v14 (.osu / .osz)"
-            }
-        };
-        AutomationProperties.SetAutomationId(formatBox, "Export.MalodyFullPackage.Dialog.Format");
-        AutomationProperties.SetName(formatBox, "Malody (.mc / .mcz)");
-        formatBox.SelectionChanged += (_, _) =>
-        {
-            AutomationProperties.SetName(
-                formatBox,
-                formatBox.SelectedIndex == 1
-                    ? "osu!mania v14 (.osu / .osz)"
-                    : "Malody (.mc / .mcz)");
-            if (osuDifficultyPanel != null)
-                osuDifficultyPanel.IsVisible = formatBox.SelectedIndex == 1;
-        };
-        body.Children.Add(CreateWpfComboHost(formatBox));
 
-        overallDifficultyBox = CreateNumberBox("8", "Export.MalodyFullPackage.Dialog.OsuOverallDifficulty", fontScale);
-        hpDrainRateBox = CreateNumberBox("8", "Export.MalodyFullPackage.Dialog.OsuHpDrainRate", fontScale);
-        var difficultyGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,*") };
-        var odPanel = new StackPanel();
-        odPanel.Children.Add(CreateFieldLabel("OD / Overall Difficulty", fontScale));
-        odPanel.Children.Add(overallDifficultyBox);
-        difficultyGrid.Children.Add(odPanel);
-        var hpPanel = new StackPanel();
-        hpPanel.Children.Add(CreateFieldLabel("HP / HP Drain Rate", fontScale));
-        hpPanel.Children.Add(hpDrainRateBox);
-        Grid.SetColumn(hpPanel, 2);
-        difficultyGrid.Children.Add(hpPanel);
-        var difficultyContent = new StackPanel();
-        difficultyContent.Children.Add(new TextBlock
-        {
-            Text = "osu! 难度参数",
-            Foreground = TextBrush,
-            FontSize = 12 * fontScale,
-            FontWeight = FontWeight.SemiBold
-        });
-        difficultyContent.Children.Add(new TextBlock
-        {
-            Text = "写入 .osu 的 [Difficulty]；范围均为 0–10。",
-            Foreground = MutedBrush,
-            FontSize = 11 * fontScale,
-            Margin = new Thickness(0, 3, 0, 9)
-        });
-        difficultyContent.Children.Add(difficultyGrid);
-        osuDifficultyPanel = new Border
-        {
-            IsVisible = false,
-            Margin = new Thickness(0, 12, 0, 0),
-            Padding = new Thickness(13),
-            Background = new SolidColorBrush(Color.Parse("#1B2023")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#343C40")),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Child = difficultyContent
-        };
-        AutomationProperties.SetAutomationId(osuDifficultyPanel, "Export.MalodyFullPackage.Dialog.OsuDifficultyPanel");
-        body.Children.Add(osuDifficultyPanel);
         body.Children.Add(CreateLabel("导出方式", fontScale));
         modeBox = new ComboBox
         {
@@ -309,23 +231,23 @@ internal sealed class ChartExportDialog : PlatformWindow
                 "范围倍速包"
             }
         };
-        AutomationProperties.SetAutomationId(modeBox, "Export.MalodyFullPackage.Dialog.Mode");
+        AutomationProperties.SetAutomationId(modeBox, "Export.Osu.Dialog.Mode");
         AutomationProperties.SetName(modeBox, "整谱压缩包");
         modeBox.SelectionChanged += (_, _) => UpdateModeState();
         body.Children.Add(CreateWpfComboHost(modeBox));
 
-        rateBox = CreateNumberBox("1.2", "Export.MalodyFullPackage.Dialog.SingleRate", fontScale);
+        rateBox = CreateNumberBox("1.2", "Export.Osu.Dialog.SingleRate", fontScale);
         var singleRateContent = new StackPanel();
         singleRateContent.Children.Add(CreateFieldLabel("倍速", fontScale));
         singleRateContent.Children.Add(rateBox);
         singleRatePanel = CreateOptionPanel(
             singleRateContent,
-            "Export.MalodyFullPackage.Dialog.SingleRatePanel");
+            "Export.Osu.Dialog.SingleRatePanel");
         body.Children.Add(singleRatePanel);
 
-        minimumRateBox = CreateNumberBox("0.8", "Export.MalodyFullPackage.Dialog.MinimumRate", fontScale);
-        maximumRateBox = CreateNumberBox("1.2", "Export.MalodyFullPackage.Dialog.MaximumRate", fontScale);
-        rateStepBox = CreateNumberBox("0.1", "Export.MalodyFullPackage.Dialog.RateStep", fontScale);
+        minimumRateBox = CreateNumberBox("0.8", "Export.Osu.Dialog.MinimumRate", fontScale);
+        maximumRateBox = CreateNumberBox("1.2", "Export.Osu.Dialog.MaximumRate", fontScale);
+        rateStepBox = CreateNumberBox("0.1", "Export.Osu.Dialog.RateStep", fontScale);
         var ratePackGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,12,*,12,*")
@@ -346,7 +268,7 @@ internal sealed class ChartExportDialog : PlatformWindow
         ratePackGrid.Children.Add(stepPanel);
         ratePackPanel = CreateOptionPanel(
             ratePackGrid,
-            "Export.MalodyFullPackage.Dialog.RatePackPanel");
+            "Export.Osu.Dialog.RatePackPanel");
         body.Children.Add(ratePackPanel);
 
         preservePitchBox = new CheckBox
@@ -369,7 +291,7 @@ internal sealed class ChartExportDialog : PlatformWindow
         };
         AutomationProperties.SetAutomationId(
             preservePitchBox,
-            "Export.MalodyFullPackage.Dialog.PreservePitch");
+            "Export.Osu.Dialog.PreservePitch");
         AutomationProperties.SetName(preservePitchBox, "音频变速不变调");
         body.Children.Add(CreateWpfCheckBoxHost());
         body.Children.Add(new TextBlock
@@ -387,7 +309,7 @@ internal sealed class ChartExportDialog : PlatformWindow
             Margin = new Thickness(0, 12, 0, 0),
             TextWrapping = TextWrapping.Wrap
         };
-        AutomationProperties.SetAutomationId(validationText, "Export.MalodyFullPackage.Dialog.Validation");
+        AutomationProperties.SetAutomationId(validationText, "Export.Osu.Dialog.Validation");
         body.Children.Add(validationText);
         var bodyScroll = new ScrollViewer
         {
@@ -397,7 +319,7 @@ internal sealed class ChartExportDialog : PlatformWindow
         };
         AutomationProperties.SetAutomationId(
             bodyScroll,
-            "Export.MalodyFullPackage.Dialog.BodyScroll");
+            "Export.Osu.Dialog.BodyScroll");
         contentGrid.Children.Add(bodyScroll);
 
         var buttons = new StackPanel
@@ -414,7 +336,7 @@ internal sealed class ChartExportDialog : PlatformWindow
         var cancel = CreateButton("取消", RaisedBrush, StrokeBrush, TextBrush, () => Close(false));
         cancel.Width = WindowsChartExportDialogParityPolicy.CancelWidth;
         cancel.FontSize = 12 * fontScale;
-        AutomationProperties.SetAutomationId(cancel, "Export.MalodyFullPackage.Dialog.Cancel");
+        AutomationProperties.SetAutomationId(cancel, "Export.Osu.Dialog.Cancel");
         buttons.Children.Add(cancel);
         var export = CreateButton(
             "选择位置并导出",
@@ -424,7 +346,7 @@ internal sealed class ChartExportDialog : PlatformWindow
             Confirm);
         export.Width = WindowsChartExportDialogParityPolicy.ConfirmWidth;
         export.FontSize = 12 * fontScale;
-        AutomationProperties.SetAutomationId(export, "Export.MalodyFullPackage.Dialog.Confirm");
+        AutomationProperties.SetAutomationId(export, "Export.Osu.Dialog.Confirm");
         buttons.Children.Add(export);
         Grid.SetRow(buttons, 1);
         contentGrid.Children.Add(buttons);
@@ -603,9 +525,7 @@ internal sealed class ChartExportDialog : PlatformWindow
     private void Confirm()
     {
         validationText.Text = string.Empty;
-        var format = formatBox.SelectedIndex == 1
-            ? ChartExportFormat.OsuMania
-            : ChartExportFormat.Malody;
+        var format = ChartExportFormat.OsuMania;
         var mode = ModeFromSelection();
         if (!TryReadNumber(rateBox.Text, out var rate) ||
             !TryReadNumber(minimumRateBox.Text, out var minimumRate) ||
@@ -622,16 +542,8 @@ internal sealed class ChartExportDialog : PlatformWindow
             return;
         }
 
-        var overallDifficulty = 8d;
-        var hpDrainRate = 8d;
-        if (format == ChartExportFormat.OsuMania &&
-            (!TryReadNumber(overallDifficultyBox.Text, out overallDifficulty) ||
-             !TryReadNumber(hpDrainRateBox.Text, out hpDrainRate) ||
-             overallDifficulty is < 0 or > 10 || hpDrainRate is < 0 or > 10))
-        {
-            validationText.Text = "osu! 的 OD 与 HP 必须是 0–10 之间的数字。";
-            return;
-        }
+        var overallDifficulty = chartOd;
+        var hpDrainRate = chartHp;
 
         Options = new ChartExportOptions(
             format,
