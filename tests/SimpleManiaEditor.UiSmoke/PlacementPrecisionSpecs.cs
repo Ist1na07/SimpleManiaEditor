@@ -34,7 +34,8 @@ internal static class PlacementPrecisionSpecs
                 .Single(m => m.Name == "GetNoteBounds" && m.GetParameters().Length == 2);
             var bounds = (Rect)boundsMethod.Invoke(surface, [note, geometry])!;
             var gridY = surface.Bounds.Height * surface.JudgementLinePosition - (expected - 4) * surface.PixelsPerBeat;
-            if (Math.Abs(bounds.Bottom - gridY) > .001) throw new InvalidOperationException("note bottom no longer represents its stored time");
+            var halfLine = (double)typeof(TimelineSurface).GetMethod("GridLineHalfThickness", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(surface, [note.Beat])!;
+            if (Math.Abs(bounds.Bottom - (gridY - halfLine)) > .001) throw new InvalidOperationException("note bottom does not align to the grid upper edge");
             window.MouseDown(new Point(5, 100), MouseButton.Right); window.MouseUp(new Point(5, 100), MouseButton.Right);
             if (session.Selection.Count != 0 || session.Document.Notes.Count != 1) throw new InvalidOperationException("blank right-click failed to deselect without deleting");
         }

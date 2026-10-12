@@ -603,14 +603,14 @@ public sealed class MainWindowViewModel
         return result;
     }
 
-    public MixedSelectionDeleteResult DeleteMixedSelection(IEnumerable<Guid> timingIds)
+    public MixedSelectionDeleteResult DeleteMixedSelection(IEnumerable<Guid> timingIds, CenterSymmetrySettings? symmetry = null)
     {
         var tab = ActiveTab ?? throw new InvalidOperationException("No chart tab is active.");
         var result = MixedSelectionEditingService.Delete(
             tab.Session,
             tab.Session.Selection,
             timingIds,
-            tab.HiddenGroups);
+            tab.HiddenGroups, symmetry);
         Status = result.Applied
             ? AvaloniaLocalizationCatalog.Format("已删除 {0:N0} 个 Note、{1:N0} 个 Effect", result.DeletedNoteCount, result.DeletedEffectCount)
             : "没有可删除的 Note / Effect";

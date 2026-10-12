@@ -189,9 +189,9 @@ public sealed partial class MainWindow
         };
         SyncFixedGridPicker(editorViewSettings.SnapDivision);
         SyncFixedPlaybackRate();
-        var playtest = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat));
+        var playtest = toolbarPlaytestButton = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat));
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtest, "Editor.Toolbar.Playtest");
-        ToolTip.SetTip(playtest, "官方 osu!mania 试玩 · 设置与导入位于右侧设置栏");
+        ToolTip.SetTip(playtest, $"官方 osu!mania 试玩  {CompactShortcut("Playtest")} · 设置与导入位于右侧设置栏");
         playtestRatePicker = new ComboBox { Width = 85, ItemsSource = workbenchRates, SelectedItem = playtestRate,
             ItemTemplate = new FuncDataTemplate<double>((rate, _) => new TextBlock { Text = $"{rate:0.##}x" }) };
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtestRatePicker, "Editor.Playtest.Rate");

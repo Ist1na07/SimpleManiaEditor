@@ -71,6 +71,25 @@ public static class CenterSymmetryService
         return additions.Count;
     }
 
+    public static HashSet<Guid> ExpandDeletion(EditorSession session, IEnumerable<Guid> ids, CenterSymmetrySettings? settings)
+    {
+        var result = ids.ToHashSet();
+        if (settings == null) return result;
+        settings.Validate(session.Document.KeyCount);
+        var occupied = session.Document.Notes.GroupBy(n => (n.IsDraft, n.Lane, n.Beat, n.EndBeat))
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        foreach (var source in session.Document.Notes.Where(n => result.Contains(n.Id)).ToArray())
+        {
+            var pair = CreateCompanion(source, settings, session.Document.KeyCount);
+            if (pair == null) continue;
+            foreach (var note in occupied.GetValueOrDefault((pair.IsDraft, pair.Lane, pair.Beat, pair.EndBeat), []))
+                result.Add(note.Id);
+        }
+        if (!session.AllowOwnerProtectedEdits && session.Document.Notes.Any(n => result.Contains(n.Id) && session.IsOwnerProtected(n)))
+            throw new InvalidOperationException("中心对称删除涉及锁定范围，未删除任何按键。");
+        return result;
+    }
+
     public static bool SamePosition(ChartNote first, ChartNote second) => first.Lane == second.Lane &&
         first.Beat.CompareTo(second.Beat) == 0 &&
         (first.EndBeat.HasValue == second.EndBeat.HasValue) &&

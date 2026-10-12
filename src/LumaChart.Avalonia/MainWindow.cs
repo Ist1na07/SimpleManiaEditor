@@ -9709,86 +9709,7 @@ public sealed partial class MainWindow : PlatformWindow
         surface.SetViewport(timeline.CurrentBeat, timeline.PixelsPerBeat, linePosition);
     }
 
-    private Control BuildSettingsPanel()
-    {
-        var tabletLayout = !SupportsDesktopWindowSizing;
-        var content = new StackPanel
-        {
-            Spacing = 0,
-            MinWidth = 0,
-            MaxWidth = tabletLayout
-                ? 300
-                : WindowsInspectorParityPolicy.InspectorContentMaximumWidth,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-        var sections = new[]
-        {
-            BuildOfficialPlaytestSettings(),
-            BuildLanguageSettings(),
-            BuildEditorViewSettings(),
-            BuildEditorModeSettings(),
-            BuildBackupCacheSettings(),
-            BuildShortcutSettings(),
-            SettingsSection("音量与音频", "编辑音乐、打击音；试玩中可使用官方音量设置", "Settings.AudioSection", BuildAudioTransport()),
-            BuildApplicationInformationSettings()
-        };
-        for (var index = 0; index < sections.Length; index++)
-        {
-            if (index > 0) content.Children.Add(BuildWpfSettingsSeparator());
-            content.Children.Add(sections[index]);
-        }
-        content.Children.Add(new Border
-        {
-            Height = WindowsInspectorParityPolicy.SettingsBottomScrollClearance,
-            Focusable = false,
-            IsHitTestVisible = false
-        });
-        var root = new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            ClipToBounds = true,
-            Padding = tabletLayout
-                ? new Thickness(16, 14, 16, 24)
-                : WindowsInspectorParityPolicy.SettingsContentPadding,
-            Content = content
-        };
-        var focusControls = root
-            .GetLogicalDescendants()
-            .OfType<Control>()
-            .Where(control => WindowsInspectorParityPolicy.ResolveSettingsTabIndex(
-                AutomationProperties.GetAutomationId(control)) >= 0)
-            .ToArray();
-        ApplyWpf110InspectorTabOrder(
-            "Settings",
-            focusControls,
-            WindowsInspectorParityPolicy.ResolveSettingsTabIndex);
-        DisableAvaloniaOnlySettingsTabStops();
-        return root;
-    }
-
-    private static Border BuildWpfSettingsSeparator() => new()
-    {
-        Height = 1,
-        Background = new SolidColorBrush(Color.Parse("#34393D")),
-        Margin = WindowsInspectorParityPolicy.SettingsSeparatorMargin
-    };
-
-    private void DisableAvaloniaOnlySettingsTabStops()
-    {
-        foreach (var control in new Control[]
-                 {
-                     waveformBackgroundBox,
-                     spectrogramBackgroundBox,
-                     audioPlayPauseButton,
-                     audioStopButton,
-                     audioRefreshDeviceButton,
-                     audioPositionSlider,
-                     audioRateSlider
-                 })
-            control.IsTabStop = false;
-    }
+    private Control BuildSettingsPanel() => BuildCategorizedSettingsPanel();
 
     private Control BuildLanguageSettings()
     {
@@ -10398,16 +10319,16 @@ public sealed partial class MainWindow : PlatformWindow
             } }
         };
         AutomationProperties.SetAutomationId(appearance, "Settings.Appearance");
+        settingsAppearanceContent = new StackPanel { Spacing = 10, Children =
+        {
+            appearance, TimingField("画布列数", proGridColumnSlider), proGridColumnText
+        } };
         var section = SettingsSection(
-            "编辑器设置",
+            "编辑",
             "吸附与视图",
             "Settings.EditorViewSection",
-            TimingField("网格分度", settingsSnapBox),
-            TimingField("固定分度", settingsFixedSnapBox),
-            BuildSnapAllOption(),
-            appearance,
-            TimingField("ProEditor 总列数", proGridColumnSlider),
-            proGridColumnText);
+            TimingField("快捷键目标网格", settingsFixedSnapBox),
+            BuildSnapAllOption());
         return section;
     }
 
@@ -10744,14 +10665,6 @@ public sealed partial class MainWindow : PlatformWindow
     {
         shortcutButtons.Clear();
         shortcutListPanel.Children.Clear();
-        var headerTitle = new TextBlock
-        {
-            Text = "快捷键",
-            Foreground = Brushes.White,
-            FontSize = 17,
-            FontWeight = FontWeight.SemiBold
-        };
-        AutomationProperties.SetAutomationId(headerTitle, "Settings.ShortcutsSection");
         var resetButton = new Button
         {
             Content = "恢复默认",
@@ -10771,7 +10684,6 @@ public sealed partial class MainWindow : PlatformWindow
         {
             Children =
             {
-                headerTitle,
                 new TextBlock
                 {
                     Text = "点击按键框后录入组合键",
@@ -10822,7 +10734,7 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(shortcutStatusText, "Settings.Shortcuts.Status");
         RefreshShortcutButtons();
         RefreshShortcutLabels();
-        return new Expander
+        var expander = new Expander
         {
             Header = "快捷键", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch,
             Content = new Border
@@ -10837,6 +10749,8 @@ public sealed partial class MainWindow : PlatformWindow
                 }
             }
         };
+        AutomationProperties.SetAutomationId(expander, "Settings.ShortcutsSection");
+        return expander;
     }
 
     private void BeginShortcutCapture(string action)
@@ -10895,6 +10809,7 @@ public sealed partial class MainWindow : PlatformWindow
             ToolTip.SetTip(
                 pair.Value.Button,
                 $"{pair.Value.Description}  {CompactShortcut(pair.Key)}");
+        if (toolbarPlaytestButton != null) ToolTip.SetTip(toolbarPlaytestButton, $"官方 osu!mania 试玩  {CompactShortcut("Playtest")} · 设置与导入位于右侧设置栏");
         ToolTip.SetTip(audioPlayPauseButton, AvaloniaLocalizationCatalog.Format("播放 / 暂停  {0}", CompactShortcut("PlayPause")));
         if (commandPlayButton != null)
             ToolTip.SetTip(commandPlayButton, AvaloniaLocalizationCatalog.Format("播放 / 暂停  {0}", CompactShortcut("PlayPause")));
@@ -11138,12 +11053,7 @@ public sealed partial class MainWindow : PlatformWindow
         {
             Text = title,
             Foreground = Brushes.White,
-            FontSize = string.Equals(
-                automationId,
-                "Settings.EditorViewSection",
-                StringComparison.Ordinal)
-                ? WindowsInspectorParityPolicy.SettingsTitleFontSize
-                : WindowsInspectorParityPolicy.SettingsSectionTitleFontSize,
+            FontSize = 16,
             FontWeight = FontWeight.SemiBold
         };
         AutomationProperties.SetAutomationId(titleText, automationId);
@@ -15547,6 +15457,9 @@ public sealed partial class MainWindow : PlatformWindow
                 break;
             case WindowsEditorShortcutRoute.ToolErase:
                 SetTimelineToolFromShortcut(TimelineTool.Erase);
+                break;
+            case WindowsEditorShortcutRoute.Playtest:
+                _ = StartPlaytestAsync(timeline.CurrentBeat);
                 break;
             case WindowsEditorShortcutRoute.PlayPause:
                 await ToggleAudioPlaybackAsync();
@@ -20314,10 +20227,12 @@ public sealed partial class MainWindow : PlatformWindow
         if (viewModel.ActiveTab == null) return;
         try
         {
+            var cutSession = viewModel.ActiveTab.Session;
+            cutSession.Selection.UnionWith(CenterSymmetryService.ExpandDeletion(cutSession, cutSession.Selection, timeline.SymmetrySettings));
             var clipboard = viewModel.CopyMixedSelection(timeline.SelectedTimingIds);
             WriteNoteClipboard(viewModel.ActiveTab.Session.Document, clipboard.SnapshotNotes());
             if (clipboard.IsEmpty) return;
-            var result = viewModel.DeleteMixedSelection(timeline.SelectedTimingIds);
+            var result = viewModel.DeleteMixedSelection(timeline.SelectedTimingIds, timeline.SymmetrySettings);
             if (!result.Applied) return;
             timeline.SetSelectedTiming(null);
             RefreshTimingList([], force: true);
@@ -20682,7 +20597,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (viewModel.ActiveTab == null) return;
         try
         {
-            var result = viewModel.DeleteMixedSelection(timeline.SelectedTimingIds);
+            var result = viewModel.DeleteMixedSelection(timeline.SelectedTimingIds, timeline.SymmetrySettings);
             if (!result.Applied) return;
             timeline.SetSelectedTiming(null);
             RefreshTimingList([], force: true);

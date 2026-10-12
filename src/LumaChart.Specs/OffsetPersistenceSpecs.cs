@@ -1,4 +1,6 @@
 using LumaChart.Application.Editing;
+using LumaChart.Application.Exporting;
+using System.IO.Compression;
 using LumaChart.Core.IO;
 using LumaChart.Core.Models;
 using LumaChart.Core.Timing;
@@ -43,6 +45,41 @@ internal static class OffsetPersistenceSpecs
         Require(migratedText.Contains("0:0:0:37:"), "legacy migration masked note volume edit");
         legacy.Timing[0].Delay += 1;
         Require(MalodyMcSerializer.Parse(MalodyMcSerializer.Serialize(legacy)).Timing.Count(t => t.Bpm.HasValue) == 2, "edited legacy timing was guessed/overwritten");
+
+        // Reproduce the pre-0.1.22 Lament cache: numeric baseline 475, raw row 0.
+        var lament = OsuManiaSerializer.Parse("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:7\n[TimingPoints]\n0,576.701268742791,4,2,1,70,1,0\n[HitObjects]\n36,192,1000,1,0,0:0:0:0:\n");
+        lament.Timing[0].Delay = -475;
+        lament.Timing[0].UnknownData!["_sme_osu_object"]!["time"] = 475;
+        var recoveredLament = MalodyMcSerializer.Parse(MalodyMcSerializer.Serialize(lament));
+        var exportRoot = Path.Combine(Path.GetTempPath(), "sme-lament-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(exportRoot);
+        var export = Path.Combine(exportRoot, "source.osu");
+        try
+        {
+            OsuManiaSerializer.Save(recoveredLament, export);
+            var raw = File.ReadAllText(export);
+            Require(raw.Contains("475,576.701268742791,"), "stale Lament cache exported offset zero");
+            Require(Math.Abs(-TimingMap.FindSongOffsetTiming(OsuManiaSerializer.Load(export).Timing)!.Delay - 475) < .001,
+                "Lament Save/Load offset was lost");
+            // Even if the cached signature was captured after the faulty baseline,
+            // the raw timing row remains authoritative for deciding whether to regenerate.
+            var metadataSignature = recoveredLament.UnknownRoot["_sme_osu_source"]!;
+            var signature = metadataSignature["timing"]!.GetValue<string>();
+            metadataSignature["timing"] = signature.Replace("\"Delay\":0", "\"Delay\":-475");
+            OsuManiaSerializer.Save(recoveredLament, export);
+            Require(File.ReadAllText(export).Contains("475,576.701268742791,"), "stale row was hidden by matching signature");
+            var single = Path.Combine(exportRoot, "single.osu");
+            var options = new ChartExportOptions(ChartExportFormat.OsuMania, ChartExportMode.SingleChart, true, 1, 1, 1, 1);
+            ChartExportService.ExportAsync(new(recoveredLament, single, options, exportRoot, export)).GetAwaiter().GetResult();
+            Require(File.ReadAllText(single).Contains("475,576.701268742791,"), "single-file export lost Lament offset");
+            var package = Path.Combine(exportRoot, "package.osz");
+            var result = ChartExportService.ExportAsync(new(recoveredLament, package, options with { Mode = ChartExportMode.FullPackage }, exportRoot, export)).GetAwaiter().GetResult();
+            using var zip = ZipFile.OpenRead(package);
+            var entry = zip.Entries.Single(e => e.FullName.Replace('\\', '/') == result.ChartEntryPaths.Single().Replace('\\', '/'));
+            using var reader = new StreamReader(entry.Open());
+            Require(reader.ReadToEnd().Contains("475,576.701268742791,"), "osz export lost Lament offset");
+        }
+        finally { Directory.Delete(exportRoot, recursive: true); }
 
         var document = new ChartDocument { KeyCount = 7 };
         new OsuTimingPointSettings(4, 2, 1, 0).Apply(document.GetOrCreateSongOffsetTiming());

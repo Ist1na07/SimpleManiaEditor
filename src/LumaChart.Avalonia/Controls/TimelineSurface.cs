@@ -2826,7 +2826,7 @@ public sealed partial class TimelineSurface : Control
         {
             try
             {
-                var result = TimelineEraseCommit.Commit(session, erasedNoteIds, erasedTimingIds);
+                var result = TimelineEraseCommit.Commit(session, CenterSymmetryService.ExpandDeletion(session, erasedNoteIds, SymmetrySettings), erasedTimingIds);
                 removedNotes = result.DeletedNoteCount;
                 removedEffects = result.DeletedEffectCount;
                 if (result.DeletedTimingIds.Count > 0)
@@ -2880,6 +2880,8 @@ public sealed partial class TimelineSurface : Control
         if (session == null || !CanBeginNoteEdit("删除")) return;
         var ids = session.Selection.Count > 1
             ? session.Selection.ToHashSet() : new HashSet<Guid> { hit.Id };
+        try { ids = CenterSymmetryService.ExpandDeletion(session, ids, SymmetrySettings); }
+        catch (InvalidOperationException exception) { StatusChanged?.Invoke(this, exception.Message); return; }
         if (!session.AllowOwnerProtectedEdits && session.Document.Notes.Any(n => ids.Contains(n.Id) && session.IsOwnerProtected(n)))
         {
             StatusChanged?.Invoke(this, "该 Note 位于房主锁定选区，成员不能删除");
@@ -4723,13 +4725,22 @@ public sealed partial class TimelineSurface : Control
             ? BeatPosition.FromDouble(Math.Max(MinimumEditableBeat, BeatAtY(y, GetGeometry(session!.Document.KeyCount))), BeatPosition.MaximumPreservedDenominator)
             : PointerToNoteBeat(y);
 
+    private double GridLineHalfThickness(BeatPosition beat)
+    {
+        var division = session?.SnapDivision ?? 4;
+        var step = beat.Value * division;
+        if (Math.Abs(step - Math.Round(step)) > 1e-6 || step < int.MinValue || step > int.MaxValue) return 0;
+        var kind = WindowsTimelineVisualParityPolicy.ResolveGridLineKind(division, (int)Math.Round(step));
+        return (kind == WindowsTimelineGridLineKind.Bar ? barGridPen : subdivisionGridPens[kind]).Thickness / 2;
+    }
+
     private double NoteYAtBeat(
         BeatPosition beat,
         TimelineGeometry geometry,
         double pixelsPerBeat,
         double currentBeat) =>
         InteractionProfile == EditorInteractionProfile.OsuMania
-        ? geometry.JudgementY - (ProjectBeat(beat.Value) - ProjectBeat(currentBeat)) * pixelsPerBeat - noteHeight / 2
+        ? geometry.JudgementY - (ProjectBeat(beat.Value) - ProjectBeat(currentBeat)) * pixelsPerBeat - noteHeight / 2 - GridLineHalfThickness(beat)
         : geometry.JudgementY -
         (ProjectBeat(TimelinePlacementGeometry.StoredToRenderBeat(
              beat,
@@ -4744,7 +4755,7 @@ public sealed partial class TimelineSurface : Control
 
     private double EvidencePointerY(BeatPosition beat, TimelineGeometry geometry) =>
         InteractionProfile == EditorInteractionProfile.OsuMania
-            ? YAtBeat(beat.Value, geometry) - .01 : NoteYAtBeat(beat, geometry);
+            ? YAtBeat(beat.Value, geometry) - GridLineHalfThickness(beat) - .01 : NoteYAtBeat(beat, geometry);
 
     private static int WorkspaceColumnAtX(double x, TimelineGeometry geometry)
     {

@@ -23,7 +23,7 @@ internal static class SymmetryUiSpecs
         var window = new Window { Width = 1000, Height = 800, Content = surface };
         window.Show(); Program.Pump(50); surface.SetCurrentBeat(4); surface.SetZoom(70);
         var target = surface.GetPlacementEvidenceProbe()!.TapTarget;
-        Point At(double beat, double? x = null) => new(x ?? target.SurfacePoint.X, surface.Bounds.Height * surface.JudgementLinePosition - (beat - 4) * surface.PixelsPerBeat - .01);
+        Point At(double beat, double? x = null) => new(x ?? target.SurfacePoint.X, surface.Bounds.Height * surface.JudgementLinePosition - (beat - 4) * surface.PixelsPerBeat - 1);
         void Click(Point point, MouseButton button = MouseButton.Left) { window.MouseDown(point, button); window.MouseUp(point, button); }
         void Drag(Point from, Point to) { window.MouseDown(from, MouseButton.Left); window.MouseMove(to, RawInputModifiers.LeftMouseButton); window.MouseUp(to, MouseButton.Left); }
         surface.BeginSymmetryRange(); Click(At(3.04)); Click(At(5.04));

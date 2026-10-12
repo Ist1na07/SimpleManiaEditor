@@ -32,7 +32,17 @@ internal static class CenterSymmetrySpecs
         session.Selection.UnionWith([tap.Id, hold.Id]);
         Require(CenterSymmetryService.CompleteSelection(session, settings) == 2 && session.Document.Notes.Count == 4, "selection did not complete");
         var serial = session.ChangeSerial; Require(CenterSymmetryService.CompleteSelection(session, settings) == 0 && serial == session.ChangeSerial, "existing pairs added duplicates/history");
+        var tapPair = session.Document.Notes.Single(n => n.Lane == 6 && n.Beat.Value == 15);
+        var otherHold = session.Document.Notes.Single(n => n.Lane == 4);
+        var deleted = MixedSelectionEditingService.Delete(session, [tap.Id], [], symmetry: settings);
+        Require(deleted.DeletedNoteCount == 2 && session.Document.Notes.Count == 2 && session.Document.Notes.Any(n => n.Id == otherHold.Id),
+            "symmetry delete did not remove exactly the tap pair");
+        Require(session.Undo() && session.Document.Notes.Any(n => n.Id == tapPair.Id), "symmetry delete was not one undo");
+        deleted = MixedSelectionEditingService.Delete(session, [hold.Id], [], symmetry: settings);
+        Require(deleted.DeletedNoteCount == 2 && session.Document.Notes.All(n => !n.IsHold), "symmetry LN delete is wrong");
+        Require(session.Undo(), "LN symmetry delete was not undoable");
         session.Undo(); Require(session.Document.Notes.Count == 2, "selection completion was not one undo");
+        session.Selection.UnionWith([tap.Id, hold.Id]);
         session.Mutate(d => d.Notes.Add(new ChartNote { Lane = 6, Beat = new(15, 0, 1), EndBeat = new(16, 0, 1) }));
         serial = session.ChangeSerial;
         Require(CenterSymmetryService.CompleteSelection(session, settings) == 1 && session.Document.Notes.Count == 4,

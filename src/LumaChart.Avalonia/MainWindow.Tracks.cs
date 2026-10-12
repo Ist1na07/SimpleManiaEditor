@@ -481,8 +481,8 @@ public sealed partial class MainWindow
             else if (action == "Flip") NoteTimeFlipEditingService.FlipSelection(session, session.Selection);
             else if (action is "Delete" or "Cut")
             {
-                if (action == "Cut") CopyTrackSelection(view);
-                var ids = session.Selection.ToHashSet();
+                var ids = CenterSymmetryService.ExpandDeletion(session, session.Selection, surface.SymmetrySettings);
+                if (action == "Cut") { session.Selection.UnionWith(ids); CopyTrackSelection(view); }
                 session.Mutate(d => d.Notes.RemoveAll(n => ids.Contains(n.Id)));
             }
             else if (Enum.TryParse<TimelineTool>(action[4..], out var tool)) { surface.Tool = tool; RefreshFixedTools(); }

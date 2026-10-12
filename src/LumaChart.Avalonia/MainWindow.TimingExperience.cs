@@ -54,6 +54,7 @@ public sealed partial class MainWindow
             return (-value).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         return text;
     }
+    private Button? toolbarPlaytestButton;
     private Button? toolbarUndoButton;
     private Button? toolbarRedoButton;
     private CheckBox? snapAllBox;

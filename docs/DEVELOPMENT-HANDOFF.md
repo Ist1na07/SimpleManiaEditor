@@ -1,3 +1,13 @@
+# 0.1.23 当前基线
+
+旧缓存 Lament 的 timing.UnknownData._sme_osu_object 为 line=0,... / time=475，而当前 Delay=-475。0.1.22 阻止新损坏但不能修复已经损坏的基准。本版 HasStaleTimingRows/IsStaleTimingRow 比较 raw row 与 baseline；Beat0 严格，其他点容忍导入时 <1ms 的量化误差（保留原始 timing 精度）。序列化在基准陈旧时重建 timing，即使 signature 已匹配；合法未编辑源保留原文。实际用户 cache 只读导出 `.osu`/`.osz` 后，官方 ppy 解码器均确认475ms/104.04BPM/190notes，原源文件/缓存hash不变；审计工具及导出仅在 artifacts/offset-audit-023。
+
+Playtest 快捷键catalog/router新增F5，TextBox中也可触发，旧自定义冲突保留。CenterSymmetryService.ExpandDeletion按完全相同lane/head/tail匹配，保护区预检，无永久链接；右键/Delete/擦除/轨道与剪切统一，剪切复制整对。NoteYAtBeat只调整绘制为line upper edge，不改stored beat和PointerToNoteBeat。
+
+MainWindow.SettingsNavigation.cs固定搜索/4列分类导航/单内容滚动区，构建一次控件，7类：编辑、操作、外观、音频、试玩、存储、通用。外观从编辑吸附区拆出，当前网格设置重复入口隐藏但同步控件保留。字体16标题/13选项/12辅助；搜索匹配类别/标签/关键词并临时展开，清空恢复，分类滚动位置会话内保留。保留AutomationId。新的023实际指针/分类搜索测试与旧工作流导航更新；57项核心规格增加单谱/谱包旧cache回归。
+
+历史记录：
+
 # 开发交接摘要
 
 ## 基线
@@ -17,7 +27,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.22；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.23；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。

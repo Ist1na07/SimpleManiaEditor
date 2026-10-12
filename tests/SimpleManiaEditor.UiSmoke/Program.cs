@@ -56,6 +56,7 @@ internal static class Program
             SymmetryUiSpecs.RunPointer(screenshotRoot);
             EditorInteraction021Specs.RunPointer();
             EditorInteraction022Specs.RunPointer();
+            EditorInteraction023Specs.RunPointer();
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
             OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
@@ -287,7 +288,7 @@ internal static class Program
         OfficialPlaytestLauncher.ProcessRunner = recorder;
         try
         {
-            playtestButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            timeline.Focus(); Stroke(window, Key.F5);
             PumpUntil(() => recorder.Request != null);
             Require(Math.Abs(recorder.Request!.StartMilliseconds - 2000) < .01, "official playtest did not receive the current timeline position");
             Require(window.OwnedWindows.OfType<PlaytestWindow>().Count() == 0, "custom playtest renderer is still used");
@@ -297,6 +298,7 @@ internal static class Program
             ((TabControl)typeof(MainWindow).GetField("editorInspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).SelectedItem =
                 typeof(MainWindow).GetField("settingsInspectorTab", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window);
             Pump(100);
+            window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.4").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(40);
             var settingsAction = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Editor.Settings.Playtest.Open");
             Require(global::Avalonia.LogicalTree.LogicalExtensions.GetLogicalAncestors(settingsAction).Contains((Control)typeof(MainWindow).GetField("settingsInspectorTab", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!), "playtest settings are not in the right settings tab");
             settingsAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -313,6 +315,7 @@ internal static class Program
         Dispatcher.UIThread.RunJobs();
         var appearance = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => AutomationProperties.GetAutomationId(e) == "Settings.Appearance");
         Require(!appearance.IsExpanded, "editor appearance should be collapsed by default");
+        window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.2").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         appearance.IsExpanded = true;
         Pump(100);
         var skinPicker = window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetAutomationId(c) == "Editor.NoteStyle");
@@ -325,6 +328,7 @@ internal static class Program
         OptionControlsSpecs.Run(window, screenshots);
         var shortcuts = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => Equals(e.Header, "快捷键"));
         Require(!shortcuts.IsExpanded, "shortcut settings should be collapsed by default");
+        window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.1").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         shortcuts.IsExpanded = true;
         Pump(100);
         RequestedWorkflowSpecs.Run(window, screenshots);
@@ -333,8 +337,10 @@ internal static class Program
         StartupPlaybackSpecs.Run(window, screenshots);
         GridFocusSpecs.Run(window);
         SymmetryUiSpecs.RunWorkbench(window);
+        window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.0").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         EditorInteraction021Specs.RunWorkbench(window);
         EditorInteraction022Specs.RunWorkbench(window);
+        EditorInteraction023Specs.RunWorkbench(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

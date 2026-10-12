@@ -102,10 +102,11 @@ public static class MixedSelectionEditingService
         EditorSession session,
         IEnumerable<Guid> noteIds,
         IEnumerable<Guid> timingIds,
-        IReadOnlySet<int>? hiddenGroups = null)
+        IReadOnlySet<int>? hiddenGroups = null, CenterSymmetrySettings? symmetry = null)
     {
         ArgumentNullException.ThrowIfNull(session);
-        var notes = SelectCommandNotes(session, noteIds, hiddenGroups).ToArray();
+        var expandedIds = CenterSymmetryService.ExpandDeletion(session, noteIds, symmetry);
+        var notes = SelectCommandNotes(session, expandedIds, hiddenGroups).ToArray();
         var effects = SelectCommandEffects(session, timingIds).ToArray();
         if (notes.Length == 0 && effects.Length == 0)
             return new MixedSelectionDeleteResult([], []);

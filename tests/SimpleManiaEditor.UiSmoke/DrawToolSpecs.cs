@@ -22,7 +22,7 @@ internal static class DrawToolSpecs
         var probe = surface.GetPlacementEvidenceProbe()!;
         var lane = probe.TapTarget.Lane;
         Point At(double beat) => new(probe.TapTarget.SurfacePoint.X,
-            surface.Bounds.Height * surface.JudgementLinePosition - (beat - 4) * surface.PixelsPerBeat - .01);
+            surface.Bounds.Height * surface.JudgementLinePosition - (beat - 4) * surface.PixelsPerBeat - 1);
         void Reset(params ChartNote[] notes) { session.ReplaceDocument(new ChartDocument { KeyCount = 7, Notes = notes.Select(n => n.Clone()).ToList() }); surface.SetCurrentBeat(4); }
         void Drag(Point from, Point to, MouseButton button)
         {

@@ -137,7 +137,7 @@ public static class OsuSourceEnvelope
             text = ReplaceRows(text, "Events", old, string.IsNullOrEmpty(background)
                 ? [] : [$"0,0,\"{background}\",0,0"]);
         }
-        if (TimingSignature(document) != source["timing"]!.GetValue<string>())
+        if (TimingSignature(document) != source["timing"]!.GetValue<string>() || HasStaleTimingRows(document))
         {
             var known = DataLines(text, "TimingPoints").Where(IsTiming).ToHashSet(StringComparer.Ordinal);
             text = ReplaceRows(text, "TimingPoints", known, SerializeTiming(document, text));
@@ -264,6 +264,19 @@ public static class OsuSourceEnvelope
         return string.Join(',', parts);
     }
 
+    // Older caches updated the baseline timestamp without updating its retained row.
+    // Check the row itself so saving an old cache cannot silently restore offset zero.
+    private static bool HasStaleTimingRows(ChartDocument document) => document.Timing.Any(IsStaleTimingRow);
+
+    private static bool IsStaleTimingRow(TimingEvent timing)
+    {
+        if (timing.UnknownData?[ObjectKey] is not JsonObject row || row["time"] is not JsonValue time || row["line"] is not JsonValue line) return false;
+        // Non-zero beat positions may be quantized by less than 1 ms during import.
+        // Preserve those original rows; the beat-zero offset has no such rounding.
+        var tolerance = timing.Bpm.HasValue && timing.Beat.Value == 0 ? 1e-7 : .999999;
+        return !Number(line.GetValue<string>().Split(',')[0], out var raw) || Math.Abs(raw - time.GetValue<double>()) > tolerance;
+    }
+
     private static string[] SerializeTiming(ChartDocument document, string text)
     {
         var map = new TimingMap(document.Timing);
@@ -277,7 +290,7 @@ public static class OsuSourceEnvelope
                     originalRows.LastOrDefault(p => double.Parse(p[0], Invariant) <= time)?.ToArray() ?? ["0", "500", "4", "0", "0", "100", "1", "0"];
                 if (parts.Length < 8) Array.Resize(ref parts, 8);
                 for (var i = 2; i < 8; i++) parts[i] ??= i == 2 ? "4" : i == 5 ? "100" : "0";
-                if (source == null || Math.Abs(time - source["time"]!.GetValue<double>()) > 1e-7)
+                if (source == null || Math.Abs(time - source["time"]!.GetValue<double>()) > 1e-7 || IsStaleTimingRow(t))
                     parts[0] = Math.Round(time, MidpointRounding.AwayFromZero).ToString("0", Invariant);
                 var value = t.Bpm.HasValue ? 60_000d / t.Bpm.Value : -100d / t.EffectValue;
                 if (!Number(parts[1], out var oldValue) || Math.Abs(value - oldValue) > 1e-9 * Math.Max(1, Math.Abs(value)))
