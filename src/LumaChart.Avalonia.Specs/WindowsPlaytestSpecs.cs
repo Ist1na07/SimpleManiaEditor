@@ -733,17 +733,6 @@ internal static class WindowsPlaytestSpecs
             processor.GetSetting(SettingId.OverlapDurationMs) ==
                 WindowsPitchPreservingTimeStretchPolicy.OverlapDurationMilliseconds,
             "Slow preserve-pitch playback lost its high-quality overlap profile.");
-        var extremePitchFactor =
-            WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderStagePitchFactor(.2);
-        Require(
-            WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(.2) &&
-            WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(.3) &&
-            !WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(.31) &&
-            !WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(.2, channels: 6) &&
-            Math.Abs(Math.Pow(extremePitchFactor, 3) - 5) < .00001 &&
-            WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderLatencyFrames == 10_752,
-            "Extreme preserve-pitch slowdown lost its three-stage phase-vocoder profile.");
-
         var expected = Enumerable.Range(1, 512)
             .Select(index => index / 1_024f)
             .ToArray();
@@ -774,15 +763,10 @@ internal static class WindowsPlaytestSpecs
             "A transiently empty provider can still make one device period decode without a bound.");
 
         var empty = new FiniteSineSampleProvider(seconds: 0);
-        var emptyPhaseVocoder = new WindowsPhaseVocoderTimeStretchSampleProvider(
-            empty,
-            () => empty.IsEnded,
-            .2);
-        Require(
-            emptyPhaseVocoder.Prime() &&
-            emptyPhaseVocoder.Read(buffer, 0, buffer.Length) == 0 &&
-            emptyPhaseVocoder.IsEnded,
-            "An empty source became a never-ending silent phase-vocoder stream.");
+        var emptyPrimed = new PrimedMusicSampleProvider(empty, () => empty.IsEnded);
+        emptyPrimed.Prime();
+        Require(emptyPrimed.Read(buffer, 0, buffer.Length) == 0 && emptyPrimed.IsEnded,
+            "An empty source became a never-ending silent primed stream.");
 
         var extremePrime = PrimePitchPreservingProvider(.2f);
         var slowPrime = PrimePitchPreservingProvider(.5f);
@@ -826,9 +810,6 @@ internal static class WindowsPlaytestSpecs
         return $"sequence={processor.GetSetting(SettingId.SequenceDurationMs)}ms; " +
                $"seek={processor.GetSetting(SettingId.SeekWindowDurationMs)}ms; " +
                $"overlap={processor.GetSetting(SettingId.OverlapDurationMs)}ms; " +
-               $"phase=3x{extremePitchFactor:0.000}/" +
-               $"{WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize}/" +
-               $"{WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderOversampling}; " +
                $"quick={processor.GetSetting(SettingId.UseQuickSeek)}; samples={actual.Count}; " +
                $"boundedReads={permanentlyEmpty.ReadCallCount}; " +
                $"extreme={extremePrime.Read}/{extremePrime.Audible}/" +
@@ -979,20 +960,6 @@ internal static class WindowsPlaytestSpecs
         Func<bool> sourceReallyEnded,
         float tempo)
     {
-        if (WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(
-                tempo,
-                source.WaveFormat.Channels))
-        {
-            var phaseVocoder = new WindowsPhaseVocoderTimeStretchSampleProvider(
-                source,
-                sourceReallyEnded,
-                tempo);
-            Require(phaseVocoder.Prime(), "The phase vocoder could not remove startup latency.");
-            return new PitchPreservingProvider(
-                phaseVocoder,
-                () => phaseVocoder.IsEnded);
-        }
-
         IWaveProvider stageSource = source.ToWaveProvider();
         var processor = new SoundTouchProcessor();
         var stageProvider = new SoundTouchWaveProvider(stageSource, processor)

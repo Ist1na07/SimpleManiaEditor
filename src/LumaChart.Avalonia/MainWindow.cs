@@ -9676,14 +9676,6 @@ public sealed partial class MainWindow : PlatformWindow
         UpdateAudioPanelViewport(spectrogramSideSurface);
     }
 
-    private void UpdateAudioPanelPlaybackBeat(double beat)
-    {
-        if (waveformSideSurface.IsVisible)
-            waveformSideSurface.SetPlaybackBeat(beat);
-        if (spectrogramSideSurface.IsVisible)
-            spectrogramSideSurface.SetPlaybackBeat(beat);
-    }
-
     private void UpdateAudioPanelViewport(AudioVisualizationSideSurface surface)
     {
         var linePosition = timeline.JudgementLinePosition;
@@ -12846,9 +12838,8 @@ public sealed partial class MainWindow : PlatformWindow
         ApplyPrimaryButtonStyle(audioStopButton);
         AutomationProperties.SetAutomationId(audioStopButton, "Audio.Stop");
 
-        audioRefreshDeviceButton.Content = SupportsDesktopWindowSizing
-            ? "刷新输出设备"
-            : "重建音频输出";
+        audioRefreshDeviceButton.Content = "重建音频输出";
+        ToolTip.SetTip(audioRefreshDeviceButton, "更换音频设备或音频异常时，重新连接音频输出。");
         audioRefreshDeviceButton.Click += async (_, _) =>
             await RefreshEditorAudioDeviceAsync();
         ApplyPrimaryButtonStyle(audioRefreshDeviceButton);
@@ -12972,38 +12963,9 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(audioVolumeText, "Audio.VolumeText");
         audioStatusText.Text = "没有打开的谱面";
         audioStatusText.Foreground = MutedBrush;
-        audioStatusText.FontSize = 11;
+        audioStatusText.FontSize = 13;
         audioStatusText.TextWrapping = TextWrapping.Wrap;
         AutomationProperties.SetAutomationId(audioStatusText, "Audio.RuntimeStatus");
-
-        var transportButtons = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,Auto"),
-            ColumnSpacing = 6,
-            Children = { audioPlayPauseButton, audioStopButton, audioRefreshDeviceButton }
-        };
-        Grid.SetColumn(audioStopButton, 1);
-        Grid.SetColumn(audioRefreshDeviceButton, 2);
-
-        var rateRow = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,46"),
-            ColumnSpacing = 8,
-            Children =
-            {
-                new TextBlock
-                {
-                    Text = "倍速",
-                    Foreground = MutedBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                audioRateSlider,
-                audioRateText
-            }
-        };
-        Grid.SetColumn(audioRateSlider, 1);
-        Grid.SetColumn(audioRateText, 2);
-        audioRateText.VerticalAlignment = VerticalAlignment.Center;
 
         audioVolumeText.Margin = new Thickness(0, 5, 0, 10);
 
@@ -13016,6 +12978,8 @@ public sealed partial class MainWindow : PlatformWindow
             Spacing = 7,
             Children =
             {
+                TimingField("音频状态", audioStatusText),
+                audioRefreshDeviceButton,
                 TimingField("音乐音量", audioVolumeSlider),
                 audioVolumeText,
                 BuildAudioVisualCalibrationSettings(),
@@ -15845,7 +15809,6 @@ public sealed partial class MainWindow : PlatformWindow
             visualPosition = EditorAudioVisualCalibration.ChartTime(visualPosition, audioTransport.PlaybackRate, editorAudioVisualOffsetMilliseconds);
         var beat = timingMap.MillisecondsToBeat(visualPosition, 1_000_000).Value;
         SetProgrammaticPlaybackBeat(beat);
-        UpdateAudioPanelPlaybackBeat(beat);
         lastCalibratedCursorMilliseconds = pump.Output == WindowsKeySoundPlaybackOutput.SharedMusicClock && editorAudioVisualOffsetMilliseconds != 0 ? visualPosition : null;
         lastCalibratedCursorRate = audioTransport.PlaybackRate;
         lastCalibratedCursorOffsetMilliseconds = editorAudioVisualOffsetMilliseconds;
@@ -15887,7 +15850,9 @@ public sealed partial class MainWindow : PlatformWindow
         var isPlaying = IsEditorPlaybackActive();
         var playbackStarted = isPlaying && !editorPlaybackWasActive;
         editorPlaybackWasActive = isPlaying;
+        var trackPlaybackStateChanged = timeline.IsPlaybackActive != isPlaying;
         timeline.SetPlaybackActive(isPlaying);
+        if (trackPlaybackStateChanged) AdvanceTrackPlaybackViewports();
         if (!frameRateRuntimeReady) return;
 
         var limit = EffectiveFrameRateLimit();
@@ -17223,7 +17188,8 @@ public sealed partial class MainWindow : PlatformWindow
 
     private void Timeline_CurrentBeatChanged(object? sender, double beat)
     {
-        SyncTrackViewports();
+        if (settingProgrammaticPlaybackBeat) AdvanceTrackPlaybackViewports();
+        else SyncTrackViewports();
         eventTimeRuler.SetCurrentBeat(beat);
         if (settingProgrammaticPlaybackBeat) return;
         UpdatePlaybackPositionUi(beat);

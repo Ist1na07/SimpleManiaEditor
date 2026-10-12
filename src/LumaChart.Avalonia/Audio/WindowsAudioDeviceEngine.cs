@@ -77,8 +77,6 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     private string? loadedSourcePath;
     private TransportEnvelopeSampleProvider? transportEnvelope;
     private WaveStream? source;
-    private RateAdjustingSampleProvider? rateProvider;
-    private WindowsPhaseVocoderTimeStretchSampleProvider? phaseVocoderProvider;
     private SoundTouchWaveProvider[] soundTouchProviders = [];
     private VolumeSampleProvider? localVolumeProvider;
     private volatile QueuedOverlayMixerSampleProvider? outputMixer;
@@ -257,46 +255,21 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
 
     private void SetPlaybackRateLocked(double value)
     {
-        var boundedRate = Math.Clamp(value, .1, 2);
-        var requiresPhaseVocoder = source != null &&
-            WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(
-                boundedRate,
-                source.WaveFormat.Channels);
-        var hasPitchPreservingPipeline =
-            phaseVocoderProvider != null || soundTouchProviders.Length > 0;
-        var requiresPitchPreservingPipeline = Math.Abs(boundedRate - 1) > .000001;
-        var requiresDifferentStages = requiresPhaseVocoder && phaseVocoderProvider != null &&
-            phaseVocoderProvider.StageCount != WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderStageCount(boundedRate);
-        if (preservePitch && source != null &&
-            (hasPitchPreservingPipeline != requiresPitchPreservingPipeline ||
-             hasPitchPreservingPipeline && (phaseVocoderProvider != null) != requiresPhaseVocoder ||
-             requiresDifferentStages))
+        var boundedRate = WindowsPitchPreservingTimeStretchPolicy.ResolveSoundTouchTempo(value);
+        if (Math.Abs(boundedRate - playbackRate) < .000001) return;
+        if (source == null) { playbackRate = boundedRate; return; }
+        var position = TimeSpan.FromTicks(ReadPositionTicks());
+        // A processor can contain old-tempo output and is being read on another
+        // thread. Prepare the new tempo separately and swap at a read boundary.
+        if (output != null && outputMixer?.IsActive == true && transportEnvelope != null && loadedSourcePath != null)
         {
-            var position = TimeSpan.FromTicks(ReadPositionTicks());
-            var resume = IsPlaying;
-            BeginClockTransition(position.Ticks);
-            try
-            {
-                playbackRate = boundedRate;
-                RecreateOutputAt(position, resume);
-            }
-            finally
-            {
-                EndClockTransition();
-            }
+            SeekPrepared(position, null, boundedRate);
             return;
         }
-
-        CapturePosition(
-            positionClock.IsRunning,
-            () => playbackRate = boundedRate);
-        if (rateProvider != null) rateProvider.PlaybackRate = playbackRate;
-        if (phaseVocoderProvider != null)
-            phaseVocoderProvider.PlaybackRate = playbackRate;
-        var stageTempo = WindowsPitchPreservingTimeStretchPolicy.ResolveSoundTouchTempo(
-            playbackRate);
-        for (var index = soundTouchProviders.Length - 1; index >= 0; index--)
-            soundTouchProviders[index].Tempo = (float)stageTempo;
+        var resume = IsPlaying;
+        BeginClockTransition(position.Ticks);
+        try { playbackRate = boundedRate; RecreateOutputAt(position, resume); }
+        finally { EndClockTransition(); }
     }
 
     public bool PreservePitch
@@ -401,8 +374,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         var target = TimeSpan.FromTicks(ticks);
         validateRequest?.Invoke();
         if (output != null && outputMixer?.IsActive == true && transportEnvelope != null &&
-            loadedSourcePath != null && preservePitch &&
-            WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(playbackRate, source.WaveFormat.Channels))
+            loadedSourcePath != null)
         {
             SeekPrepared(target, validateRequest);
             return;
@@ -420,7 +392,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         else RecreateOutputAt(target, IsPlaying);
     });
 
-    private void SeekPrepared(TimeSpan target, Action? validateRequest)
+    private void SeekPrepared(TimeSpan target, Action? validateRequest, double? newPlaybackRate = null)
     {
         var preparedSource = AudioDecoder.OpenWaveStream(loadedSourcePath!);
         PreparedMusicPipeline? pipeline = null;
@@ -431,7 +403,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         {
             // Slow DSP priming runs on an independent decoder while the render
             // callback continues consuming the old pipeline without waiting.
-            pipeline = PreparedMusicPipeline.Build(preparedSource, target, playbackRate, preservePitch, volume, ThrowIfDisposed);
+            pipeline = PreparedMusicPipeline.Build(preparedSource, target, newPlaybackRate ?? playbackRate, preservePitch, volume, ThrowIfDisposed);
             validateRequest?.Invoke();
             var resume = IsPlaying;
             BeginClockTransition(target.Ticks);
@@ -441,8 +413,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 {
                     outputMixer!.ReplaceMusic(pipeline.Volume, pipeline.Ended);
                     source = preparedSource;
-                    rateProvider = pipeline.Rate;
-                    phaseVocoderProvider = pipeline.PhaseVocoder;
+                    if (newPlaybackRate.HasValue) playbackRate = newPlaybackRate.Value;
                     soundTouchProviders = pipeline.Stages;
                     localVolumeProvider = pipeline.Volume;
                     Interlocked.Exchange(ref positionAnchorTicks, target.Ticks);
@@ -591,8 +562,6 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         positionClock.Reset();
         var previousStages = reuseDevice ? soundTouchProviders : [];
         if (!reuseDevice) DisposeOutput();
-        RateAdjustingSampleProvider? createdRateProvider = null;
-        WindowsPhaseVocoderTimeStretchSampleProvider? createdPhaseVocoderProvider = null;
         var createdSoundTouchProviders = new List<SoundTouchWaveProvider>();
         VolumeSampleProvider? createdVolumeProvider = null;
         QueuedOverlayMixerSampleProvider? createdMixer = null;
@@ -601,8 +570,6 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         try
         {
             var pipeline = PreparedMusicPipeline.Build(source, position, playbackRate, preservePitch, volume, ThrowIfDisposed);
-            createdRateProvider = pipeline.Rate;
-            createdPhaseVocoderProvider = pipeline.PhaseVocoder;
             createdSoundTouchProviders.AddRange(pipeline.Stages);
             createdVolumeProvider = pipeline.Volume;
             var musicReallyEnded = pipeline.Ended;
@@ -623,8 +590,6 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 createdOutput = CreateOutput(envelope.ToWaveProvider());
                 createdOutput.PlaybackStopped += OnPlaybackStopped;
             }
-            rateProvider = createdRateProvider;
-            phaseVocoderProvider = createdPhaseVocoderProvider;
             soundTouchProviders = [.. createdSoundTouchProviders];
             localVolumeProvider = createdVolumeProvider;
             outputMixer = createdMixer;
@@ -667,8 +632,6 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             outputMixer = null;
             localVolumeProvider = null;
             soundTouchProviders = [];
-            rateProvider = null;
-            phaseVocoderProvider = null;
             ResetAudioClock();
             positionClock.Reset();
             throw;
@@ -1083,8 +1046,6 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         var previousSoundTouchProviders = soundTouchProviders;
         outputMixer = null;
         transportEnvelope = null;
-        rateProvider = null;
-        phaseVocoderProvider = null;
         soundTouchProviders = [];
         localVolumeProvider = null;
         previousMixer?.Complete();

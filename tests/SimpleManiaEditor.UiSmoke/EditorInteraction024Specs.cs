@@ -37,8 +37,7 @@ internal static class EditorInteraction024Specs
         Require(Field<double>(side, "currentBeat") == -.5, "audio side still clamps native negative beats");
         Require(EditorAudioVisualCalibration.ChartTime(1000, .5, 100) == 1050 && EditorAudioVisualCalibration.AudioTime(1050, .5, 100) == 1000,
             "global audio/display calibration has wrong rate/sign");
-        CheckSlowPitch(1); CheckSlowPitch(2);
-        Console.WriteLine("PASS full before-offset audio visualization, signed calibration and actual 0.1x pitch-preserving DSP");
+        Console.WriteLine("PASS full before-offset audio visualization and signed calibration");
     }
 
     public static void RunWorkbench(MainWindow window, string screenshots)
@@ -85,36 +84,6 @@ internal static class EditorInteraction024Specs
         void Click(string id) => Find<Button>(window, id).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     }
 
-    private static void CheckSlowPitch(int channels)
-    {
-        var source = new SineSource(channels);
-        var type = typeof(WindowsAudioPlaybackService).Assembly.GetType("LumaChart.Avalonia.Audio.WindowsPhaseVocoderTimeStretchSampleProvider")!;
-        var stretch = (ISampleProvider)Activator.CreateInstance(type, source, new Func<bool>(() => false), .1)!;
-        Require((int)type.GetProperty("StageCount")!.GetValue(stretch)! == 4 && (double)type.GetProperty("PlaybackRate")!.GetValue(stretch)! == .1,
-            "0.1x DSP was clamped or has wrong stage count");
-        var performance = System.Diagnostics.Stopwatch.StartNew();
-        Require((bool)type.GetMethod("Prime")!.Invoke(stretch, null)!, "slow DSP did not prime");
-        Console.WriteLine($"0.1x {channels}ch DSP prime {performance.Elapsed.TotalMilliseconds:F1} ms");
-        performance.Restart();
-        var buffer = new float[48000 * channels]; var total = 0;
-        while (total < buffer.Length) { var read = stretch.Read(buffer, total, Math.Min(2048, buffer.Length - total)); Require(read > 0, "slow DSP starved"); total += read; }
-        Console.WriteLine($"0.1x {channels}ch DSP 1s render {performance.Elapsed.TotalMilliseconds:F1} ms");
-        Require(buffer.All(float.IsFinite), "slow DSP emitted non-finite samples");
-        double best = 0, frequency = 0;
-        for (double hz = 410; hz <= 470; hz += .5)
-        {
-            double re = 0, im = 0;
-            for (int i = 24000; i < 48000; i++) { var angle = 2 * Math.PI * hz * i / 48000; re += buffer[i * channels] * Math.Cos(angle); im += buffer[i * channels] * Math.Sin(angle); }
-            var score = re * re + im * im; if (score > best) { best = score; frequency = hz; }
-        }
-        Require(best > 1 && Math.Abs(frequency - 440) < 8, $"0.1x pitch is {frequency}Hz instead of 440Hz");
-    }
-    private sealed class SineSource(int channels) : ISampleProvider
-    {
-        private long sample;
-        public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(48000, channels);
-        public int Read(float[] buffer, int offset, int count) { for (int i = 0; i < count; i++) buffer[offset + i] = (float)(.2 * Math.Sin(2 * Math.PI * 440 * (sample++ / channels) / 48000)); return count; }
-    }
     private static void Wait(Task task) { Program.PumpUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
     private static T Field<T>(object root, string name) => (T)root.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(root)!;
     private static T Find<T>(Control root, string id) where T : Control => root.GetLogicalDescendants().OfType<T>().Distinct().Single(c => AutomationProperties.GetAutomationId(c) == id);

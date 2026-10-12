@@ -6,8 +6,6 @@ using SoundTouch.Net.NAudioSupport;
 namespace LumaChart.Avalonia.Audio;
 
 internal sealed record PreparedMusicPipeline(
-    RateAdjustingSampleProvider? Rate,
-    WindowsPhaseVocoderTimeStretchSampleProvider? PhaseVocoder,
     SoundTouchWaveProvider[] Stages,
     VolumeSampleProvider Volume,
     Func<bool> Ended) : IDisposable
@@ -15,8 +13,6 @@ internal sealed record PreparedMusicPipeline(
     public static PreparedMusicPipeline Build(WaveStream source, TimeSpan position,
         double playbackRate, bool preservePitch, float volume, Action throwIfDisposed)
     {
-        RateAdjustingSampleProvider? createdRateProvider = null;
-        WindowsPhaseVocoderTimeStretchSampleProvider? createdPhaseVocoderProvider = null;
         var createdSoundTouchProviders = new List<SoundTouchWaveProvider>();
         VolumeSampleProvider? createdVolumeProvider = null;
         try
@@ -32,48 +28,30 @@ internal sealed record PreparedMusicPipeline(
                 activeSource.CurrentTime >=
                 activeSource.TotalTime - TimeSpan.FromMilliseconds(250);
             ISampleProvider musicProvider;
-            SoundTouchContinuitySampleProvider? createdContinuityProvider = null;
             Func<bool> musicReallyEnded = RateSourceReallyEnded;
             // 1x needs no time stretching, including when preserve-pitch is checked.
             if (preservePitch && Math.Abs(playbackRate - 1) > .000001)
             {
-                if (WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(
-                        playbackRate,
-                        boundedSource.WaveFormat.Channels))
+                // One stereo-linked time-domain processor for every rate. Avoid
+                // serial pitch shifts and their per-channel phase/limiter artefacts.
+                IWaveProvider stageSource = boundedSource.ToWaveProvider();
+                var processor = new SoundTouchProcessor();
+                var stageProvider = new SoundTouchWaveProvider(stageSource, processor)
                 {
-                    createdPhaseVocoderProvider =
-                        new WindowsPhaseVocoderTimeStretchSampleProvider(
-                            boundedSource,
-                            RateSourceReallyEnded,
-                            playbackRate);
-                    _ = createdPhaseVocoderProvider.Prime();
-                    musicProvider = createdPhaseVocoderProvider;
-                    musicReallyEnded = () => createdPhaseVocoderProvider.IsEnded;
-                }
-                else
-                {
-                    IWaveProvider stageSource = boundedSource.ToWaveProvider();
-                    var processor = new SoundTouchProcessor();
-                    var stageProvider = new SoundTouchWaveProvider(stageSource, processor)
-                    {
-                        Tempo = (float)WindowsPitchPreservingTimeStretchPolicy
-                            .ResolveSoundTouchTempo(playbackRate),
-                        Pitch = 1,
-                        Rate = 1
-                    };
-                    WindowsPitchPreservingTimeStretchPolicy.Configure(processor);
-                    createdSoundTouchProviders.Add(stageProvider);
-                    stageSource = stageProvider;
-                    createdContinuityProvider = new SoundTouchContinuitySampleProvider(
-                        stageSource.ToSampleProvider(),
-                        () => boundedSource.IsEnded);
-                    musicProvider = createdContinuityProvider;
-                    musicReallyEnded = () => createdContinuityProvider.IsEnded;
-                }
+                    Tempo = (float)WindowsPitchPreservingTimeStretchPolicy.ResolveSoundTouchTempo(playbackRate),
+                    Pitch = 1,
+                    Rate = 1
+                };
+                WindowsPitchPreservingTimeStretchPolicy.Configure(processor);
+                createdSoundTouchProviders.Add(stageProvider);
+                var createdContinuityProvider = new SoundTouchContinuitySampleProvider(
+                    stageProvider.ToSampleProvider(), () => boundedSource.IsEnded);
+                musicProvider = createdContinuityProvider;
+                musicReallyEnded = () => createdContinuityProvider.IsEnded;
             }
             else
             {
-                createdRateProvider = new RateAdjustingSampleProvider(
+                var createdRateProvider = new RateAdjustingSampleProvider(
                     boundedSource,
                     RateSourceReallyEnded)
                 {
@@ -83,9 +61,13 @@ internal sealed record PreparedMusicPipeline(
                 musicProvider = createdRateProvider;
             }
 
-            createdVolumeProvider = new VolumeSampleProvider(musicProvider) { Volume = volume };
-            return new PreparedMusicPipeline(createdRateProvider, createdPhaseVocoderProvider,
-                [.. createdSoundTouchProviders], createdVolumeProvider, musicReallyEnded);
+            // Precompute the first 20ms on the preparation worker for every
+            // rate, including decoder-only 1x. Retain it to preserve song onset.
+            var primed = new PrimedMusicSampleProvider(musicProvider, musicReallyEnded);
+            primed.Prime();
+            throwIfDisposed();
+            createdVolumeProvider = new VolumeSampleProvider(primed) { Volume = volume };
+            return new PreparedMusicPipeline([.. createdSoundTouchProviders], createdVolumeProvider, () => primed.IsEnded);
         }
         catch
         {

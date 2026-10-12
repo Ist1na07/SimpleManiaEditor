@@ -25,8 +25,23 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--seek-026")
+        {
+            var fixture = Path.Combine(Path.GetTempPath(), "sme-seek-026-" + Guid.NewGuid().ToString("N") + ".wav");
+            try { PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory(); WriteSimulationWave(fixture); SeekPerformanceSpecs.CheckCanceledPreparation(fixture); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+            finally { File.Delete(fixture); }
+        }
+        if (args.Length > 0 && args[0] == "--audio-026")
+        {
+            try { Audio026Specs.Run(); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--seek-benchmark")
+        {
+            PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             return SeekPerformanceSpecs.Run(args.Length > 1 ? args[1] : null, args.Length > 2 ? args[2] : null);
+        }
         var root = Path.Combine(Path.GetTempPath(), "sme-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_LOCAL_DATA_ROOT", Path.Combine(root, "settings"));
@@ -76,6 +91,7 @@ internal static class Program
             if (args.Length > 0 && args[0] == "--workbench-test")
             {
                 EditorInteraction024Specs.RunAudio();
+                Audio026Specs.Run();
                 EditorInteraction025Specs.RunPointer(screenshotRoot);
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
                 RunApplicationSmoke(screenshotRoot);
@@ -90,6 +106,7 @@ internal static class Program
             EditorInteraction022Specs.RunPointer();
             EditorInteraction023Specs.RunPointer();
             EditorInteraction024Specs.RunAudio();
+            Audio026Specs.Run();
             EditorInteraction025Specs.RunPointer(screenshotRoot);
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
@@ -381,6 +398,8 @@ internal static class Program
         EditorInteraction023Specs.RunWorkbench(window, screenshots);
         EditorInteraction024Specs.RunWorkbench(window, screenshots);
         EditorInteraction025Specs.RunWorkbench(window, screenshots);
+        TrackPlayback026Specs.Run(window);
+        AudioSettings026Specs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

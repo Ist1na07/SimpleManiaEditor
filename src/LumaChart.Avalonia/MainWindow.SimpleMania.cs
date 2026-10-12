@@ -313,6 +313,8 @@ public sealed partial class MainWindow
         RefreshTrackCommandButtons();
     }
 
+    private double? fixedRateOptionsRate;
+
     private void SyncFixedPlaybackRate()
     {
         if (fixedRatePointerDown || fixedRateChangesInFlight > 0) return;
@@ -324,7 +326,11 @@ public sealed partial class MainWindow
             if (fixedRateText != null) fixedRateText.Text = $"{rate:0.##}x";
             if (fixedRatePicker != null)
             {
-                fixedRatePicker.ItemsSource = workbenchRates.Contains(rate) ? workbenchRates : workbenchRates.Append(rate).Order().ToArray();
+                if (fixedRateOptionsRate != rate)
+                {
+                    fixedRatePicker.ItemsSource = workbenchRates.Contains(rate) ? workbenchRates : workbenchRates.Append(rate).Order().ToArray();
+                    fixedRateOptionsRate = rate;
+                }
                 fixedRatePicker.SelectedItem = rate;
             }
         }

@@ -1,3 +1,17 @@
+# 0.1.26 当前基线
+
+编辑保音高使用所有倍率单SoundTouchWaveProvider（100/28/20ms、高质量搜索），1x旁路；删除SMB多段和每段soft limiter。旧0.1x已知三音和弦实测带外能量约左43%/右76%，反映单正弦测试不足；新Audio026Specs覆盖10倍率mono/stereo、复杂扫频/非谐波/短噪声、同声道与静音声道、FFT、EOF、512/2048/8192块不变性，并逐样本对照未预热SoundTouch，确保没有因预热丢失开头。PrimedMusicSampleProvider保留20ms首块；NAudio WaveBuffer以byte[]重叠视图提供float[]，必须用Buffer.BlockCopy而非Array.Copy（真实device-path integration已复现并修复）。
+
+WindowsAudioDeviceEngine所有Seek使用独立decoder+PreparedMusicPipeline；SetPlaybackRateLocked同样准备新的倍率链后在transport envelope读边界swap，保留原输出与Playing状态，不并发修改Tempo。旧source/stages仅交换后dispose；取消验证在建链后执行，取消不改旧流。去掉已无用途的rate/phase字段；PreparedMusicPipeline统一预热包括1x decoder。SeekPerformanceSpecs扩展多倍率取消/设备复用，benchmark另测低于0.3x连续2s/其余500ms持续播放，避免只测首块缓存。
+
+MainWindow.Track相关配置tuple变化时一次full SyncTrackViewports；播放SetProgrammaticPlaybackBeat仅AdvanceTrackPlaybackViewports，缓存metric物理锚，波形/频谱SetPlaybackBeat推进。主尺寸、zoom、tracks变化仍full同步。不同BPM/offset百万分拍时间投影仍正确，独立轨不受主播放影响且取消同步清active。TrackPlayback026Specs测500帧无full调用，验证配置变更兜底和布局/滚动语义；测试环境light500约0.36–0.41ms、full约1.02–1.03ms，不代表GPU Present或整体帧率。
+
+BuildAudioTransport把现存RuntimeStatus/RefreshDevice真正挂入音频设置，移除未挂载的重复play/stop/rate布局容器。SyncFixedPlaybackRate缓存当前选项倍率，相同值不重建ItemsSource，打开自定义倍率选项不受20Hz轮询扰动。AudioSettings026Specs实际可见树、输出重建、自定义1.03x打开选项轮询和截图验证。
+
+59核心规格、完整headless UI、10倍率实际DSP和压缩48k双声道跳转/持续输出检查通过；历史Avalonia.Specs仅构建兼容验证，不声称整套旧行为规格通过。官方游戏逻辑未改，宿主仅版本更新。实机音质/校准/180fps仍未验收。具体基准见performance/AUDIO-PLAYBACK-0.1.26.md。
+
+历史记录：
+
 # 0.1.25 当前基线
 
 校准跳转：连续暂停/seek压力测试复现DispatcherTimer启用但不再提交的pending状态；提交改为Task.Delay(12ms)+UI单次post，独立schedule generation取消旧回调，正在执行时由finally调度最新目标，维持首次事件启动/连续滚动合并。

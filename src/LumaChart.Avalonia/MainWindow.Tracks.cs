@@ -31,6 +31,7 @@ public sealed partial class MainWindow
         public long MainSerial { get; set; } = -1;
         public TimingMap? Timing { get; set; }
         public long TimingSerial { get; set; } = -1;
+        public double? MetricViewportAnchor { get; set; }
         public Action? RefreshHitsoundFields { get; set; }
     }
 
@@ -44,6 +45,10 @@ public sealed partial class MainWindow
     private TrackView? activeSecondaryTrack;
     private ContextMenu? addTrackContextMenu;
     private bool synchronizingTrackViewport;
+    private long trackViewportLayoutUpdates;
+    private long trackViewportPlaybackUpdates;
+    private (EditorNoteStyle Style, EditorInteractionProfile Profile, bool ReverseWheel, bool SnapAll,
+        bool HideSv, int Division, double Zoom, double Anchor)? trackPlaybackConfiguration;
     private Control? mainTrackFrame;
 
     private Control BuildTrackWorkbench(Control frame) => CreateUnifiedBoard(frame);
@@ -394,6 +399,7 @@ public sealed partial class MainWindow
     private void SyncTrackViewports()
     {
         if (synchronizingTrackViewport || viewModel.ActiveTab is not { } tab) return;
+        trackViewportLayoutUpdates++;
         synchronizingTrackViewport = true;
         try
         {
@@ -411,7 +417,8 @@ public sealed partial class MainWindow
                     surface.Session!.SnapDivision = tab.Session.SnapDivision;
                     if (anchor.HasValue && surface.Bounds.Height > 0 && surface.TranslatePoint(new Point(), trackPanels) is { } origin)
                         surface.SetViewportAnchor((anchor.Value.Y - origin.Y) / surface.Bounds.Height);
-                    if (!view.Track.SyncScroll) { surface.SetTimeAxisProjection(null, null); continue; }
+                    if (!view.Track.SyncScroll)
+                    { surface.SetTimeAxisProjection(null, null); surface.SetPlaybackActive(false); continue; }
                     if (view.TimingSerial != surface.Session.ChangeSerial)
                     { view.Timing = new TimingMap(surface.Session.Document.Timing); view.TimingSerial = surface.Session.ChangeSerial; }
                     surface.SetTimeAxisProjection(view.Timing, GetAudioTimingMap(tab));
@@ -423,14 +430,65 @@ public sealed partial class MainWindow
                 {
                     view.Track.ViewBeat = timeline.CurrentBeat;
                     var origin = view.Metric?.TranslatePoint(new Point(), trackPanels);
-                    view.Metric?.SetViewport(timeline.CurrentBeat, timeline.PixelsPerBeat,
-                        anchor.HasValue && origin.HasValue ? anchor.Value.Y - origin.Value.Y : null);
+                    view.MetricViewportAnchor = anchor.HasValue && origin.HasValue ? anchor.Value.Y - origin.Value.Y : null;
+                    view.Metric?.SetViewport(timeline.CurrentBeat, timeline.PixelsPerBeat, view.MetricViewportAnchor);
                 }
             }
         }
         finally { synchronizingTrackViewport = false; }
         SyncBoardAudioViewports();
+        trackPlaybackConfiguration = CaptureTrackPlaybackConfiguration(tab);
     }
+
+    /// <summary>
+    /// Playback only moves retained track scenes. Layout, styles, zoom and
+    /// judgement-line transforms are synchronized separately when they change.
+    /// </summary>
+    private void AdvanceTrackPlaybackViewports()
+    {
+        if (synchronizingTrackViewport || viewModel.ActiveTab is not { } tab) return;
+        // Grid and interaction settings use plain properties. Keep their
+        // propagation without rewriting settings or calculating layout each frame.
+        if (trackPlaybackConfiguration != CaptureTrackPlaybackConfiguration(tab))
+        { SyncTrackViewports(); return; }
+        trackViewportPlaybackUpdates++;
+        synchronizingTrackViewport = true;
+        try
+        {
+            var mainMap = GetAudioTimingMap(tab);
+            var milliseconds = mainMap.BeatToMilliseconds(BeatPosition.FromDouble(timeline.CurrentBeat, 1_000_000));
+            foreach (var view in secondaryTrackViews.Values)
+            {
+                if (!view.Track.SyncScroll) continue;
+                if (view.Surface is { } surface && surface.Session is { } session)
+                {
+                    // A mutation can arrive between a document refresh and a
+                    // playback frame. Rebuild only that track's changed map.
+                    if (view.Timing == null || view.TimingSerial != session.ChangeSerial)
+                    {
+                        view.Timing = new TimingMap(session.Document.Timing);
+                        view.TimingSerial = session.ChangeSerial;
+                    }
+                    surface.SetTimeAxisProjection(view.Timing, mainMap);
+                    surface.SetCurrentBeat(view.Timing.MillisecondsToBeat(milliseconds, 1_000_000).Value);
+                    surface.SetPlaybackActive(timeline.IsPlaybackActive);
+                }
+                else if (view.Metric is { } metric)
+                {
+                    view.Track.ViewBeat = timeline.CurrentBeat;
+                    metric.SetViewport(timeline.CurrentBeat, timeline.PixelsPerBeat, view.MetricViewportAnchor);
+                }
+            }
+            if (waveformSideSurface.IsVisible) waveformSideSurface.SetPlaybackBeat(timeline.CurrentBeat);
+            if (spectrogramSideSurface.IsVisible) spectrogramSideSurface.SetPlaybackBeat(timeline.CurrentBeat);
+        }
+        finally { synchronizingTrackViewport = false; }
+    }
+
+    private (EditorNoteStyle Style, EditorInteractionProfile Profile, bool ReverseWheel, bool SnapAll,
+        bool HideSv, int Division, double Zoom, double Anchor) CaptureTrackPlaybackConfiguration(DesktopChartTab tab) =>
+        (timeline.NoteStyle, timeline.InteractionProfile, timeline.ReverseTimeWheel, timeline.SnapAllNotes,
+            osuMinimalMode, tab.Session.SnapDivision, timeline.PixelsPerBeat, timeline.JudgementLinePosition);
 
     private async Task SaveTrackWorkspacesAsync()
     {
