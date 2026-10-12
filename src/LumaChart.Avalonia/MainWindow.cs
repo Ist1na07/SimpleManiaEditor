@@ -12308,6 +12308,7 @@ public sealed partial class MainWindow : PlatformWindow
                 CommandButton("应用", (_, _) => ApplyTimingMetadata()), 62)),
             TimingField("音频 Offset（ms，1 ms）", MetadataActionRow(metadataOffsetBox,
                 CommandButton("应用", (_, _) => ApplyTimingMetadata()), 62)),
+            BuildOffsetHereButton(),
             analysisButtons, metadataAudioAnalysisText,
             PrimaryButton("应用 Timing 基础信息", (_, _) => ApplyTimingMetadata())
         } };
@@ -14364,6 +14365,7 @@ public sealed partial class MainWindow : PlatformWindow
 
             // Do not explicitly close tabs here. WPF retains every tab cache on a
             // normal application exit; explicit tab closes are the cache-deleting path.
+            await SaveTrackWorkspacesAsync();
             if (!await viewModel.PersistAsync())
             {
                 WindowsNativeMessageBox.Show(
@@ -16831,6 +16833,7 @@ public sealed partial class MainWindow : PlatformWindow
             // Persist the exact displayed transport position, even between the
             // slower inspector updates. A note edit refresh must not rewind it.
             viewModel.UpdateCurrentBeat(beat);
+            RememberMainTrackPosition(beat);
         }
         finally { settingProgrammaticPlaybackBeat = previous; }
     }
@@ -17372,6 +17375,7 @@ public sealed partial class MainWindow : PlatformWindow
     private void UpdatePlaybackPositionUi(double beat)
     {
         viewModel.UpdateCurrentBeat(beat);
+        RememberMainTrackPosition(beat);
         editorOverview.SetCurrentBeat(beat);
         difficultyOverview.SetCurrentBeat(beat);
         UpdateAudioPanelViewports();
@@ -18725,7 +18729,6 @@ public sealed partial class MainWindow : PlatformWindow
                     : AvaloniaLocalizationCatalog.Format("音频已导入：{0}", imported.FileName));
             viewModel.SetStatus(apply.Message);
             UpdateUi();
-            await StartSingleTempoAnalysisAsync();
             return WindowsChartAudioImportStatus.Imported;
         }
         catch (Exception exception)
@@ -21388,6 +21391,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (!closingTabIds.Add(tab.Id)) return;
         try
         {
+            await SaveTrackWorkspacesAsync();
             await CloseTabWithPromptsAsync(tab);
         }
         catch (Exception exception)

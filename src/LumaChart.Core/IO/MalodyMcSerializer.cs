@@ -259,6 +259,7 @@ public static class MalodyMcSerializer
             }
         }
 
+        OsuSourceEnvelope.RestoreLegacyLeadIn(document);
         document.Normalize();
         skippedRecordCount = skipped;
         return document;

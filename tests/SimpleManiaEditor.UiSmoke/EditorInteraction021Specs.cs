@@ -24,9 +24,9 @@ internal static class EditorInteraction021Specs
         var session = new EditorSession(); session.ReplaceDocument(new ChartDocument { KeyCount = 7 });
         var surface = new TimelineSurface { Session = session, Tool = TimelineTool.Hold };
         var window = new Window { Width = 1000, Height = 800, Content = surface }; window.Show(); Program.Pump(40);
-        surface.SetZoom(140); surface.SetCurrentBeat(4);
+        surface.SetZoom(70); surface.SetCurrentBeat(4);
         var target = surface.GetPlacementEvidenceProbe()!.TapTarget;
-        Point At(double beat) => new(target.SurfacePoint.X, surface.Bounds.Height * surface.JudgementLinePosition - (beat - 4) * 140 - .01);
+        Point At(double beat) => new(target.SurfacePoint.X, surface.Bounds.Height * surface.JudgementLinePosition - (beat - 4) * 70 - .01);
         void Drag(Point start, Point end) { window.MouseDown(start, MouseButton.Left); window.MouseMove(end, RawInputModifiers.LeftMouseButton); window.MouseUp(end, MouseButton.Left); }
         var old = new ChartNote { Lane = target.Lane, Beat = new(4, 0, 1) }; session.Mutate(d => d.Notes.Add(old));
         Drag(At(4) + new Vector(0, 3), At(5));
@@ -39,7 +39,7 @@ internal static class EditorInteraction021Specs
         Drag(At(3), At(3));
         Require(surface.SymmetrySettings.Start.Value == 3 && session.Document.Notes.Count > 1, "Tap at time border was swallowed");
         session.Undo(); surface.Tool = TimelineTool.Select;
-        Drag(At(5), At(5.5)); Require(surface.SymmetrySettings.End.Value == 5.5, "Select no longer resizes time border");
+        Drag(At(5), At(5.5)); Require(surface.SymmetrySettings.End.Value == 5.5, $"Select no longer resizes time border: end={surface.SymmetrySettings.End.Value}, beat={surface.CurrentBeat}, zoom={surface.PixelsPerBeat}, tool={surface.Tool}");
         window.Close(); Program.Pump(20);
         Console.WriteLine("PASS below-anchor LN replacement and symmetry borders by tool");
     }

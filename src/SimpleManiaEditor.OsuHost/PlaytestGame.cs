@@ -68,6 +68,8 @@ internal partial class PlaytestGame : OsuGame
     }
     private bool HandlePracticeKey(Key key)
     {
+        // Startup keystrokes belong to the loading state, never to the next game.
+        if (request.WarmupOnly || residentIdle || !request.SettingsOnly && player?.GameplayReady != true) return true;
         if (player?.GameplayReady != true || !player.IsCurrentScreen()) return false;
         if (key == Key.Escape) { if (resident) ReturnToEditor(); else Host.Exit(); return true; }
         if (key is Key.ShiftLeft or Key.ShiftRight) { player.ToggleQuickPause(); return true; }
@@ -139,6 +141,7 @@ internal partial class PlaytestGame : OsuGame
     {
         if (launched) return;
         launched = true;
+        if (verify && (request.WarmupOnly || !request.SettingsOnly)) verificationInput!.Stroke(Key.Space);
         try
         {
             // Model managers copy into their content store; PreferHardLinks remains false.
@@ -332,7 +335,18 @@ internal partial class PlaytestGame : OsuGame
             OfficialPlayer = player.GetType().BaseType!.FullName, Ruleset = Ruleset.Value.ShortName
         }));
         report?.Invoke(new("ready", requestPath, launchClock.Elapsed.TotalMilliseconds));
-        if (verify) VerifyQuickPauseKeys();
+        if (verify)
+        {
+            if (verificationInput!.IsIntercepted(Key.Space)) { Fail(new InvalidOperationException("Startup Space release remained intercepted.")); return; }
+            var spacePresses = verificationInput.ForwardedSpacePresses;
+            verificationInput.Stroke(Key.Space);
+            Scheduler.AddDelayed(() =>
+            {
+                if (verificationInput.ForwardedSpacePresses <= spacePresses || verificationInput.IsIntercepted(Key.Space))
+                    Fail(new InvalidOperationException("Space was not routed back to gameplay after loading."));
+            }, 150);
+            VerifyQuickPauseKeys();
+        }
         if (verify) verificationPlayCount++;
         if (verify) Scheduler.AddDelayed(async () =>
         {

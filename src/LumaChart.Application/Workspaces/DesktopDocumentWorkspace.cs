@@ -538,7 +538,8 @@ public sealed class DesktopDocumentWorkspace
         string? creator,
         CancellationToken cancellationToken = default,
         int keyCount = 4,
-        DesktopChartFormat format = DesktopChartFormat.MalodyMc)
+        DesktopChartFormat format = DesktopChartFormat.MalodyMc,
+        int osuSampleVolume = 70)
     {
         var (folder, sourcePath, finalName) = AllocateNamedAudioChartLocation(requestedName);
         if (format == DesktopChartFormat.OsuMania) sourcePath = Path.ChangeExtension(sourcePath, ".osu");
@@ -546,6 +547,8 @@ public sealed class DesktopDocumentWorkspace
         {
             var document = new ChartDocument();
             document.KeyCount = Math.Clamp(keyCount, 1, 18);
+            if (format == DesktopChartFormat.OsuMania)
+                new OsuTimingPointSettings(4, 2, 1, osuSampleVolume).Apply(document.GetOrCreateSongOffsetTiming());
             document.Metadata.Version = $"{document.KeyCount}K";
             document.Metadata.Creator = string.IsNullOrWhiteSpace(creator)
                 ? defaultCreator

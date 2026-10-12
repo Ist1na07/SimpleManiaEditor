@@ -110,7 +110,7 @@ public sealed partial class MainWindow
 
     private void RefreshTrackWorkspace(DesktopChartTab? tab)
     {
-        if (tab == null) { activeTrackWorkspace = null; RebuildTrackViews(); return; }
+        if (tab == null) { CaptureBoardLayout(); activeTrackWorkspace = null; RebuildTrackViews(); return; }
         var path = Path.GetFullPath(tab.SourcePath);
         if (!trackWorkspaces.TryGetValue(path, out var workspace))
         {
@@ -124,7 +124,10 @@ public sealed partial class MainWindow
         trackSourceByTab[tab.Id] = path;
         if (!ReferenceEquals(workspace, activeTrackWorkspace))
         {
+            CaptureBoardLayout();
             activeTrackWorkspace = workspace;
+            RestoreBoardPanAfterLayout(workspace.BoardPan);
+            if (workspace.MainViewBeat is { } beat) SetProgrammaticPlaybackBeat(beat);
             RebuildTrackViews();
         }
         UpdateTrackDocuments(tab);
@@ -137,7 +140,14 @@ public sealed partial class MainWindow
         activeSecondaryTrack = null;
         foreach (var view in secondaryTrackViews.Values)
         {
-            if (view.Surface != null) view.Surface.Session = null;
+            if (view.Surface != null)
+            {
+                if (activeTrackWorkspace?.Tracks.Contains(view.Track) == true &&
+                    (view.Track.ViewBeat != view.Surface.CurrentBeat || view.Track.ViewZoom != view.Surface.PixelsPerBeat))
+                    activeTrackWorkspace.MarkLayoutChanged();
+                view.Track.ViewBeat = view.Surface.CurrentBeat; view.Track.ViewZoom = view.Surface.PixelsPerBeat;
+                view.Surface.Session = null;
+            }
             view.Metric?.CancelPendingAnalysis();
         }
         secondaryTrackViews.Clear();
@@ -150,6 +160,9 @@ public sealed partial class MainWindow
                 secondaryTrackViews.Add(track.Id, view);
                 trackPanels.Children.Add(BuildSecondaryTrack(view));
             }
+        ApplyBoardOrder();
+        foreach (var frame in trackPanels.Children.OfType<EditorTrackPanel>())
+            if (activeTrackWorkspace?.BoardWidths.TryGetValue(frame.TrackKey, out var width) == true) frame.Width = width;
         UpdateMainTrackWidth();
         if (viewModel.ActiveTab is { } tab) UpdateTrackDocuments(tab);
         SyncTrackViewports();
@@ -182,7 +195,7 @@ public sealed partial class MainWindow
             }
             var surface = new TimelineSurface { Session = track.Session, NoteStyle = timeline.NoteStyle,
                 InteractionProfile = shortcutSettings.Profile, ReverseTimeWheel = timeline.ReverseTimeWheel };
-            surface.ConfigureView(editorViewSettings.GridLaneWidth, timeline.PixelsPerBeat, editorViewSettings.NoteWidth, editorViewSettings.NoteHeight, 1, .79, 1.5, .85,
+            surface.ConfigureView(editorViewSettings.GridLaneWidth, !track.SyncScroll && track.ViewZoom.HasValue ? track.ViewZoom.Value : timeline.PixelsPerBeat, editorViewSettings.NoteWidth, editorViewSettings.NoteHeight, 1, .79, 1.5, .85,
                 editorViewSettings.NoteAnchor);
             surface.Tool = track.Kind == EditorTrackKind.Draft ? timeline.Tool : TimelineTool.Select;
             surface.SetCurrentBeat(track.ViewBeat);
@@ -391,7 +404,27 @@ public sealed partial class MainWindow
 
     private async Task SaveTrackWorkspacesAsync()
     {
+        CaptureBoardLayout();
         foreach (var workspace in trackWorkspaces.Values.ToArray()) await workspace.SaveAsync();
+    }
+
+    private void CaptureBoardLayout()
+    {
+        if (activeTrackWorkspace == null) return;
+        foreach (var view in secondaryTrackViews.Values)
+            if (view.Surface is { } surface && (view.Track.ViewBeat != surface.CurrentBeat || view.Track.ViewZoom != surface.PixelsPerBeat))
+            { view.Track.ViewBeat = surface.CurrentBeat; view.Track.ViewZoom = surface.PixelsPerBeat; activeTrackWorkspace.MarkLayoutChanged(); }
+        activeTrackWorkspace.SetViewState(activeTrackWorkspace.MainViewBeat ?? timeline.CurrentBeat, pendingBoardPan ?? desiredBoardPan);
+        foreach (var frame in trackPanels.Children.OfType<EditorTrackPanel>())
+            if (!activeTrackWorkspace.BoardWidths.TryGetValue(frame.TrackKey, out var width) || width != frame.Width)
+            { activeTrackWorkspace.BoardWidths[frame.TrackKey] = frame.Width; activeTrackWorkspace.MarkLayoutChanged(); }
+    }
+
+    private void RememberMainTrackPosition(double beat)
+    {
+        if (activeTrackWorkspace != null && viewModel.ActiveTab is { } tab &&
+            string.Equals(activeTrackWorkspace.PrimarySourcePath, Path.GetFullPath(tab.SourcePath), StringComparison.OrdinalIgnoreCase))
+            activeTrackWorkspace.SetViewState(beat, pendingBoardPan ?? desiredBoardPan);
     }
 
     private async Task SaveCopiedTrackWorkspaceAsync(EditorTrackWorkspace workspace)

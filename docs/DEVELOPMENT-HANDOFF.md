@@ -2,11 +2,13 @@
 
 ## 基线
 
-0.1.21：默认 osuMinimalMode 持久化在 editor-presentation.json；隐藏 hitsound/SV 的编辑 UI、轨道与命中标签，完整模式恢复，未删数据。分组暂时屏蔽，旧文档数据和服务保留。ChartExportDialog 仅 osu，OD/HP 从文档传入，无重复表单。TimelineSurface 分离 snapped-head replacement 与 visual deletion/middle hit；红线在 DrawNotes 前；Symmetry 上下边只 Select。NoteTimeFlipEditingService 复用有理数反射、交换 LN 头尾和单次 Mutate；Ctrl+H/G/B 可自定义。Overview range 共享 DisplayEndBeat（含音频/书签），标题两轨同高，标记和 ruler 右键删除。滑条 thumb 连续，track-click snap，倍率/缩放 piecewise interpolation。56 核心及完整 UI/便携包检查；宿主逻辑未改。
+0.1.22：EditorTrackWorkspace v1 增加可选 MainViewBeat/BoardPan/BoardWidths/ViewZoom。真实播放位置记入 sidecar，恢复仅在工作区切换时执行；Rebuild 调用 ApplyBoardOrder。关闭标签/正常退出保存已完成的轨道手势。Combo caption 根因是 Localization 直接写 TextBlock.Text 覆盖 Binding，改 SetCurrentValue。导入音乐移除自动分析；Timing.OffsetHere 用当前绝对 ms 移动首红线、保持音符绝对时间。OsuSourceEnvelope 的 raw-row time 基准不随重锚改写；原生导入不再添加 synthetic lead-in，先标 native 保留负拍；旧缓存只迁移未编辑 synthetic record，明确编辑过的旧 offset 不猜测。新建最小模式 Timing.Volume 0（不是 Note.Volume 0），canonical osu serializer 也应用 Settings。LN preview millionth beat 连续，release 才 snap。官方宿主 Windows 默认 SDL2 / 禁 menu mnemonics，启动与 resident idle 键消费，重复/释放成对；verify 增加 loading Space + gameplay Space 检查。核心57项、完整UI与三次实际GPU试玩通过；用户真实提示音验收待补。
 
 历史基线：
 
-0.1.20：精确播放位置在每次可视更新同步到工作区，避免编辑刷新回跳；原生负拍视图保留。中心对称入口为快捷区两点/框边操作，CWT 保留每会话范围，移除旧数值弹层/sidecar；occupied mirrored head 跳过。NoteTextCodeService 使用原生音符行、毫秒位移、原始 sample 信息与一次撤销；系统剪贴板 async 路由捕获目标会话/serial，第三方文本优先，混合 Effect 继续保留内部剪贴板。
+0.1.21：默认 osuMinimalMode 持久化在 editor-presentation.json；隐藏 hitsound/SV 的编辑 UI、轨道与命中标签，完整模式恢复，未删数据。分组暂时屏蔽，旧文档数据和服务保留。ChartExportDialog 仅 osu，OD/HP 从文档传入，无重复表单。TimelineSurface 分离 snapped-head replacement 与 visual deletion/middle hit；红线在 DrawNotes 前；Symmetry 上下边只 Select。NoteTimeFlipEditingService 复用有理数反射、交换 LN 头尾和单次 Mutate；Ctrl+H/G/B 可自定义。Overview range 共享 DisplayEndBeat（含音频/书签），标题两轨同高，标记和 ruler 右键删除。滑条 thumb 连续，track-click snap，倍率/缩放 piecewise interpolation。56 核心及完整 UI/便携包检查；宿主逻辑未改。
+
+历史 0.1.20：精确播放位置在每次可视更新同步到工作区，避免编辑刷新回跳；原生负拍视图保留。中心对称入口为快捷区两点/框边操作，CWT 保留每会话范围，移除旧数值弹层/sidecar；occupied mirrored head 跳过。NoteTextCodeService 使用原生音符行、毫秒位移、原始 sample 信息与一次撤销；系统剪贴板 async 路由捕获目标会话/serial，第三方文本优先，混合 Effect 继续保留内部剪贴板。
 
 历史 0.1.19：`CenterSymmetryService` 提供精确有理数反射、局部有序列、LN 端点交换、目标索引和冲突预检。WindowsProEditorCommand 的可选 symmetry 参数将主键/被替换键/伴随键放在一份 Mutate 历史；不建立永久键间链接。TimelineSurface 新 partial 绘制范围与预览；左栏弹层、F6 catalog/router、每图/轨 sidecar。F6 新默认遇旧自定义冲突时留空。工具设置在 LocalDataRoot/drawing-tools，只读引用禁用，CWT 避免关闭会话后滞留文档。54核心、完整UI与最终工作台回归通过，宿主只版本号变化。默认关闭，性能按0.1.18限制描述，不声称180稳定达标。
 
@@ -15,7 +17,7 @@
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.21；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.22；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。

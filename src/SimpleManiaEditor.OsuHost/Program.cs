@@ -19,6 +19,12 @@ internal static class Program
             // The framework's portable data directory follows the working directory.
             // Every database, imported skin, log and configuration belongs to this host.
             Directory.SetCurrentDirectory(request.DataRoot);
+            // SDL3 has an upstream Windows focus defect when a prewarmed window
+            // is raised without a click (ppy/osu#37902). Keep the official SDL2
+            // backend until that transition is reliable; allow an explicit override.
+            if (OperatingSystem.IsWindows() && Environment.GetEnvironmentVariable("OSU_SDL3") == null)
+                Environment.SetEnvironmentVariable("OSU_SDL3", "false");
+            Environment.SetEnvironmentVariable("SDL_WINDOWS_ENABLE_MENU_MNEMONICS", "0");
             using var host = Host.GetSuitableDesktopHost("SimpleManiaEditor.OsuHost", new HostOptions
             {
                 IPCPipeName = "SimpleManiaEditor-playtest-" + Environment.ProcessId,

@@ -1924,7 +1924,7 @@ public sealed partial class TimelineSurface : Control
         else if (resizingHoldTail) UpdateHoldTailResizePreview(point);
         else if (placingNote)
         {
-            placementCurrentBeat = PointerToNoteBeat(point.Y);
+            placementCurrentBeat = PointerToDragPreviewBeat(point.Y);
         }
         else if (marqueeSelecting) UpdateMarqueeSelection(point);
         else UpdateMovePreview(point);
@@ -3033,7 +3033,7 @@ public sealed partial class TimelineSurface : Control
         }
         else if (placingNote)
         {
-            placementCurrentBeat = PointerToNoteBeat(edgeScrollPoint.Y);
+            placementCurrentBeat = PointerToDragPreviewBeat(edgeScrollPoint.Y);
         }
         else if (erasingStroke)
         {
@@ -3187,7 +3187,7 @@ public sealed partial class TimelineSurface : Control
 
         var candidate = TimelineHoldTailResize.ResolveTarget(
             resizingHoldHead,
-            PointerToNoteBeat(point.Y));
+            PointerToDragPreviewBeat(point.Y));
         if (!session.AllowOwnerProtectedEdits && session.OwnerProtectedRegions.Count > 0)
         {
             candidate = TimelineHoldTailResize.KeepLastLegal(
@@ -3225,6 +3225,9 @@ public sealed partial class TimelineSurface : Control
         var headBeat = resizingHoldHead;
         var originalEnd = resizingHoldOriginalEnd;
         var targetEnd = resizingHoldCurrentEnd;
+        if (targetEnd.HasValue && InteractionProfile == EditorInteractionProfile.OsuMania)
+            targetEnd = TimelineHoldTailResize.ResolveTarget(headBeat,
+                TimelinePlacementGeometry.NearestGrid(targetEnd.Value.Value, activeSession.SnapDivision));
         var hasChange = TimelineHoldTailResize.HasChange(originalEnd, targetEnd);
         ClearHoldTailResizeState();
         if (releaseCapture) ReleaseInteractionCapture();
@@ -4714,6 +4717,11 @@ public sealed partial class TimelineSurface : Control
             noteHeight,
             PixelsPerBeat);
     }
+
+    private BeatPosition PointerToDragPreviewBeat(double y) =>
+        InteractionProfile == EditorInteractionProfile.OsuMania
+            ? BeatPosition.FromDouble(Math.Max(MinimumEditableBeat, BeatAtY(y, GetGeometry(session!.Document.KeyCount))), BeatPosition.MaximumPreservedDenominator)
+            : PointerToNoteBeat(y);
 
     private double NoteYAtBeat(
         BeatPosition beat,

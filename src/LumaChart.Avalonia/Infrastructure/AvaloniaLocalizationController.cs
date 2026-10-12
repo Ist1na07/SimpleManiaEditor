@@ -197,13 +197,13 @@ public sealed class AvaloniaLocalizationController
         ObserveControl(control);
 
         if (control is TextBlock textBlock && textBlock.Text is { } text)
-            textBlock.Text = TranslateTracked(control, TextBlockText, text);
+            textBlock.SetCurrentValue(TextBlock.TextProperty, TranslateTracked(control, TextBlockText, text));
 
         if (control is ContentControl contentControl && contentControl.Content is string content)
-            contentControl.Content = TranslateTracked(control, ContentControlContent, content);
+            contentControl.SetCurrentValue(ContentControl.ContentProperty, TranslateTracked(control, ContentControlContent, content));
 
         if (control is HeaderedContentControl headeredControl && headeredControl.Header is string header)
-            headeredControl.Header = TranslateTracked(control, HeaderedControlHeader, header);
+            headeredControl.SetCurrentValue(HeaderedContentControl.HeaderProperty, TranslateTracked(control, HeaderedControlHeader, header));
 
         if (control is TextBox textBox && textBox.PlaceholderText is { } placeholderText)
             textBox.PlaceholderText = TranslateTracked(

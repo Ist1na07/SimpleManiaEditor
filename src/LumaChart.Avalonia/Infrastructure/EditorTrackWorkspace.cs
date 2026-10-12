@@ -17,6 +17,7 @@ public sealed class EditorTrack
     public bool Visible { get; set; } = true;
     public bool SyncScroll { get; set; } = true;
     public double ViewBeat { get; set; }
+    public double? ViewZoom { get; set; }
     public string SourcePath { get; init; } = "";
     public EditorSession? Session { get; internal set; }
     internal long SavedSerial { get; set; } = -1;
@@ -30,6 +31,9 @@ public sealed class EditorTrackWorkspace
     public string PrimarySourcePath { get; }
     public List<EditorTrack> Tracks { get; } = [];
     public List<string> BoardOrder { get; } = [];
+    public double BoardPan { get; private set; }
+    public double? MainViewBeat { get; private set; }
+    public Dictionary<string, double> BoardWidths { get; } = [];
     public bool LoadFailed { get; private set; }
     public bool HasPendingChanges => layoutDirty || Tracks.Any(t => t.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference &&
         t.Session != null && t.Session.ChangeSerial != t.SavedSerial);
@@ -50,12 +54,17 @@ public sealed class EditorTrackWorkspace
                 ?? throw new InvalidDataException("轨道清单为空。");
             if (persisted.Version != 1) throw new InvalidDataException("轨道清单版本不受支持。");
             BoardOrder.AddRange(persisted.BoardOrder.Distinct());
+            BoardPan = double.IsFinite(persisted.BoardPan) ? persisted.BoardPan : 0;
+            MainViewBeat = persisted.MainViewBeat is { } beat && double.IsFinite(beat) ? beat : null;
+            foreach (var pair in persisted.BoardWidths.Where(p => double.IsFinite(p.Value) && p.Value is >= 40 and <= 10000))
+                BoardWidths[pair.Key] = pair.Value;
             foreach (var item in persisted.Tracks)
             {
                 if (item.Id == Guid.Empty || !Enum.IsDefined(item.Kind) || Tracks.Any(t => t.Id == item.Id))
                     throw new InvalidDataException("轨道清单无效。");
                 var track = new EditorTrack { Id = item.Id, Kind = item.Kind, Name = item.Name, Visible = item.Visible,
-                    SyncScroll = item.SyncScroll, ViewBeat = double.IsFinite(item.ViewBeat) ? Math.Max(0, item.ViewBeat) : 0,
+                    SyncScroll = item.SyncScroll, ViewBeat = double.IsFinite(item.ViewBeat) ? item.ViewBeat : 0,
+                    ViewZoom = item.ViewZoom is { } zoom && double.IsFinite(zoom) && zoom is >= 12 and <= 4480 ? zoom : null,
                     SourcePath = item.SourcePath };
                 if (track.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference)
                 {
@@ -100,6 +109,13 @@ public sealed class EditorTrackWorkspace
 
     public void MarkLayoutChanged() => layoutDirty = true;
 
+    public void SetViewState(double beat, double pan)
+    {
+        if (!double.IsFinite(beat) || !double.IsFinite(pan)) return;
+        if (MainViewBeat == beat && BoardPan == pan) return;
+        MainViewBeat = beat; BoardPan = pan; layoutDirty = true;
+    }
+
     public EditorTrackWorkspace CopyForSource(string newSourcePath)
     {
         var destination = new EditorTrackWorkspace(newSourcePath, Path.GetDirectoryName(DirectoryPath)!);
@@ -108,7 +124,7 @@ public sealed class EditorTrackWorkspace
         foreach (var source in Tracks)
         {
             var copy = new EditorTrack { Id = source.Id, Kind = source.Kind, Name = source.Name, Visible = source.Visible,
-                SyncScroll = source.SyncScroll, ViewBeat = source.ViewBeat, SourcePath = source.SourcePath };
+                SyncScroll = source.SyncScroll, ViewBeat = source.ViewBeat, ViewZoom = source.ViewZoom, SourcePath = source.SourcePath };
             if (source.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference && source.Session != null)
             {
                 var session = new EditorSession { IsReadOnly = source.Session.IsReadOnly, CanEditTiming = false, CanEditMetadata = false };
@@ -118,6 +134,8 @@ public sealed class EditorTrackWorkspace
             destination.Tracks.Add(copy);
         }
         destination.BoardOrder.AddRange(BoardOrder);
+        destination.MainViewBeat = MainViewBeat; destination.BoardPan = BoardPan;
+        foreach (var pair in BoardWidths) destination.BoardWidths[pair.Key] = pair.Value;
         destination.layoutDirty = true;
         return destination;
     }
@@ -132,8 +150,9 @@ public sealed class EditorTrackWorkspace
                 t.Session != null && t.Session.ChangeSerial != t.SavedSerial)
                 .Select(t => (Track: t, Serial: t.Session!.ChangeSerial, Document: t.Session.CaptureCommittedDocument())).ToArray();
             if (!layoutDirty && documents.Length == 0) return;
-            var layout = new Manifest { PrimarySourcePath = PrimarySourcePath, BoardOrder = BoardOrder.ToArray(), Tracks = Tracks.Select(t => new Descriptor { Id = t.Id, Kind = t.Kind, Name = t.Name,
-                Visible = t.Visible, SyncScroll = t.SyncScroll, ViewBeat = t.ViewBeat, SourcePath = t.SourcePath }).ToArray() };
+            var layout = new Manifest { PrimarySourcePath = PrimarySourcePath, BoardPan = BoardPan, MainViewBeat = MainViewBeat,
+                BoardWidths = new(BoardWidths), BoardOrder = BoardOrder.ToArray(), Tracks = Tracks.Select(t => new Descriptor { Id = t.Id, Kind = t.Kind, Name = t.Name,
+                Visible = t.Visible, SyncScroll = t.SyncScroll, ViewBeat = t.ViewBeat, ViewZoom = t.ViewZoom, SourcePath = t.SourcePath }).ToArray() };
             layoutDirty = false;
             try
             {
@@ -170,6 +189,9 @@ public sealed class EditorTrackWorkspace
         public int Version { get; set; } = 1;
         public string PrimarySourcePath { get; set; } = "";
         public string[] BoardOrder { get; set; } = [];
+        public double BoardPan { get; set; }
+        public double? MainViewBeat { get; set; }
+        public Dictionary<string, double> BoardWidths { get; set; } = [];
         public Descriptor[] Tracks { get; set; } = [];
     }
     private sealed class Descriptor
@@ -180,6 +202,7 @@ public sealed class EditorTrackWorkspace
         public bool Visible { get; set; } = true;
         public bool SyncScroll { get; set; } = true;
         public double ViewBeat { get; set; }
+        public double? ViewZoom { get; set; }
         public string SourcePath { get; set; } = "";
     }
 }

@@ -160,8 +160,9 @@ internal static class CoreFixSpecs
         Assert(times.Zip(sourceTimes).All(pair => Math.Abs(pair.First - pair.Second) < .01),
             "lead-in objects changed time: " + string.Join(", ", times));
         var zeroBeat = TimingMap.FindSongOffsetTiming(chart.Timing)!;
-        Assert(zeroBeat.Beat == BeatPosition.Zero && Math.Abs(map.BeatToMilliseconds(new BeatPosition(4, 0, 1)) - 1000) < .01,
-            "beat zero was not moved back by a whole bar of the first BPM");
+        Assert(zeroBeat.Beat == BeatPosition.Zero && Math.Abs(map.BeatToMilliseconds(BeatPosition.Zero) - 1000) < .01 &&
+               chart.Timing.Count(t => t.Bpm.HasValue) == 1 && chart.Notes.First().Beat.Value < 0,
+            "native first red-line offset was replaced by a synthetic lead-in");
 
         var path = Path.Combine(Path.GetTempPath(), $"lumachart-leadin-{Guid.NewGuid():N}.osu");
         try

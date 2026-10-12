@@ -55,6 +55,7 @@ internal static class Program
             DrawToolSpecs.Run();
             SymmetryUiSpecs.RunPointer(screenshotRoot);
             EditorInteraction021Specs.RunPointer();
+            EditorInteraction022Specs.RunPointer();
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
             OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
@@ -333,6 +334,7 @@ internal static class Program
         GridFocusSpecs.Run(window);
         SymmetryUiSpecs.RunWorkbench(window);
         EditorInteraction021Specs.RunWorkbench(window);
+        EditorInteraction022Specs.RunWorkbench(window);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

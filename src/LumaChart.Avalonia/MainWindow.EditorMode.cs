@@ -23,11 +23,12 @@ public sealed partial class MainWindow
     private Control BuildEditorModeSettings()
     {
         timeline.HideSvEditing = osuMinimalMode;
-        var modes = new ComboBox { ItemsSource = new[] { "osu 最小模式", "osu 完整模式" }, SelectedIndex = osuMinimalMode ? 0 : 1,
+        var modes = new ComboBox { ItemsSource = new[] { new ComboBoxItem { Content = "osu 最小模式" }, new ComboBoxItem { Content = "osu 完整模式" } }, SelectedIndex = osuMinimalMode ? 0 : 1,
             HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetAutomationId(modes, "Settings.EditorMode");
         modes.SelectionChanged += (_, _) =>
         {
+            if (modes.SelectedIndex < 0) return;
             osuMinimalMode = modes.SelectedIndex == 0;
             EditorPresentationSettingsStore.SaveMinimalMode(osuMinimalMode);
             foreach (var control in fullModeControls) control.IsVisible = !osuMinimalMode;

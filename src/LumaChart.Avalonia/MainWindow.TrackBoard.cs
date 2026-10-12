@@ -160,8 +160,8 @@ public sealed partial class MainWindow
 
     private void ApplyBoardOrder()
     {
-        if (activeTrackWorkspace == null || activeTrackWorkspace.BoardOrder.Count == 0) return;
-        var ordered = activeTrackWorkspace.BoardOrder.Where(boardFrames.ContainsKey).Select(key => boardFrames[key])
+        var keys = activeTrackWorkspace?.BoardOrder.Count > 0 ? activeTrackWorkspace.BoardOrder : new List<string> { "main", "waveform", "spectrogram" };
+        var ordered = keys.Where(boardFrames.ContainsKey).Select(key => boardFrames[key])
             .Where(frame => trackPanels.Children.Contains(frame)).ToList();
         ordered.AddRange(trackPanels.Children.OfType<EditorTrackPanel>().Where(p => !ordered.Contains(p)).ToArray());
         trackPanels.Children.Clear();

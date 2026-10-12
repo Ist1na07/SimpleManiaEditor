@@ -21,6 +21,31 @@ public sealed partial class MainWindow
         var rounded = Math.Round(value, MidpointRounding.AwayFromZero);
         return (rounded == 0 ? 0 : rounded).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    private Button BuildOffsetHereButton()
+    {
+        var button = CommandButton("将此处设为 Offset", (_, _) =>
+        {
+            if (viewModel.ActiveTab is not { } tab) return;
+            var milliseconds = Math.Round(GetAudioTimingMap(tab).BeatToMilliseconds(
+                BeatPosition.FromDouble(timeline.CurrentBeat, BeatPosition.MaximumPreservedDenominator)), MidpointRounding.AwayFromZero);
+            if (!OsuSourceEnvelope.HasSource(tab.Session.Document)) return;
+            try
+            {
+                var first = TimingMap.FindSongOffsetTiming(tab.Session.Document.Timing);
+                if (first == null) return;
+                OsuTimingEditingService.Apply(tab.Session, first.Id,
+                    new OsuTimingEdit(milliseconds, true, first.Bpm!.Value, OsuTimingPointSettings.Read(first)));
+                SetProgrammaticPlaybackBeat(GetAudioTimingMap(tab).MillisecondsToBeat(milliseconds, BeatPosition.MaximumPreservedDenominator).Value);
+                UpdateUi();
+                viewModel.SetStatus($"已将 {milliseconds:0} ms 设为 Offset，可撤销。");
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            { viewModel.SetStatus(exception.Message); }
+        });
+        AutomationProperties.SetAutomationId(button, "Timing.OffsetHere");
+        return button;
+    }
     private string ReadTimingOffsetDraft(DesktopChartTab tab)
     {
         var text = metadataOffsetBox.Text ?? "";

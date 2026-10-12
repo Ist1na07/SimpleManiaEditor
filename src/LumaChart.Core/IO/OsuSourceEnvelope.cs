@@ -24,6 +24,36 @@ public static class OsuSourceEnvelope
         if (document.UnknownRoot[RootKey] is JsonObject source) source["bom"] = bom;
     }
 
+    /// <summary>Remove only the untouched synthetic beat-zero record produced by old imports.</summary>
+    internal static void RestoreLegacyLeadIn(ChartDocument document)
+    {
+        if (document.UnknownRoot[RootKey] is not JsonObject source || source["timing"] is not JsonValue signature) return;
+        var red = document.Timing.Where(t => t.Bpm.HasValue).OrderBy(t => t.Beat).ToArray();
+        if (red.Length < 2 || red[0].Beat != BeatPosition.Zero || red[0].UnknownData != null ||
+            red[1].UnknownData?[ObjectKey] is not JsonObject anchor || red[1].Beat.Value <= 0 ||
+            red[1].Beat.Value % 4 != 0) return;
+        var baseline = JsonNode.Parse(signature.GetValue<string>())?.AsArray().FirstOrDefault();
+        if (baseline?["Beat"]?.GetValue<double>() != 0 || baseline?["Delay"]?.GetValue<double>() != red[0].Delay ||
+            baseline?["Bpm"]?.GetValue<double>() != red[0].Bpm) return; // Edited legacy offsets are never guessed.
+        var map = new TimingMap(document.Timing);
+        var anchorTime = map.BeatToMilliseconds(red[1].Beat);
+        var rawTime = double.Parse(anchor["line"]!.GetValue<string>().Split(',')[0], Invariant);
+        if (Math.Abs(anchorTime - rawTime) > .001) return;
+        var shift = red[1].Beat.Value;
+        document.Timing.Remove(red[0]);
+        foreach (var timing in document.Timing) timing.Beat = PreciseBeat(timing.Beat.Value - shift);
+        red[1].Delay = -anchorTime;
+        foreach (var note in document.Notes)
+        {
+            note.Beat = PreciseBeat(note.Beat.Value - shift);
+            if (note.EndBeat is { } end) note.EndBeat = PreciseBeat(end.Value - shift);
+            if (note.UnknownData?[ObjectKey] is JsonObject item)
+            {
+                item["beat"] = note.Beat.Value; item["end"] = note.EndBeat?.Value;
+            }
+        }
+    }
+
     public static void AttachNote(ChartNote note, string line, int keys)
     {
         note.UnknownData ??= new JsonObject();
@@ -182,9 +212,8 @@ public static class OsuSourceEnvelope
         var map = new TimingMap(after.Timing);
         foreach (var target in targets.Where(t => !t.Timing.Bpm.HasValue))
             target.Timing.Beat = map.MillisecondsToBeat(target.Time, BeatPosition.MaximumPreservedDenominator);
-        foreach (var target in targets)
-            if (target.Timing.UnknownData?[ObjectKey] is JsonObject source)
-                source["time"] = map.BeatToMilliseconds(target.Timing.Beat);
+        // The envelope time describes the retained raw row, not the latest map.
+        // Updating it without rewriting that row makes export reuse an old offset.
     }
 
     private static BeatPosition PreciseBeat(double value) => BeatPosition.FromDouble(value, 1_000_000);

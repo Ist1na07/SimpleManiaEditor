@@ -264,6 +264,7 @@ public sealed class AvaloniaWorkspaceController
             KeyCount = 7,
             Timing = [new TimingEvent { Beat = BeatPosition.Zero, Bpm = 120 }]
         };
+        new OsuTimingPointSettings(4, 2, 1, EditorPresentationSettingsStore.LoadMinimalMode() ? 0 : 70).Apply(document.Timing[0]);
         await tabIoGate.WaitAsync(cancellationToken);
         try
         {
@@ -294,7 +295,8 @@ public sealed class AvaloniaWorkspaceController
                     creator,
                     cancellationToken,
                     keyCount: 7,
-                    format: DesktopChartFormat.OsuMania)
+                    format: DesktopChartFormat.OsuMania,
+                    osuSampleVolume: EditorPresentationSettingsStore.LoadMinimalMode() ? 0 : 70)
                 .ConfigureAwait(false);
         }
         finally

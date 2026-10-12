@@ -9,9 +9,6 @@ namespace LumaChart.Core.IO;
 public static class OsuManiaSerializer
 {
     private const string LumaChartBpmMetadataKey = "LumaChartBPM";
-    // Bounds the lead-in used for objects before the first red line so a corrupt
-    // timestamp cannot push beat numbers beyond the int bar range.
-    private const double MaximumLeadInBars = 100_000;
     private const double FirstRedLineRoundingToleranceMs = 1;
 
     public static ChartDocument Load(string path) =>
@@ -146,29 +143,9 @@ public static class OsuManiaSerializer
             hitObjects.Add((parts, OnFirstRedLine(ms)));
         }
 
-        // osu! times objects and SV points before the first red line with that
-        // red line's BPM extended backward. Mapping them onto negative beats let
-        // Normalize delete them, so beat 0 moves back by whole 4/4 bars of the
-        // first BPM (keeping bar lines in phase) and a BPM record at beat 0 carries
-        // the new offset. The source red line stays at its own timestamp.
-        var firstBeatLength = 60_000d / rawTiming[0].Bpm;
-        var earliestMs = hitObjects.Select(item => item.Ms)
-            .Concat(rawScroll.Select(point => point.Ms))
-            .DefaultIfEmpty(rawTiming[0].Ms)
-            .Min();
-        var leadInBars = earliestMs < rawTiming[0].Ms
-            ? Math.Ceiling((rawTiming[0].Ms - earliestMs) / (4 * firstBeatLength) - 1e-9)
-            : 0;
-        if (!double.IsFinite(leadInBars) || leadInBars > MaximumLeadInBars) leadInBars = 0;
-        var leadInBeats = (int)leadInBars * 4;
-        var zeroBeatMs = rawTiming[0].Ms - leadInBeats * firstBeatLength;
-        if (leadInBeats > 0)
-            document.Timing.Add(new TimingEvent
-            {
-                Beat = BeatPosition.Zero,
-                Bpm = rawTiming[0].Bpm,
-                Delay = -zeroBeatMs
-            });
+        // Native osu documents allow negative beats. Keep the actual first red
+        // line as beat zero instead of inserting a synthetic earlier BPM/offset.
+        var zeroBeatMs = rawTiming[0].Ms;
 
         var redLineBeats = new BeatPosition[rawTiming.Count];
         var anchorBeat = BeatPosition.Zero;
@@ -181,7 +158,7 @@ public static class OsuManiaSerializer
             // then absorbed by the next segment instead of accumulating across
             // many BPM changes.
             var beat = i == 0
-                ? new BeatPosition(leadInBeats, 0, 1)
+                ? BeatPosition.Zero
                 : BeatPosition.FromDouble(anchorBeat.Value + (rawTiming[i].Ms - anchorMs) * anchorBpm / 60_000d,
                     BeatPosition.MaximumPreservedDenominator);
             anchorMs += (beat.Value - anchorBeat.Value) * 60_000d / anchorBpm;
@@ -194,7 +171,7 @@ public static class OsuManiaSerializer
                 Bpm = rawTiming[i].Bpm,
                 // osu stores the audio timestamp of beat zero directly, while
                 // Malody stores the same displacement with the opposite sign.
-                Delay = i == 0 && leadInBeats == 0 ? -rawTiming[i].Ms : 0
+                Delay = i == 0 ? -rawTiming[i].Ms : 0
             });
         }
 
@@ -275,6 +252,7 @@ public static class OsuManiaSerializer
             OsuSourceEnvelope.AttachNote(importedNote, string.Join(',', parts), keyCount);
             document.Notes.Add(importedNote);
         }
+        document.UnknownRoot["_sme_osu_source"] = new System.Text.Json.Nodes.JsonObject();
         document.Normalize();
         OsuSourceEnvelope.Capture(document, text);
         document.UnknownRoot["_sme_osu_grid_calibration"] = noteTimingMode == OsuNoteTimingImportMode.CalibrateCommonSubdivisions;
@@ -363,18 +341,18 @@ public static class OsuManiaSerializer
         var timingLines = document.Timing.Where(t => t.Bpm.HasValue).Select(point => new
         {
             Time = map.BeatToMilliseconds(point.Beat), Order = 0,
-            Line = string.Create(invariant,
-                $"{Number(map.BeatToMilliseconds(point.Beat))},{Number(60_000d / point.Bpm!.Value)},4,2,1,70,1,0")
+            Line = WithTimingSettings(point, string.Create(invariant,
+                $"{Number(map.BeatToMilliseconds(point.Beat))},{Number(60_000d / point.Bpm!.Value)},4,2,1,70,1,0"))
         }).Concat(document.Timing.Where(t => t.Effect == TimingEffectKind.Scroll && t.EffectValue > 0).Select(point => new
         {
             Time = map.BeatToMilliseconds(point.Beat), Order = 1,
-            Line = string.Create(invariant,
-                $"{Number(map.BeatToMilliseconds(point.Beat))},{Number(-100d / point.EffectValue)},4,2,1,70,0,0")
+            Line = WithTimingSettings(point, string.Create(invariant,
+                $"{Number(map.BeatToMilliseconds(point.Beat))},{Number(-100d / point.EffectValue)},4,2,1,70,0,0"))
         })).Concat(carriedScroll.Select(entry => new
         {
             Time = map.BeatToMilliseconds(entry.Point.Beat), Order = 1,
-            Line = string.Create(invariant,
-                $"{Number(map.BeatToMilliseconds(entry.Point.Beat))},{Number(-100d / entry.Multiplier)},4,2,1,70,0,0")
+            Line = WithTimingSettings(entry.Point, string.Create(invariant,
+                $"{Number(map.BeatToMilliseconds(entry.Point.Beat))},{Number(-100d / entry.Multiplier)},4,2,1,70,0,0"))
         })).OrderBy(item => item.Time).ThenBy(item => item.Order);
         foreach (var line in timingLines) builder.AppendLine(line.Line);
         builder.AppendLine("\n[HitObjects]");
@@ -409,6 +387,13 @@ public static class OsuManiaSerializer
             ownBeat = order == 0;
         }
         return multiplier;
+    }
+
+    private static string WithTimingSettings(TimingEvent timing, string row)
+    {
+        var fields = row.Split(',');
+        OsuTimingPointSettings.WriteFields(timing, fields);
+        return string.Join(',', fields);
     }
 
     // osu! reads sample volume 0 as "inherit the timing point volume" (70 here),
