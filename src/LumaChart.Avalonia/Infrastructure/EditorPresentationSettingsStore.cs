@@ -15,6 +15,8 @@ public static class EditorPresentationSettingsStore
 
     public static EditorGridNotation LoadGridNotation() => ReadPreferences().GridNotation;
     public static int LoadLayoutRevision() => ReadPreferences().LayoutRevision;
+    public static int LoadAudioVisualOffset() => ReadPreferences().AudioVisualOffsetMilliseconds;
+    public static void SaveAudioVisualOffset(int value) { var p = ReadPreferences(); p.AudioVisualOffsetMilliseconds = Math.Clamp(value, -500, 500); Save(p); }
     public static double LoadPlaytestRate() => ReadPreferences().PlaytestRate;
     public static bool LoadGlobalDensity() => ReadPreferences().GlobalDensity;
     public static bool LoadGlobalDifficulty() => ReadPreferences().GlobalDifficulty;
@@ -37,7 +39,8 @@ public static class EditorPresentationSettingsStore
             if (!Enum.IsDefined(value.NoteStyle)) value.NoteStyle = EditorNoteStyle.Osu;
             if (!Enum.IsDefined(value.GridNotation)) value.GridNotation = EditorGridNotation.Osu;
             if (!Enum.IsDefined(value.RenderBackend)) value.RenderBackend = EditorRenderBackend.AutoOpenGl;
-            if (!double.IsFinite(value.PlaytestRate) || value.PlaytestRate is < .2 or > 2) value.PlaytestRate = 1;
+            if (!double.IsFinite(value.PlaytestRate) || value.PlaytestRate is < .25 or > 1.5) value.PlaytestRate = 1;
+            value.AudioVisualOffsetMilliseconds = Math.Clamp(value.AudioVisualOffsetMilliseconds, -500, 500);
             return value;
         }
         catch (Exception exception)
@@ -91,6 +94,7 @@ public static class EditorPresentationSettingsStore
         public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
         public EditorGridNotation GridNotation { get; set; } = EditorGridNotation.Osu;
         public int LayoutRevision { get; set; }
+        public int AudioVisualOffsetMilliseconds { get; set; }
         public double PlaytestRate { get; set; } = 1;
         public bool MinimalMode { get; set; } = true;
         public bool SnapAll { get; set; } = true;

@@ -117,7 +117,7 @@ public sealed class AudioVisualizationSideSurface : Control
 
     public void SetViewport(double beat, double beatHeight, double judgementLinePosition)
     {
-        var nextBeat = double.IsFinite(beat) ? Math.Max(0, beat) : 0;
+        var nextBeat = double.IsFinite(beat) ? beat : 0;
         var nextScale = Math.Clamp(double.IsFinite(beatHeight) ? beatHeight : 150, TimelineSurface.MinimumZoom, TimelineSurface.MaximumZoom);
         // This is the timeline's judgement line translated into panel space.
         // The panel starts below the timeline's top and is shorter, so a line
@@ -146,7 +146,7 @@ public sealed class AudioVisualizationSideSurface : Control
     /// </summary>
     public void SetPlaybackBeat(double beat)
     {
-        var nextBeat = double.IsFinite(beat) ? Math.Max(0, beat) : 0;
+        var nextBeat = double.IsFinite(beat) ? beat : 0;
         if (Math.Abs(currentBeat - nextBeat) <= 1e-9) return;
         currentBeat = nextBeat;
         Performance.MarkInput();

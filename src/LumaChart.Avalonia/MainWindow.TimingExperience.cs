@@ -24,7 +24,7 @@ public sealed partial class MainWindow
 
     private Button BuildOffsetHereButton()
     {
-        var button = CommandButton("将此处设为 Offset", (_, _) =>
+        var button = CommandButton("将当前位置设为 Offset", (_, _) =>
         {
             if (viewModel.ActiveTab is not { } tab) return;
             var milliseconds = Math.Round(GetAudioTimingMap(tab).BeatToMilliseconds(
@@ -43,9 +43,46 @@ public sealed partial class MainWindow
             catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
             { viewModel.SetStatus(exception.Message); }
         });
+        button.Background = AccentBrush;
+        button.Foreground = global::Avalonia.Media.Brushes.Black;
+        button.HorizontalAlignment = HorizontalAlignment.Stretch;
+        button.Height = 34;
         AutomationProperties.SetAutomationId(button, "Timing.OffsetHere");
         return button;
     }
+    private Control BuildTimingOffsetNudges()
+    {
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 4 };
+        foreach (var (label, delta, index) in new[] { ("<<", -10, 0), ("<", -1, 1), (">", 1, 2), (">>", 10, 3) })
+        {
+            var button = CommandButton(label, (_, _) =>
+            {
+                if (viewModel.ActiveTab is not { } tab || !OsuSourceEnvelope.HasSource(tab.Session.Document)) return;
+                var first = TimingMap.FindSongOffsetTiming(tab.Session.Document.Timing);
+                if (first == null) return;
+                var map = GetAudioTimingMap(tab);
+                var cursorTime = map.BeatToMilliseconds(BeatPosition.FromDouble(timeline.CurrentBeat, BeatPosition.MaximumPreservedDenominator));
+                var current = double.TryParse(metadataOffsetBox.Text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var draft) && double.IsFinite(draft) ? draft : -first.Delay;
+                try
+                {
+                    OsuTimingEditingService.Apply(tab.Session, first.Id,
+                        new OsuTimingEdit(Math.Round(current, MidpointRounding.AwayFromZero) + delta, true, first.Bpm!.Value, OsuTimingPointSettings.Read(first)));
+                    SetProgrammaticPlaybackBeat(GetAudioTimingMap(tab).MillisecondsToBeat(cursorTime, BeatPosition.MaximumPreservedDenominator).Value);
+                    UpdateUi();
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or ArgumentException) { viewModel.SetStatus(exception.Message); }
+            });
+            button.Background = RaisedBrush; button.Foreground = global::Avalonia.Media.Brushes.White;
+            button.BorderBrush = StrokeBrush; button.BorderThickness = new Thickness(1);
+            button.CornerRadius = new CornerRadius(3); button.MinHeight = 30;
+            ToolTip.SetTip(button, $"Offset {delta:+0;-0} ms，立即应用，可撤销");
+            AutomationProperties.SetAutomationId(button, "Timing.Offset.Nudge." + delta);
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            Grid.SetColumn(button, index); row.Children.Add(button);
+        }
+        return row;
+    }
+
     private string ReadTimingOffsetDraft(DesktopChartTab tab)
     {
         var text = metadataOffsetBox.Text ?? "";

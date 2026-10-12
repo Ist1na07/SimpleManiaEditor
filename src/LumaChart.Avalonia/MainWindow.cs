@@ -84,7 +84,7 @@ public sealed partial class MainWindow : PlatformWindow
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32, 48, 64];
     private static readonly int[] WheelSnapDivisions = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
     private static readonly double[] QuickGridScales = [.5, 1, 1.5, 2, 2.5, 3];
-    private static readonly double[] QuickPlaybackRates = [.2, .4, .6, 1];
+    private static readonly double[] QuickPlaybackRates = [.1, .4, .6, 1];
     private static readonly Color WindowColor = Color.Parse("#111315");
     private static readonly IBrush PanelBrush = new SolidColorBrush(Color.Parse("#1A1D20"));
     private static readonly IBrush RaisedBrush = new SolidColorBrush(Color.Parse("#22272A"));
@@ -7860,7 +7860,7 @@ public sealed partial class MainWindow : PlatformWindow
                 SetQuickGridScale(value);
                 valid = true;
             }
-            else if (Equals(editor.Tag, "Rate") && value is >= .2 and <= 2)
+            else if (Equals(editor.Tag, "Rate") && value is >= .1 and <= 2)
             {
                 _ = SetQuickPlaybackRateAsync(value);
                 valid = true;
@@ -7872,7 +7872,7 @@ public sealed partial class MainWindow : PlatformWindow
                 ? "分度范围：1–1920"
                 : Equals(editor.Tag, "Grid")
                     ? "缩放范围：0.09–27.43"
-                    : "倍速范围：0.2–2.0");
+                    : "倍速范围：0.1–2.0");
         EndQuickValueEdit(button, editor);
     }
 
@@ -7925,7 +7925,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async Task SetQuickPlaybackRateAsync(double rate)
     {
-        rate = Math.Round(Math.Clamp(rate, .2, 2), 2);
+        rate = Math.Round(Math.Clamp(rate, .1, 2), 2);
         await SetEditorPlaybackRateAsync(rate);
         RefreshQuickValuesPaletteValues();
         viewModel.SetStatus(AvaloniaLocalizationCatalog.Format("音频与谱面倍速：{0:0.00}x", rate));
@@ -10300,7 +10300,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         var appearance = new Expander
         {
-            Header = "外观", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch,
+            Header = "外观", IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch,
             Content = new StackPanel { Spacing = 5, Children =
             {
                 TimingField("Note 对齐", anchorGrid),
@@ -10736,7 +10736,7 @@ public sealed partial class MainWindow : PlatformWindow
         RefreshShortcutLabels();
         var expander = new Expander
         {
-            Header = "快捷键", IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch,
+            Header = "快捷键", IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch,
             Content = new Border
             {
                 Background = Brushes.Transparent,
@@ -12218,6 +12218,7 @@ public sealed partial class MainWindow : PlatformWindow
                 CommandButton("应用", (_, _) => ApplyTimingMetadata()), 62)),
             TimingField("音频 Offset（ms，1 ms）", MetadataActionRow(metadataOffsetBox,
                 CommandButton("应用", (_, _) => ApplyTimingMetadata()), 62)),
+            BuildTimingOffsetNudges(),
             BuildOffsetHereButton(),
             analysisButtons, metadataAudioAnalysisText,
             PrimaryButton("应用 Timing 基础信息", (_, _) => ApplyTimingMetadata())
@@ -12905,7 +12906,7 @@ public sealed partial class MainWindow : PlatformWindow
             MarkEditorViewSettingsDirty();
         };
 
-        audioRateSlider.Minimum = .2;
+        audioRateSlider.Minimum = .1;
         audioRateSlider.Maximum = 2;
         audioRateSlider.Value = 1;
         audioRateSlider.SmallChange = .05;
@@ -13025,6 +13026,7 @@ public sealed partial class MainWindow : PlatformWindow
             {
                 TimingField("音乐音量", audioVolumeSlider),
                 audioVolumeText,
+                BuildAudioVisualCalibrationSettings(),
                 FullModeOnly(BuildKeySoundPanel()),
                 audioPreservePitchBox,
                 new TextBlock
@@ -15844,9 +15846,15 @@ public sealed partial class MainWindow : PlatformWindow
 
         var visualPosition = editorVisualClock.Sample(pump.PositionMilliseconds, audioTransport.PlaybackRate,
             presentationTimeMilliseconds ?? editorVisualTime.Elapsed.TotalMilliseconds);
+        if (pump.Output == WindowsKeySoundPlaybackOutput.SharedMusicClock)
+            visualPosition = EditorAudioVisualCalibration.ChartTime(visualPosition, audioTransport.PlaybackRate, editorAudioVisualOffsetMilliseconds);
         var beat = timingMap.MillisecondsToBeat(visualPosition, 1_000_000).Value;
         SetProgrammaticPlaybackBeat(beat);
         UpdateAudioPanelPlaybackBeat(beat);
+        lastCalibratedCursorMilliseconds = pump.Output == WindowsKeySoundPlaybackOutput.SharedMusicClock && editorAudioVisualOffsetMilliseconds != 0 ? visualPosition : null;
+        lastCalibratedCursorRate = audioTransport.PlaybackRate;
+        lastCalibratedCursorOffsetMilliseconds = editorAudioVisualOffsetMilliseconds;
+        lastCalibratedCursorTabId = tab.Id;
         if (updatePositionUi) UpdatePlaybackPositionUi(beat);
     }
 
@@ -16105,9 +16113,7 @@ public sealed partial class MainWindow : PlatformWindow
             if (!snapshot.IsPlaying)
             {
                 var timingMap = GetAudioTimingMap(tab);
-                var milliseconds = Math.Max(
-                    0,
-                    timingMap.BeatToMilliseconds(BeatPosition.FromDouble(timeline.CurrentBeat)));
+                var milliseconds = ResolveEditorAudioResumeMilliseconds(tab);
                 var requestedPosition = TimeSpan.FromMilliseconds(milliseconds);
                 if (WindowsAudioResumePolicy.RequiresSeek(snapshot.Position, requestedPosition))
                 {

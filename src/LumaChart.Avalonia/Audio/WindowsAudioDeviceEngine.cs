@@ -257,7 +257,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
 
     private void SetPlaybackRateLocked(double value)
     {
-        var boundedRate = Math.Clamp(value, .2, 2);
+        var boundedRate = Math.Clamp(value, .1, 2);
         var requiresPhaseVocoder = source != null &&
             WindowsPitchPreservingTimeStretchPolicy.UsesPhaseVocoder(
                 boundedRate,
@@ -265,9 +265,12 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         var hasPitchPreservingPipeline =
             phaseVocoderProvider != null || soundTouchProviders.Length > 0;
         var requiresPitchPreservingPipeline = Math.Abs(boundedRate - 1) > .000001;
+        var requiresDifferentStages = requiresPhaseVocoder && phaseVocoderProvider != null &&
+            phaseVocoderProvider.StageCount != WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderStageCount(boundedRate);
         if (preservePitch && source != null &&
             (hasPitchPreservingPipeline != requiresPitchPreservingPipeline ||
-             hasPitchPreservingPipeline && (phaseVocoderProvider != null) != requiresPhaseVocoder))
+             hasPitchPreservingPipeline && (phaseVocoderProvider != null) != requiresPhaseVocoder ||
+             requiresDifferentStages))
         {
             var position = TimeSpan.FromTicks(ReadPositionTicks());
             var resume = IsPlaying;

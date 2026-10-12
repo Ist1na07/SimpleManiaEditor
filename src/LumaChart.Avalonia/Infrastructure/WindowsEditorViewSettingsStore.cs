@@ -110,7 +110,7 @@ public sealed class WindowsEditorViewSettings
         SnapDivision = snapDivision is >= 1 and <= 1920
             ? snapDivision
             : DefaultSnapDivision;
-        PlaybackRate = double.IsFinite(playbackRate) && playbackRate is >= .2 and <= 2
+        PlaybackRate = double.IsFinite(playbackRate) && playbackRate is >= .1 and <= 2
             ? Math.Round(playbackRate, 2)
             : DefaultPlaybackRate;
         DifficultyCardX = Math.Clamp(Math.Round(FiniteOr(difficultyCardX, 0)), -4000, 4000);

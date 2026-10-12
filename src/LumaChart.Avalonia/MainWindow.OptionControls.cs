@@ -39,7 +39,7 @@ public sealed partial class MainWindow
             (spectrogramStrengthSlider, WindowsAudioPanelSettings.DefaultBackgroundSpectrogramStrength * 100),
             (spectrogramDetailSlider, WindowsAudioPanelSettings.DefaultSpectrogramDetail * 100),
             (uiScaleSlider, 100), (fontScaleSlider, 100), (autoBackupIntervalSlider, defaults.AutoBackupMinutes),
-            (audioVolumeSlider, defaults.MusicVolume * 100),
+            (audioVolumeSlider, defaults.MusicVolume * 100), (editorAudioVisualOffsetSlider, 0),
             (keySoundVolumeSlider, WindowsKeySoundSettings.DefaultVolume * 100),
             (keySoundGlobalOffsetSlider, 0), (keySoundChartOffsetSlider, 0)
         }) AddOptionReset(slider, () => Close(slider.Value, Math.Clamp(value, slider.Minimum, slider.Maximum)),

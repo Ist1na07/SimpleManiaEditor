@@ -62,6 +62,7 @@ var tests = new (string Name, Action Body)[]
     ("osu!mania compatibility", TestOsu),
     ("Native osu edits preserve source fields, absolute time, backups and recovery", OsuPreservationSpecs.Run),
     ("Native millisecond Timing/Kiai recovery, before-offset notes and history bounds", OsuTimingExperienceSpecs.Run),
+    ("Known PCM tempo/offset bias across 44.1/48 kHz", TempoOffsetBiasSpecs.Run),
     ("Offset export/recovery and zero timing sample volume", OffsetPersistenceSpecs.Run),
     ("osu duplicate fields and sections are tolerated", TestOsuDuplicateFields),
     ("osu unspecified preview normalizes for MC editing", TestOsuUnspecifiedPreview),

@@ -268,7 +268,7 @@ public static class TimelineAudioBackgroundSceneBuilder
         double y)
     {
         var beat = BeatAtY(sceneBeat, pixelsPerBeat, judgementY, y);
-        return timingMap.BeatToMilliseconds(BeatPosition.FromDouble(beat));
+        return timingMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, BeatPosition.MaximumPreservedDenominator));
     }
 
     private static double BeatAtY(
@@ -297,11 +297,8 @@ public static class TimelineAudioBackgroundSceneBuilder
             var y1 = y0 + rowPixels;
             var firstBeat = BeatAtY(sceneBeat, pixelsPerBeat, judgementY, y0);
             var lastBeat = BeatAtY(sceneBeat, pixelsPerBeat, judgementY, y1);
-            if (Math.Max(firstBeat, lastBeat) < 0) continue;
-            firstBeat = Math.Max(0, firstBeat);
-            lastBeat = Math.Max(0, lastBeat);
-            var firstMs = timingMap.BeatToMilliseconds(BeatPosition.FromDouble(firstBeat));
-            var lastMs = timingMap.BeatToMilliseconds(BeatPosition.FromDouble(lastBeat));
+            var firstMs = timingMap.BeatToMilliseconds(BeatPosition.FromDouble(firstBeat, BeatPosition.MaximumPreservedDenominator));
+            var lastMs = timingMap.BeatToMilliseconds(BeatPosition.FromDouble(lastBeat, BeatPosition.MaximumPreservedDenominator));
             if (firstMs > lastMs) (firstMs, lastMs) = (lastMs, firstMs);
             if (lastMs < 0 || firstMs > waveform.DurationMilliseconds) continue;
             // Bucket j covers [j * size, (j + 1) * size). Taking Ceiling(last)
@@ -345,8 +342,7 @@ public static class TimelineAudioBackgroundSceneBuilder
                 // drawn at, and read the frame whose window is centred there.
                 var y = topY + (row + .5) * rowPixels;
                 var beat = BeatAtY(sceneBeat, pixelsPerBeat, judgementY, y);
-                if (beat < 0) continue;
-                var milliseconds = timingMap.BeatToMilliseconds(BeatPosition.FromDouble(beat));
+                var milliseconds = timingMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, BeatPosition.MaximumPreservedDenominator));
                 if (milliseconds < 0 || milliseconds > spectrogram.DurationMilliseconds) continue;
                 var exactFrame = spectrogram.FrameIndexAt(milliseconds);
                 var firstFrame = Math.Clamp((int)Math.Floor(exactFrame), 0, spectrogram.FrameCount - 1);

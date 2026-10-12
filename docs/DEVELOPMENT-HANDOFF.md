@@ -1,3 +1,13 @@
+# 0.1.24 当前基线
+
+选中/错误装饰 DrawNoteStateOutline PushClip+Deflate penhalf，Tap/LN外形不扩张；预览同样内部高光。audio side SetViewport/SetPlaybackBeat不再clamp0，TimelineAudioBackgroundScene波形/频谱不再按beat0剪，按真实ms0-duration裁剪，投影百万分拍。编辑器rate全链最低.1：UI/transport/service/device/settings；phasevocoder .1四级，其他极慢3级，级数变化重建设备链，Prime按实际级数扣延迟；440Hz实测。试玩单独preset .25–1.5且旧越界回1x。
+
+Settings Appearance/Shortcuts默认展开。Timing.OffsetHere更明显全宽高亮；Timing.Offset.Nudge.-10/-1/1/10用当前offset草稿立即nativeApply，保留歌曲位置和绝对notes。Global音画校准单独editor-presentation AudioVisualOffsetMilliseconds（±500）；只SharedMusicClock画面ms += walloffset*rate，不改文件/键音/官方。保留上次calibratedCursor的tab/time/rate/offset，暂停继续将其逆变换到audio time，不随新补偿累计seek。人工导航位置不匹配历史cursor则按歌曲时间处理。音频category有Input/Apply/Slider/Reset，默认0。
+
+TempoOffsetBiasSpecs用已知PCM起音/衰减正弦和ExactRateEnergyReducer测44.1/48kHz，237->240、475->480；偏差3/5ms，未确认固定10ms，不写死补偿。还未测声卡/屏幕实际感知延迟或所有压缩格式。新增024真实DSP与可视化/Offset按钮/校准持久化及暂停逆变换测试；历史UI默认折叠断言更新为展开。
+
+历史记录：
+
 # 0.1.23 当前基线
 
 旧缓存 Lament 的 timing.UnknownData._sme_osu_object 为 line=0,... / time=475，而当前 Delay=-475。0.1.22 阻止新损坏但不能修复已经损坏的基准。本版 HasStaleTimingRows/IsStaleTimingRow 比较 raw row 与 baseline；Beat0 严格，其他点容忍导入时 <1ms 的量化误差（保留原始 timing 精度）。序列化在基准陈旧时重建 timing，即使 signature 已匹配；合法未编辑源保留原文。实际用户 cache 只读导出 `.osu`/`.osz` 后，官方 ppy 解码器均确认475ms/104.04BPM/190notes，原源文件/缓存hash不变；审计工具及导出仅在 artifacts/offset-audit-023。
@@ -27,7 +37,7 @@ MainWindow.SettingsNavigation.cs固定搜索/4列分类导航/单内容滚动区
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.23；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.24；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。

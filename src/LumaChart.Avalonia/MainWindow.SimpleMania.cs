@@ -23,9 +23,10 @@ public sealed partial class MainWindow
     private ComboBox? fixedGridPicker;
     private ComboBox? fixedRatePicker;
     private EditorGridNotation gridNotation;
-    private readonly double[] workbenchRates = [.2, .25, .5, .75, .9, 1, 1.1, 1.25, 1.5, 2];
+    private readonly double[] workbenchRates = [.1, .25, .5, .75, .9, 1, 1.1, 1.25, 1.5, 2];
     private readonly double[] workbenchZooms = [14, 35, 70, 140, 280, 560, 1120, 2240, 4480];
     private static readonly int[] adjustmentGridDivisions = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48];
+    private readonly double[] playtestRates = [.25, .5, .75, .9, 1, 1.1, 1.25, 1.5];
     private double playtestRate = EditorPresentationSettingsStore.LoadPlaytestRate();
     private ComboBox? playtestRatePicker;
     private Slider? adjustmentZoomSlider;
@@ -192,7 +193,7 @@ public sealed partial class MainWindow
         var playtest = toolbarPlaytestButton = CommandButton("▶ 试玩", async (_, _) => await StartPlaytestAsync(timeline.CurrentBeat));
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtest, "Editor.Toolbar.Playtest");
         ToolTip.SetTip(playtest, $"官方 osu!mania 试玩  {CompactShortcut("Playtest")} · 设置与导入位于右侧设置栏");
-        playtestRatePicker = new ComboBox { Width = 85, ItemsSource = workbenchRates, SelectedItem = playtestRate,
+        playtestRatePicker = new ComboBox { Width = 85, ItemsSource = playtestRates, SelectedItem = playtestRate,
             ItemTemplate = new FuncDataTemplate<double>((rate, _) => new TextBlock { Text = $"{rate:0.##}x" }) };
         global::Avalonia.Automation.AutomationProperties.SetAutomationId(playtestRatePicker, "Editor.Playtest.Rate");
         ToolTip.SetTip(playtestRatePicker, "试玩倍速（独立于编辑播放倍速，保持音高）");

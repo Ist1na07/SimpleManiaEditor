@@ -3990,14 +3990,8 @@ public sealed partial class TimelineSurface : Control
                         var outlineHeight = Math.Max(
                             noteHeight,
                             Math.Abs(tailY - headY) + noteHeight);
-                        context.DrawRectangle(
-                            isValidationIssue
-                                ? ValidationIssueOverlayBrush
-                                : SelectedNoteOverlayBrush,
-                            isValidationIssue ? ValidationIssuePen : SelectedNotePen,
-                            new Rect(left - 2, outlineTop - 2, width + 4, outlineHeight + 4),
-                            3,
-                            3);
+                        DrawNoteStateOutline(context,
+                            new Rect(left, outlineTop, width, outlineHeight), isValidationIssue);
                         if (isSelected)
                             context.DrawLine(
                                 SelectedNotePen,
@@ -4012,16 +4006,7 @@ public sealed partial class TimelineSurface : Control
                 DrawTapNote(context, noteRect, headSubdivisionPen);
                 if (isSelected || isValidationIssue)
                 {
-                    context.DrawRectangle(
-                        isValidationIssue ? ValidationIssueOverlayBrush : SelectedNoteOverlayBrush,
-                        isValidationIssue ? ValidationIssuePen : SelectedNotePen,
-                        new Rect(
-                            noteRect.X - 2,
-                            noteRect.Y - 2,
-                            noteRect.Width + 4,
-                            noteRect.Height + 4),
-                        3,
-                        3);
+                    DrawNoteStateOutline(context, noteRect, isValidationIssue);
                 }
             }
             if (WindowsOnlineCreatorMarkerPolicy.ShouldDraw(
@@ -4056,21 +4041,13 @@ public sealed partial class TimelineSurface : Control
         context.DrawRectangle(null, contourPen ?? NoteContourPen, rect, radius, radius);
     }
 
-    private static void DrawNoteStateOutline(
-        DrawingContext context,
-        Rect noteRect,
-        bool validationIssue)
+    private static void DrawNoteStateOutline(DrawingContext context, Rect noteRect, bool validationIssue)
     {
-        context.DrawRectangle(
-            validationIssue ? ValidationIssueOverlayBrush : SelectedNoteOverlayBrush,
-            validationIssue ? ValidationIssuePen : SelectedNotePen,
-            new Rect(
-                noteRect.X - 2,
-                noteRect.Y - 2,
-                noteRect.Width + 4,
-                noteRect.Height + 4),
-            3,
-            3);
+        var pen = validationIssue ? ValidationIssuePen : SelectedNotePen;
+        var inset = pen.Thickness / 2;
+        using var clip = context.PushClip(noteRect);
+        context.DrawRectangle(validationIssue ? ValidationIssueOverlayBrush : SelectedNoteOverlayBrush, pen,
+            noteRect.Deflate(inset), 3, 3);
     }
 
     private void DrawLongNote(
@@ -4270,7 +4247,7 @@ public sealed partial class TimelineSurface : Control
             using (context.PushOpacity(
                        WindowsTimelineVisualParityPolicy.HoldInteractionStyle.Opacity))
                 DrawTapNote(context, tapRect);
-            context.DrawRectangle(null, SelectedNotePen, tapRect, 4, 4);
+            DrawNoteStateOutline(context, tapRect, false);
         }
     }
 

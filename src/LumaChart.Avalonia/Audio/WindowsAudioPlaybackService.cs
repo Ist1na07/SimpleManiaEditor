@@ -354,7 +354,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         ThrowIfDisposed();
         if (!double.IsFinite(playbackRate)) throw new ArgumentOutOfRangeException(nameof(playbackRate));
         cancellationToken.ThrowIfCancellationRequested();
-        playbackRate = Math.Clamp(playbackRate, .2, 2);
+        playbackRate = Math.Clamp(playbackRate, .1, 2);
         _ = playbackEpoch.Advance();
         await RunSerializedSnapshotTransitionAsync(
                 activeEngine => activeEngine.PlaybackRate = playbackRate,

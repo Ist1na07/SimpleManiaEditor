@@ -45,6 +45,7 @@ internal static class Program
                 .SetupWithoutStarting();
             if (args.Length > 0 && args[0] == "--workbench-test")
             {
+                EditorInteraction024Specs.RunAudio();
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
                 RunApplicationSmoke(screenshotRoot);
                 return 0;
@@ -57,6 +58,7 @@ internal static class Program
             EditorInteraction021Specs.RunPointer();
             EditorInteraction022Specs.RunPointer();
             EditorInteraction023Specs.RunPointer();
+            EditorInteraction024Specs.RunAudio();
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
             OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
@@ -314,7 +316,7 @@ internal static class Program
         inspectorTabs.SelectedItem = settingsTab;
         Dispatcher.UIThread.RunJobs();
         var appearance = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => AutomationProperties.GetAutomationId(e) == "Settings.Appearance");
-        Require(!appearance.IsExpanded, "editor appearance should be collapsed by default");
+        Require(appearance.IsExpanded, "editor appearance should be expanded by default");
         window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.2").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         appearance.IsExpanded = true;
         Pump(100);
@@ -327,7 +329,7 @@ internal static class Program
             "skin selector did not restore/persist osu default");
         OptionControlsSpecs.Run(window, screenshots);
         var shortcuts = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => Equals(e.Header, "快捷键"));
-        Require(!shortcuts.IsExpanded, "shortcut settings should be collapsed by default");
+        Require(shortcuts.IsExpanded, "shortcut settings should be expanded by default");
         window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.1").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         shortcuts.IsExpanded = true;
         Pump(100);
@@ -341,6 +343,7 @@ internal static class Program
         EditorInteraction021Specs.RunWorkbench(window);
         EditorInteraction022Specs.RunWorkbench(window);
         EditorInteraction023Specs.RunWorkbench(window, screenshots);
+        EditorInteraction024Specs.RunWorkbench(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

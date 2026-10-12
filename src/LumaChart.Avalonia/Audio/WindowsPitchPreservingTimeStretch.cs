@@ -23,8 +23,9 @@ internal static class WindowsPitchPreservingTimeStretchPolicy
     public static double ResolveSoundTouchTempo(double playbackRate) =>
         NormalizeRate(playbackRate);
 
-    public static float ResolvePhaseVocoderStagePitchFactor(double playbackRate) =>
-        (float)Math.Pow(1d / NormalizeRate(playbackRate), 1d / PhaseVocoderStageCount);
+    public static int ResolvePhaseVocoderStageCount(double rate) => NormalizeRate(rate) < .125 ? 4 : PhaseVocoderStageCount;
+    public static float ResolvePhaseVocoderStagePitchFactor(double playbackRate, int stageCount = 0) =>
+        (float)Math.Pow(1d / NormalizeRate(playbackRate), 1d / (stageCount == 0 ? ResolvePhaseVocoderStageCount(playbackRate) : stageCount));
 
     public static int PhaseVocoderLatencyFrames =>
         PhaseVocoderStageCount *
@@ -40,12 +41,12 @@ internal static class WindowsPitchPreservingTimeStretchPolicy
     }
 
     private static double NormalizeRate(double playbackRate) =>
-        double.IsFinite(playbackRate) ? Math.Clamp(playbackRate, .2, 2) : 1;
+        double.IsFinite(playbackRate) ? Math.Clamp(playbackRate, .1, 2) : 1;
 }
 
 /// <summary>
-/// Handles the five-times expansion needed at 0.2x in the time domain, then
-/// restores pitch through three moderate phase-vocoder shifts. Buffers and DSP
+/// Handles the ten-times expansion needed at 0.1x in the time domain, then
+/// restores pitch through three or four moderate phase-vocoder shifts. Buffers and DSP
 /// state are reused so the WASAPI render callback stays allocation-free.
 /// </summary>
 internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProvider
@@ -79,7 +80,7 @@ internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProv
         ISampleProvider stageSource = rateContinuity;
         var stageEnded = new Func<bool>(() => rateContinuity.IsEnded);
         pitchStages = new SmbPitchShiftStageSampleProvider[
-            WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderStageCount];
+            WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderStageCount(playbackRate)];
         for (var stage = 0; stage < pitchStages.Length; stage++)
         {
             var pitchStage = new SmbPitchShiftStageSampleProvider(
@@ -95,9 +96,9 @@ internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProv
         outputContinuity = new SoundTouchContinuitySampleProvider(
             stageSource,
             () => finalStage.IsEnded);
-        startupSamplesRemaining = checked(
-            WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderLatencyFrames *
-            WaveFormat.Channels);
+        var stageLatency = WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize -
+            WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize / WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderOversampling;
+        startupSamplesRemaining = checked(pitchStages.Length * stageLatency * WaveFormat.Channels);
         startupBuffer = new float[Math.Min(
             startupSamplesRemaining,
             WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize *
@@ -111,6 +112,7 @@ internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProv
 
     public WaveFormat WaveFormat { get; }
     public bool IsEnded => primed && outputContinuity.IsEnded;
+    public int StageCount => pitchStages.Length;
 
     public double PlaybackRate
     {
@@ -119,11 +121,11 @@ internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProv
         {
             rateProvider.PlaybackRate = Math.Clamp(
                 double.IsFinite(value) ? value : 1,
-                .2,
+                .1,
                 WindowsPitchPreservingTimeStretchPolicy.ExtremeSlowdownMaximumRate);
             var pitchFactor =
                 WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderStagePitchFactor(
-                    rateProvider.PlaybackRate);
+                    rateProvider.PlaybackRate, pitchStages.Length);
             foreach (var stage in pitchStages) stage.PitchFactor = pitchFactor;
         }
     }
