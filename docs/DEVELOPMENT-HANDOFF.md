@@ -1,3 +1,19 @@
+# 0.1.25 当前基线
+
+校准跳转：连续暂停/seek压力测试复现DispatcherTimer启用但不再提交的pending状态；提交改为Task.Delay(12ms)+UI单次post，独立schedule generation取消旧回调，正在执行时由finally调度最新目标，维持首次事件启动/连续滚动合并。
+
+Timeline_CurrentBeatChanged仅在音乐播放/待继续音乐seek时用AudioTime逆变换；暂停导航是正常歌曲时间。记录校准后的人工目标供暂停继续逆变换。CompletePendingEditorSeek重置visualclock，并在100ms内绕开跳转前的高频缓存；恢复首帧也读取新clock。播放滚轮的BeatToMs/MsToBeat采用1m精度，避免默认分母造成的偏差。真实decoder/DSP+SimulatedAudioOutput覆盖带±200ms校准的小滚轮、0.1x跳转/暂停继续显示连续性。
+
+0.1x：保留四段pitch恢复，但仅低于.125时FFT2048/overlap4，其他速度保持4096/8；Prime依据实际窗口裁掉对应延迟。48k mono/stereo440Hz与连续有限输出通过；同机双声道Prime旧约204ms、新25–50ms，1s输出旧637ms、新196–350ms，负载波动，不是硬件音频呈现基准；真实歌曲音质待验收。
+
+AudioCalibrationWindow使用独立WindowsAudioPlaybackService和1x规律1200ms click，跟相同音频输出clock画移动光点；相位范围±600ms避免±500ms校准周期歧义。按钮±1/±10、slider、试听Space、使用/取消；窗口关闭停止/释放输出及删除随机临时WAV。不使用点拍时间推断音画偏移，避免人体反应延迟。不声称客观1ms自动测量。主窗口入口先取消seek/暂停音乐和silent clock，再打开modal；确认才写global calibration。
+
+NoteTextCodeService.Parse分离解析/写入。NotePastePlacement纯预览保持相对拍与LN长度、允许有限横移；Commit预检权限/保护区、exact重复省略、一笔undo。TimelineSurface.Paste共享主轨/草稿预览绘制和点击状态。MainWindow.PastePreview按hover/点击选择目标，支持跨轨拖影，Esc/右键取消；不Focus造成底板跳动，异步clipboard验证tab/session/serial。文本导入不折叠，属性应用挪回属性区并命名应用属性，代码应用为主按钮。草稿转主轨用原始ms代码，清空用Delete原子命令。Draft新建clone主文档再清notes，旧draft在工作区载入时补native标记；不改源歌曲文件。同步draft的ZoomChanged同步main，非同步仅本轨。
+
+59核心规格、完整UI、连续3轮seek压力测试通过。UI025新增鼠标/跨轨/控件/PCM刺激测试；历史即时Ctrl+V断言改为延迟点击提交。官方宿主仅版本更新，游戏逻辑无修改。
+
+历史记录：
+
 # 0.1.24 当前基线
 
 选中/错误装饰 DrawNoteStateOutline PushClip+Deflate penhalf，Tap/LN外形不扩张；预览同样内部高光。audio side SetViewport/SetPlaybackBeat不再clamp0，TimelineAudioBackgroundScene波形/频谱不再按beat0剪，按真实ms0-duration裁剪，投影百万分拍。编辑器rate全链最低.1：UI/transport/service/device/settings；phasevocoder .1四级，其他极慢3级，级数变化重建设备链，Prime按实际级数扣延迟；440Hz实测。试玩单独preset .25–1.5且旧越界回1x。
@@ -37,7 +53,7 @@ MainWindow.SettingsNavigation.cs固定搜索/4列分类导航/单内容滚动区
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 用户负责功能和真实 osu!/音频设备验收；代码、测试和便携包由助手完成。不要反复请求已授权的开发确认。
 - 用户允许调整 Python/Web 技术栈，优先复用成熟代码。当前为 MIT 的 Luma 客户端改造，C#/.NET + Avalonia。
-- 最新交付 0.1.24；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
+- 最新交付 0.1.25；0.1.11 基线提交 `0b536b9`。源码位于 `src/`。
 - 原生 `.osu` 源资料保真、外部修改检测、保存前备份、恢复工作副本已实现；完整 command journal / 版本树仍未完成。
 - osu 键鼠方案默认；网格内部分母是每四分音符拍的切分数，osu 1/4 = general 1/16 = 120 BPM 下 125 ms。不要再把内部网格盲目乘四。
 - 编辑播放常规 seek 复用设备；0.25x 保音高采用后台准备。性能数字仅为模拟输出引擎时间，不能称为硬件端到端延迟。

@@ -494,6 +494,7 @@ public sealed partial class TimelineSurface : Control
         set
         {
             if (ReferenceEquals(session, value)) return;
+            ClearPendingPastePreview();
             IsDefiningSymmetry = false; symmetryFirstPoint = null; symmetryDragEdge = null;
             symmetryPointer?.Capture(null); symmetryPointer = null; SymmetrySettings = null;
             if (resizingHoldTail) FinishHoldTailResize(releaseCapture: false);
@@ -661,6 +662,7 @@ public sealed partial class TimelineSurface : Control
     public event EventHandler<string>? StatusChanged;
     public event EventHandler<string>? HoverChanged;
     public event EventHandler<ProEditorTrackPanState>? TrackPanChanged;
+    public event EventHandler<double>? ZoomChanged;
     public event EventHandler<TimelineManualNavigationEventArgs>? ManualNavigationRequested;
 
     public IReadOnlyCollection<Guid> SelectedTimingIds => selectedTimingIds;
@@ -1420,6 +1422,11 @@ public sealed partial class TimelineSurface : Control
                     includeDrafts: proEditorEnabled);
                 DrawNotes(context, geometry, previewNotes, draggingSelectionPass: true);
             }
+            if (pendingPasteNotes != null)
+            {
+                using var pasteOpacity = context.PushOpacity(.55);
+                DrawNotes(context, geometry, pendingPastePreview.Where(n => n.Beat.Value <= maximumBeat && (n.EndBeat ?? n.Beat).Value >= minimumStoredBeat), draggingSelectionPass: false);
+            }
             DrawHoldTailResizePreview(context, geometry);
             DrawPlacementPreview(context, geometry);
             DrawPlacementHover(context, geometry);
@@ -1438,6 +1445,7 @@ public sealed partial class TimelineSurface : Control
     {
         base.OnPointerPressed(eventArgs);
         if (session == null) return;
+        if (HandlePendingPastePress(eventArgs)) return;
         if (eventArgs.Pointer.Type == PointerType.Touch)
         {
             touchContacts[eventArgs.Pointer.Id] = eventArgs.GetPosition(this);
@@ -1811,6 +1819,7 @@ public sealed partial class TimelineSurface : Control
     {
         base.OnPointerMoved(eventArgs);
         placementHoverPoint = eventArgs.GetPosition(this);
+        if (pendingPasteNotes != null) { MovePendingPaste(placementHoverPoint.Value); eventArgs.Handled = true; return; }
         if (HandleSymmetryMove(eventArgs)) return;
         if (Tool is TimelineTool.Tap or TimelineTool.Hold) InvalidateVisual();
         if (session == null) return;
@@ -2288,6 +2297,7 @@ public sealed partial class TimelineSurface : Control
                 this,
                 new TimelineManualNavigationEventArgs(changesBeat: false));
             SetZoom(PixelsPerBeat * (eventArgs.Delta.Y > 0 ? 1.08 : 1 / 1.08));
+            ZoomChanged?.Invoke(this, PixelsPerBeat);
         }
         else if (WindowsTimelineVisualParityPolicy.ResolveWheelDirection(
                      ReverseTimeWheel ? -eventArgs.Delta.Y : eventArgs.Delta.Y) is { } direction &&
@@ -2296,9 +2306,9 @@ public sealed partial class TimelineSurface : Control
             if (isPlaybackActive && InteractionProfile == EditorInteractionProfile.OsuMania)
             {
                 var map = audioVisualizationTimingMap ?? new TimingMap(session.Document.Timing);
-                var milliseconds = map.BeatToMilliseconds(BeatPosition.FromDouble(CurrentBeat)) +
+                var milliseconds = map.BeatToMilliseconds(BeatPosition.FromDouble(CurrentBeat, BeatPosition.MaximumPreservedDenominator)) +
                     (ReverseTimeWheel ? -eventArgs.Delta.Y : eventArgs.Delta.Y) * PlaybackWheelStepMilliseconds;
-                SetCurrentBeatFromManualNavigation(Math.Max(MinimumEditableBeat, map.MillisecondsToBeat(milliseconds).Value));
+                SetCurrentBeatFromManualNavigation(Math.Max(MinimumEditableBeat, map.MillisecondsToBeat(milliseconds, BeatPosition.MaximumPreservedDenominator).Value));
             }
             else SetCurrentBeatFromManualNavigation(AllowsNegativeBeats
                 ? TimelinePlacementGeometry.NearestGrid(CurrentBeat + direction / (double)session.SnapDivision, session.SnapDivision).Value
@@ -2310,6 +2320,7 @@ public sealed partial class TimelineSurface : Control
     protected override void OnKeyDown(KeyEventArgs eventArgs)
     {
         base.OnKeyDown(eventArgs);
+        if (eventArgs.Key == Key.Escape && pendingPasteNotes != null) { CancelPendingPaste(); eventArgs.Handled = true; return; }
         if (eventArgs.Key == Key.Escape && IsDefiningSymmetry)
         { CancelSymmetryRange(); eventArgs.Handled = true; return; }
         if (session == null) return;
@@ -4253,6 +4264,7 @@ public sealed partial class TimelineSurface : Control
 
     private void DrawPlacementHover(DrawingContext context, TimelineGeometry geometry)
     {
+        if (pendingPasteNotes != null) return;
         if (InteractionProfile != EditorInteractionProfile.OsuMania || session == null || session.IsReadOnly || !session.CanEditNotes ||
             Tool is not (TimelineTool.Tap or TimelineTool.Hold) || placementHoverPoint is not { } point ||
             movingTiming || marqueeSelecting) return;

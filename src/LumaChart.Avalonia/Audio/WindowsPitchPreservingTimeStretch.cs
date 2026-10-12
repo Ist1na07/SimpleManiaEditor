@@ -23,6 +23,11 @@ internal static class WindowsPitchPreservingTimeStretchPolicy
     public static double ResolveSoundTouchTempo(double playbackRate) =>
         NormalizeRate(playbackRate);
 
+    // Ten-times expansion must leave CPU room for the editor render thread.
+    // Keep the larger analysis window for other rates; at 0.1x use shorter
+    // windows and fewer overlaps while retaining four moderate pitch shifts.
+    public static int ResolvePhaseVocoderFftSize(double rate) => NormalizeRate(rate) < .125 ? 2048 : PhaseVocoderFftSize;
+    public static int ResolvePhaseVocoderOversampling(double rate) => NormalizeRate(rate) < .125 ? 4 : PhaseVocoderOversampling;
     public static int ResolvePhaseVocoderStageCount(double rate) => NormalizeRate(rate) < .125 ? 4 : PhaseVocoderStageCount;
     public static float ResolvePhaseVocoderStagePitchFactor(double playbackRate, int stageCount = 0) =>
         (float)Math.Pow(1d / NormalizeRate(playbackRate), 1d / (stageCount == 0 ? ResolvePhaseVocoderStageCount(playbackRate) : stageCount));
@@ -81,13 +86,14 @@ internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProv
         var stageEnded = new Func<bool>(() => rateContinuity.IsEnded);
         pitchStages = new SmbPitchShiftStageSampleProvider[
             WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderStageCount(playbackRate)];
+        var fftSize = WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderFftSize(playbackRate);
+        var oversampling = WindowsPitchPreservingTimeStretchPolicy.ResolvePhaseVocoderOversampling(playbackRate);
         for (var stage = 0; stage < pitchStages.Length; stage++)
         {
             var pitchStage = new SmbPitchShiftStageSampleProvider(
                 stageSource,
                 stageEnded,
-                WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize,
-                WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderOversampling);
+                fftSize, oversampling);
             pitchStages[stage] = pitchStage;
             stageSource = pitchStage;
             stageEnded = () => pitchStage.IsEnded;
@@ -96,8 +102,7 @@ internal sealed class WindowsPhaseVocoderTimeStretchSampleProvider : ISampleProv
         outputContinuity = new SoundTouchContinuitySampleProvider(
             stageSource,
             () => finalStage.IsEnded);
-        var stageLatency = WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize -
-            WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderFftSize / WindowsPitchPreservingTimeStretchPolicy.PhaseVocoderOversampling;
+        var stageLatency = fftSize - fftSize / oversampling;
         startupSamplesRemaining = checked(pitchStages.Length * stageLatency * WaveFormat.Channels);
         startupBuffer = new float[Math.Min(
             startupSamplesRemaining,

@@ -656,7 +656,6 @@ public sealed partial class MainWindow : PlatformWindow
     private readonly DispatcherTimer shortcutSettingsSaveTimer;
     private readonly DispatcherTimer audioPanelSettingsSaveTimer;
     private readonly DispatcherTimer autoBackupTimer;
-    private readonly DispatcherTimer editorSeekCommitTimer;
     private readonly DispatcherTimer roomInvitationTimer;
     private readonly WindowsHighRateFramePump editorHighRateFramePump = new();
     private readonly WindowsFrameRateGate editorCompositionFrameGate =
@@ -1000,16 +999,6 @@ public sealed partial class MainWindow : PlatformWindow
             Interval = TimeSpan.FromMinutes(editorViewSettings.AutoBackupMinutes)
         };
         autoBackupTimer.Tick += AutoBackupTimer_Tick;
-        editorSeekCommitTimer = new DispatcherTimer(DispatcherPriority.Normal)
-        {
-            Interval = TimeSpan.FromMilliseconds(12)
-        };
-        editorSeekCommitTimer.Tick += (_, _) =>
-        {
-            editorSeekCommitTimer.Stop();
-            if (editorSeekCommitRunning) return;
-            editorSeekCommitTask = CommitPendingEditorSeekAsync();
-        };
         roomInvitationTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromSeconds(2)
@@ -1278,6 +1267,8 @@ public sealed partial class MainWindow : PlatformWindow
         audioTransport.StateChanged += AudioTransport_StateChanged;
         audioVisualization.StateChanged += AudioVisualization_StateChanged;
         keySoundRuntime.StateChanged += KeySoundRuntime_StateChanged;
+        RegisterPasteSurface(timeline);
+        timeline.ZoomChanged += (_, _) => SyncTrackViewports();
         timeline.CurrentBeatChanged += Timeline_CurrentBeatChanged;
         timeline.ManualNavigationRequested += Timeline_ManualNavigationRequested;
         timeline.SnapDivisionChangeRequested += (_, direction) => AdjustQuickSnap(direction);
@@ -5302,7 +5293,7 @@ public sealed partial class MainWindow : PlatformWindow
         commandLayout.Children.Add(editCommands);
 
         mixedCopyButton = PrimaryButton("复制", (_, _) => CopyMixedSelection());
-        mixedPasteButton = PrimaryButton("粘贴到红线", (_, _) => PasteMixedSelection());
+        mixedPasteButton = PrimaryButton("粘贴（虚影）", (_, _) => PasteMixedSelection());
         mixedDeleteButton = PrimaryButton("删除选择", (_, _) => DeleteMixedSelection());
         ownerLockButton = PrimaryButton("锁定选区", async (_, _) => await ToggleOwnerLockSelectionAsync());
         ownerLockButton.IsVisible = false;
@@ -6640,6 +6631,7 @@ public sealed partial class MainWindow : PlatformWindow
         // and a double click used to open two modal playtest windows.
         if (playtestInProgress) return;
         playtestInProgress = true;
+        CancelNotePaste();
         timeline.CancelInteraction();
         foreach (var view in secondaryTrackViews.Values) view.Surface?.CancelInteraction();
         addTrackContextMenu?.Close();
@@ -7075,7 +7067,7 @@ public sealed partial class MainWindow : PlatformWindow
             "粘贴", "M5,3 H13 V15 H3 V3 H6 M6,2 H10 V5 H6 Z M7,9 H11 M7,12 H11",
             (_, _) => PasteMixedSelection(), out _);
         AutomationProperties.SetAutomationId(quickPasteButton, "Editor.QuickPaste");
-        RegisterQuickShortcutButton("Paste", "按当前分度粘贴到红线", quickPasteButton);
+        RegisterQuickShortcutButton("Paste", "移动虚影后单击粘贴", quickPasteButton);
         left.Children.Add(quickPasteButton);
         var quickSelectAllButton = QuickPaletteButton(
             "全选", "M2,2 H15 V15 H2 Z M5,5 H12 V12 H5 Z",
@@ -10822,7 +10814,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (mixedCopyButton != null)
             ToolTip.SetTip(mixedCopyButton, AvaloniaLocalizationCatalog.Format("复制选中的 Note / Effect  {0}", CompactShortcut("Copy")));
         if (mixedPasteButton != null)
-            ToolTip.SetTip(mixedPasteButton, AvaloniaLocalizationCatalog.Format("按当前分度粘贴到红线  {0}", CompactShortcut("Paste")));
+            ToolTip.SetTip(mixedPasteButton, AvaloniaLocalizationCatalog.Format("移动虚影后单击粘贴  {0}", CompactShortcut("Paste")));
         if (mixedDeleteButton != null)
             ToolTip.SetTip(mixedDeleteButton, AvaloniaLocalizationCatalog.Format("删除选中的 Note / Effect  {0}", CompactShortcut("Delete")));
         if (timelineToolButtons.TryGetValue(TimelineTool.Select, out var select))
@@ -12376,7 +12368,7 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(noteSoundSelectButton, "Inspector.Note.SoundSelect");
         noteSoundSelectButton.Click += async (_, _) => await ImportSelectedNoteSoundAsync();
 
-        noteApplyButton.Content = "应用";
+        noteApplyButton.Content = "应用属性";
         noteApplyButton.Click += async (_, _) => await ApplyNotePropertiesAsync();
         noteApplyButton.Width = 110;
         ApplyWpfPrimaryButtonStyle(noteApplyButton);
@@ -12447,8 +12439,8 @@ public sealed partial class MainWindow : PlatformWindow
                 laneVolume,
                 FullModeOnly(TimingField("Key 音文件", soundRow)),
 
-                BuildNoteCodeImport(),
                 actions,
+                BuildNoteCodeImport(),
                 new Border
                 {
                     MaxWidth = WindowsInspectorParityPolicy.InspectorContentMaximumWidth,
@@ -14311,7 +14303,7 @@ public sealed partial class MainWindow : PlatformWindow
                 navigationMarkerSaveTimer.Stop();
                 shortcutSettingsSaveTimer.Stop();
                 audioPanelSettingsSaveTimer.Stop();
-                editorSeekCommitTimer.Stop();
+                CancelScheduledEditorSeekCommit();
                 editorHighRateFramePump.Dispose();
                 DetachKeySoundActiveSession();
                 keySoundRuntime.StateChanged -= KeySoundRuntime_StateChanged;
@@ -15223,6 +15215,7 @@ public sealed partial class MainWindow : PlatformWindow
     private async void Window_KeyDown(object? sender, KeyEventArgs eventArgs)
     {
         if (playtestInProgress) { eventArgs.Handled = true; return; }
+        if (eventArgs.Key == Key.Escape && pendingNotePaste != null) { CancelNotePaste(); eventArgs.Handled = true; return; }
         if (noteSoundExistingPopup.IsOpen)
         {
             NoteSoundPicker_KeyDown(sender, eventArgs);
@@ -15804,13 +15797,15 @@ public sealed partial class MainWindow : PlatformWindow
     private void RunEditorFrame(bool updateVisuals, double? presentationTimeMilliseconds = null)
     {
         if (playtestInProgress) return;
-        var pump = editorViewSettings.FrameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate &&
+        var freshClock = editorSeekNeedsFreshClock || Stopwatch.GetTimestamp() < editorSeekFreshClockUntil;
+        editorSeekNeedsFreshClock = false;
+        var pump = !freshClock && editorViewSettings.FrameRateLimit > WindowsFrameRateOptions.CompositionDrivenRate &&
                    TryReadEditorHighRateSample(out var sampled)
             ? sampled
             : keySoundPlanRebuildPending
                 ? CapturePlaybackClockWithoutScheduling()
                 : keySoundRuntime.Pump();
-        if (!updateVisuals) return;
+        if (!updateVisuals) { if (freshClock) editorSeekNeedsFreshClock = true; return; }
 
         editorFrameUpdates++;
         RefreshFrameRateStatus(IsEditorPlaybackActive());
@@ -15827,7 +15822,7 @@ public sealed partial class MainWindow : PlatformWindow
             audioPositionUiClock.Restart();
             UpdateAudioUi();
         }
-        if (pump.Output == WindowsKeySoundPlaybackOutput.None) return;
+        if (pump.Output == WindowsKeySoundPlaybackOutput.None) { if (freshClock) editorSeekNeedsFreshClock = true; return; }
         var tab = viewModel.ActiveTab;
         if (tab == null || !ReferenceEquals(tab, keySoundActiveTab)) return;
         if (!TryGetCachedAudioTimingMap(tab, out var timingMap)) return;
@@ -15936,7 +15931,7 @@ public sealed partial class MainWindow : PlatformWindow
         audioPositionUiClock.Restart();
         if (playbackStarted) timeline.Performance.Reset();
         editorStatusRenderCount = timeline.Performance.TotalRenderedFrames;
-        if (playbackStarted || !isPlaying) editorVisualClock.Reset();
+        if (playbackStarted || !isPlaying) { editorVisualClock.Reset(); editorSeekNeedsFreshClock = true; }
         RefreshFrameRateStatus(isPlaying, force: true);
     }
 
@@ -16582,7 +16577,7 @@ public sealed partial class MainWindow : PlatformWindow
             audioTransport.PlaybackRate);
         // Schedule from the first wheel event; a continuous scroll must not keep
         // postponing the commit until the user stops moving the wheel.
-        if (!editorSeekCommitTimer.IsEnabled) editorSeekCommitTimer.Start();
+        ScheduleEditorSeekCommit();
     }
 
     private async Task PauseMusicForEditorSeekAsync(long generation, DesktopChartTab tab)
@@ -16693,11 +16688,10 @@ public sealed partial class MainWindow : PlatformWindow
         finally
         {
             editorSeekCommitRunning = false;
-            if (editorSeekPending && !editorSeekCommitTimer.IsEnabled)
+            if (editorSeekPending && !editorSeekCommitScheduled)
             {
                 EnsurePendingEditorSeekTransportPaused();
-                editorSeekCommitTimer.Stop();
-                editorSeekCommitTimer.Start();
+                ScheduleEditorSeekCommit();
             }
         }
     }
@@ -16712,7 +16706,10 @@ public sealed partial class MainWindow : PlatformWindow
     private void CompletePendingEditorSeek(long generation, DesktopChartTab tab)
     {
         if (editorSeekGeneration != generation || !ReferenceEquals(editorSeekTab, tab)) return;
-        editorSeekCommitTimer.Stop();
+        editorVisualClock.Reset();
+        editorSeekNeedsFreshClock = true;
+        editorSeekFreshClockUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 10;
+        CancelScheduledEditorSeekCommit();
         editorSeekPending = false;
         editorSeekTab = null;
         editorSeekUsesMusic = false;
@@ -16721,7 +16718,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private Task CancelPendingEditorSeek()
     {
-        editorSeekCommitTimer.Stop();
+        CancelScheduledEditorSeekCommit();
         var pauseTask = editorSeekPauseTask;
         if (editorSeekPending || editorSeekCommitRunning)
         {
@@ -17234,9 +17231,19 @@ public sealed partial class MainWindow : PlatformWindow
 
         var tab = viewModel.ActiveTab;
         if (tab == null || !IsCurrentKeySoundTab(tab)) return;
-        var milliseconds = Math.Max(
-            0,
-            GetAudioTimingMap(tab).BeatToMilliseconds(BeatPosition.FromDouble(beat)));
+        var chartMilliseconds = GetAudioTimingMap(tab).BeatToMilliseconds(BeatPosition.FromDouble(beat, BeatPosition.MaximumPreservedDenominator));
+        var calibrateMusicSeek = audioTransport.ActiveTabId == tab.Id && audioTransport.PlaybackSnapshot?.IsPlaying == true ||
+                                 editorSeekPending && ReferenceEquals(editorSeekTab, tab) && editorSeekUsesMusic && editorSeekResumeRequested;
+        var milliseconds = Math.Max(0, calibrateMusicSeek
+            ? EditorAudioVisualCalibration.AudioTime(chartMilliseconds, audioTransport.PlaybackRate, editorAudioVisualOffsetMilliseconds)
+            : chartMilliseconds);
+        if (calibrateMusicSeek && editorAudioVisualOffsetMilliseconds != 0)
+        {
+            lastCalibratedCursorMilliseconds = chartMilliseconds;
+            lastCalibratedCursorRate = audioTransport.PlaybackRate;
+            lastCalibratedCursorOffsetMilliseconds = editorAudioVisualOffsetMilliseconds;
+            lastCalibratedCursorTabId = tab.Id;
+        }
         QueueEditorSeek(
             tab,
             milliseconds,

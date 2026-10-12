@@ -111,6 +111,7 @@ public sealed partial class MainWindow
     private void RefreshTrackWorkspace(DesktopChartTab? tab)
     {
         if (tab == null) { CaptureBoardLayout(); activeTrackWorkspace = null; RebuildTrackViews(); return; }
+        if (pendingNotePaste != null && pendingNotePasteTab != tab.Id) CancelNotePaste();
         var path = Path.GetFullPath(tab.SourcePath);
         if (!trackWorkspaces.TryGetValue(path, out var workspace))
         {
@@ -121,6 +122,9 @@ public sealed partial class MainWindow
             if (workspace.LoadFailed) viewModel.SetStatus($"轨道资料读取失败；已保留 {workspace.DirectoryPath}，未进行覆盖。");
             if (workspace.HasPendingChanges) _ = SaveCopiedTrackWorkspaceAsync(workspace);
         }
+        if (OsuSourceEnvelope.HasSource(tab.Session.Document))
+            foreach (var track in workspace.Tracks.Where(t => t.Kind == EditorTrackKind.Draft && t.Session != null && !OsuSourceEnvelope.HasSource(t.Session.Document)))
+                track.Session!.Mutate(d => d.UnknownRoot["_sme_osu_source"] = tab.Session.Document.UnknownRoot["_sme_osu_source"]!.DeepClone());
         trackSourceByTab[tab.Id] = path;
         if (!ReferenceEquals(workspace, activeTrackWorkspace))
         {
@@ -210,11 +214,15 @@ public sealed partial class MainWindow
                 if (!synchronizingTrackViewport && track.SyncScroll && viewModel.ActiveTab is { } tab)
                 {
                     var sourceMap = new TimingMap(track.Session!.Document.Timing);
-                    timeline.NavigateToBeat(GetAudioTimingMap(tab).MillisecondsToBeat(sourceMap.BeatToMilliseconds(BeatPosition.FromDouble(beat))).Value);
+                    timeline.NavigateToBeat(GetAudioTimingMap(tab).MillisecondsToBeat(sourceMap.BeatToMilliseconds(BeatPosition.FromDouble(beat, BeatPosition.MaximumPreservedDenominator)), BeatPosition.MaximumPreservedDenominator).Value);
                 }
             };
             surface.PlaybackRateChangeRequested += async (_, direction) => await AdjustWorkbenchRateAsync(direction);
             surface.SnapDivisionChangeRequested += (_, direction) => AdjustQuickSnap(direction);
+            RegisterPasteSurface(surface);
+            surface.ZoomChanged += (_, zoom) =>
+            { if (track.SyncScroll) { timeline.SetZoom(zoom); SyncTrackViewports(); }
+              else { track.ViewZoom = zoom; activeTrackWorkspace?.MarkLayoutChanged(); } };
             view.Surface = surface;
             surface.SizeChanged += (_, _) => SyncTrackViewports();
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6, 0) };
@@ -224,14 +232,14 @@ public sealed partial class MainWindow
                 actions.Children.Add(TrackButton("粘贴", () => PasteTrackSelection(view)));
                 actions.Children.Add(TrackButton("撤销", () => track.Session!.Undo()));
                 actions.Children.Add(TrackButton("重做", () => track.Session!.Redo()));
+                actions.Children.Add(TrackButton("清空", () => ClearDraftTrack(view)));
             }
             else if (track.Kind == EditorTrackKind.Hitsound)
             {
                 actions.Children.Add(TrackButton("撤销", () => viewModel.ActiveTab?.Session.Undo()));
                 actions.Children.Add(TrackButton("重做", () => viewModel.ActiveTab?.Session.Redo()));
             }
-            actions.Children.Add(TrackButton("放入主轨", () => { CopyTrackSelection(view); activeSecondaryTrack = null;
-                PasteMixedSelection(); timeline.Focus(); }));
+            actions.Children.Add(TrackButton("放入主轨", () => TransferTrackSelectionToMain(view)));
             if (track.Kind == EditorTrackKind.Hitsound)
             {
                 var sound = new TextBox { PlaceholderText = "采样文件相对路径", Width = 130 };
@@ -318,8 +326,30 @@ public sealed partial class MainWindow
 
     private void PasteTrackSelection(TrackView view)
     {
-        if (viewModel.EditorClipboard is { IsEmpty: false } clipboard)
-            MixedSelectionEditingService.Paste(view.Track.Session!, clipboard.NotesOnly(), BeatPosition.FromDouble(view.Surface!.CurrentBeat));
+        activeSecondaryTrack = view;
+        _ = PasteNoteClipboardAsync();
+    }
+
+    private void ClearDraftTrack(TrackView view)
+    {
+        var session = view.Track.Session!;
+        if (view.Track.Kind != EditorTrackKind.Draft) return;
+        MixedSelectionEditingService.Delete(session, session.Document.Notes.Select(n => n.Id).ToArray(), []);
+        viewModel.SetStatus("草稿已清空，可撤销。");
+    }
+
+    private void TransferTrackSelectionToMain(TrackView view)
+    {
+        var source = view.Track.Session!;
+        var notes = source.Document.Notes.Where(n => source.Selection.Contains(n.Id)).ToArray();
+        if (notes.Length == 0) { viewModel.SetStatus("请先选择要放入主轨的按键。"); return; }
+        if (view.Track.Kind == EditorTrackKind.Reference)
+            notes = notes.Select(n => { var copy = n.Clone(); copy.Sound = null; copy.UnknownData = null; copy.Volume = 100; copy.OnlineCreatorUserId = 0; return copy; }).ToArray();
+        var target = viewModel.ActiveTab!.Session;
+        var code = NoteTextCodeService.Export(source.Document, notes);
+        var count = NotePastePlacement.Commit(target, NoteTextCodeService.Parse(target.Document, code));
+        activeSecondaryTrack = null; timeline.Focus(); UpdateSelectionUi();
+        viewModel.SetStatus($"已按原始时间放入主轨 {count} 个音符，可撤销。");
     }
 
     private void ApplyTrackHitsound(TrackView view, string? sound, int volume)

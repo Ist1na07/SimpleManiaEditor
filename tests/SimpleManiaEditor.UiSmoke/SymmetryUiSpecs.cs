@@ -82,15 +82,18 @@ internal static class SymmetryUiSpecs
         Require(read.Result!.Contains("[HitObjects]"), "copy did not write note code to system clipboard");
         var count = session.Document.Notes.Count; var paste = (Task)Invoke(window, "PasteNoteClipboardAsync")!;
         Program.PumpUntil(() => paste.IsCompleted);
-        Require(session.Document.Notes.Count == count + 1 && session.Document.Notes.Any(n => Math.Abs(n.Beat.Value - 20.123456) < .000002),
-            "clipboard paste did not use exact paused position");
+        Require(session.Document.Notes.Count == count && surface.HasPendingPaste, "clipboard paste committed before click");
+        Invoke(window, "CancelNotePaste");
+        NotePastePlacement.Commit(session, NotePastePlacement.Preview([note], new BeatPosition(20, 1, 8), 0, 7));
+        Require(session.Document.Notes.Count == count + 1, "pending clipboard payload could not be committed");
         session.Undo();
         var external = window.Clipboard!.SetTextAsync("475,192,2000,128,4,2500:0:0:0:55:");
         Program.PumpUntil(() => external.IsCompleted);
         paste = (Task)Invoke(window, "PasteNoteClipboardAsync")!; Program.PumpUntil(() => paste.IsCompleted);
-        Require(session.Document.Notes.Count == count + 1 && session.Document.Notes.Any(n => n.IsHold && n.Lane == 6 && Math.Abs(n.Beat.Value - 20.123456) < .000002),
-            "third-party clipboard text was ignored in favour of stale internal notes");
-        session.Undo();
+        Require(session.Document.Notes.Count == count && surface.HasPendingPaste, "external paste was not staged");
+        var pending = Field<ChartNote[]>(window, "pendingNotePaste");
+        Require(pending.Single().IsHold && pending.Single().Lane == 6, "external code ignored in favor of stale notes");
+        Invoke(window, "CancelNotePaste");
         var codeBox = Find<TextBox>(window, "Inspector.Note.Code");
         codeBox.Text = "36,192,1234,1,8,2:3:4:37:hit.wav";
         Find<Button>(window, "Inspector.Note.ImportCode").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

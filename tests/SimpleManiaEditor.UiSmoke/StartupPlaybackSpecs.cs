@@ -62,7 +62,7 @@ internal static class StartupPlaybackSpecs
     }
     public static void VerifyClock()
     {
-        foreach (var rate in new[] { .5, 1d, 2d })
+        foreach (var rate in new[] { .1, .5, 1d, 2d })
         {
             var clock = new EditorPlaybackVisualClock(); var prior = clock.Sample(0, rate, 0);
             for (var frame = 1; frame <= 600; frame++)

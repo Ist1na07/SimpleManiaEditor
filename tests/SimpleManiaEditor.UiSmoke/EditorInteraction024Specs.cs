@@ -92,9 +92,13 @@ internal static class EditorInteraction024Specs
         var stretch = (ISampleProvider)Activator.CreateInstance(type, source, new Func<bool>(() => false), .1)!;
         Require((int)type.GetProperty("StageCount")!.GetValue(stretch)! == 4 && (double)type.GetProperty("PlaybackRate")!.GetValue(stretch)! == .1,
             "0.1x DSP was clamped or has wrong stage count");
+        var performance = System.Diagnostics.Stopwatch.StartNew();
         Require((bool)type.GetMethod("Prime")!.Invoke(stretch, null)!, "slow DSP did not prime");
+        Console.WriteLine($"0.1x {channels}ch DSP prime {performance.Elapsed.TotalMilliseconds:F1} ms");
+        performance.Restart();
         var buffer = new float[48000 * channels]; var total = 0;
         while (total < buffer.Length) { var read = stretch.Read(buffer, total, Math.Min(2048, buffer.Length - total)); Require(read > 0, "slow DSP starved"); total += read; }
+        Console.WriteLine($"0.1x {channels}ch DSP 1s render {performance.Elapsed.TotalMilliseconds:F1} ms");
         Require(buffer.All(float.IsFinite), "slow DSP emitted non-finite samples");
         double best = 0, frequency = 0;
         for (double hz = 410; hz <= 470; hz += .5)

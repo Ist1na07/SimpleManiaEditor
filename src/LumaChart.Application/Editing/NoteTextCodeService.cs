@@ -19,9 +19,20 @@ public static class NoteTextCodeService
     public static int Import(EditorSession session, string code, double? pasteAtMilliseconds = null)
     {
         if (session.IsReadOnly || !session.CanEditNotes) throw new InvalidOperationException("当前轨道不允许编辑按键。");
+        var notes = Parse(session.Document, code, pasteAtMilliseconds);
+        if (notes.Any(n => n.Beat.Value < 0) && !OsuSourceEnvelope.HasSource(session.Document)) throw new InvalidOperationException("当前格式不能导入早于起点的音符。");
+        if (!session.AllowOwnerProtectedEdits && notes.Any(n => session.IntersectsOwnerProtectedRegion(n.Beat, n.EndBeat ?? n.Beat)))
+            throw new InvalidOperationException("导入范围包含锁定区域。");
+        session.Mutate(d => d.Notes.AddRange(notes));
+        session.Selection.Clear(); session.Selection.UnionWith(notes.Select(n => n.Id));
+        return notes.Length;
+    }
+
+    public static ChartNote[] Parse(ChartDocument document, string code, double? pasteAtMilliseconds = null)
+    {
         if (code.Length > 4_000_000) throw new ArgumentException("音符代码过大（最多 4 MB）。");
-        var keys = session.Document.KeyCount;
-        var map = new TimingMap(session.Document.Timing);
+        var keys = document.KeyCount;
+        var map = new TimingMap(document.Timing);
         var rows = new List<(string[] Parts, double Start, double? End)>();
         foreach (var raw in code.Replace("\r", "").Split('\n'))
         {
@@ -47,7 +58,7 @@ public static class NoteTextCodeService
             if (rows.Count > 100_000) throw new ArgumentException("一次最多导入 100000 个音符。");
         }
         if (rows.Count == 0) throw new ArgumentException("代码中没有音符。");
-        if (keys != session.Document.KeyCount) throw new ArgumentException($"代码为 {keys}K，当前轨道为 {session.Document.KeyCount}K。");
+        if (keys != document.KeyCount) throw new ArgumentException($"代码为 {keys}K，当前轨道为 {document.KeyCount}K。");
         var shift = pasteAtMilliseconds.HasValue ? pasteAtMilliseconds.Value - rows.Min(r => r.Start) : 0;
         if (!double.IsFinite(shift)) throw new ArgumentException("粘贴位置无效。");
         var notes = rows.Select(row =>
@@ -67,12 +78,7 @@ public static class NoteTextCodeService
             }
             return note;
         }).ToArray();
-        if (notes.Any(n => n.Beat.Value < 0) && !OsuSourceEnvelope.HasSource(session.Document)) throw new InvalidOperationException("当前格式不能导入早于起点的音符。");
-        if (!session.AllowOwnerProtectedEdits && notes.Any(n => session.IntersectsOwnerProtectedRegion(n.Beat, n.EndBeat ?? n.Beat)))
-            throw new InvalidOperationException("导入范围包含锁定区域。");
-        session.Mutate(d => d.Notes.AddRange(notes));
-        session.Selection.Clear(); session.Selection.UnionWith(notes.Select(n => n.Id));
-        return notes.Length;
+        return notes;
     }
     private static bool Number(string text, out double value) => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value) && Math.Abs(value) <= 1_000_000_000;
 }

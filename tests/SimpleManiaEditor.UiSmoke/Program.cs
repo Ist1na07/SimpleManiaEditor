@@ -34,7 +34,7 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
         if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
-        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
+        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
         {
@@ -43,9 +43,40 @@ internal static class Program
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
+            if (args.Length > 0 && args[0] == "--seek-stress-025")
+            {
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var stressWindow = new MainWindow([]) { Width = 1440, Height = 960 }; stressWindow.Show(); Pump(1500);
+                var stressModel = (MainWindowViewModel)typeof(MainWindow).GetField("viewModel", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(stressWindow)!;
+                var initial = stressModel.CreateAsync("Seek025"); PumpUntil(() => initial.IsCompleted); initial.GetAwaiter().GetResult();
+                var show = typeof(MainWindow).GetMethod("ShowEditorSurface", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                show.Invoke(stressWindow, show.GetParameters().Select(p => p.DefaultValue).ToArray()); Pump(100);
+                var tab = stressModel.ActiveTab!; var music = Path.Combine(Path.GetDirectoryName(tab.WorkingPath)!, "simulation.wav"); WriteSimulationWave(music);
+                tab.Session.Mutate(d => d.Metadata.AudioFile = "simulation.wav");
+                var transport = (WindowsAudioTransportViewModel)typeof(MainWindow).GetField("audioTransport", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(stressWindow)!;
+                PumpUntil(() => transport.PlaybackSnapshot?.IsLoaded == true);
+                var surface = (TimelineSurface)typeof(MainWindow).GetField("timeline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(stressWindow)!;
+                var origin = surface.TranslatePoint(new Point(), stressWindow)!.Value;
+                var point = surface.GetPlacementEvidenceProbe()!.TapTarget.SurfacePoint + (Vector)origin;
+                for (var run = 0; run < 3; run++) EditorInteraction025Specs.CheckPlayback(stressWindow, point);
+                stressWindow.Close(); Pump(300); return 0;
+            }
+            if (args.Length > 0 && args[0] == "--interaction-025")
+            {
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                EditorInteraction025Specs.RunPointer(screenshotRoot);
+                var isolatedWindow = new MainWindow([]) { Width = 1440, Height = 960 }; isolatedWindow.Show(); Pump(1500);
+                var isolatedModel = (MainWindowViewModel)typeof(MainWindow).GetField("viewModel", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(isolatedWindow)!;
+                var initial = isolatedModel.CreateAsync("Initial025"); PumpUntil(() => initial.IsCompleted); initial.GetAwaiter().GetResult();
+                var show = typeof(MainWindow).GetMethod("ShowEditorSurface", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                show.Invoke(isolatedWindow, show.GetParameters().Select(p => p.DefaultValue).ToArray()); Pump(100);
+                EditorInteraction025Specs.RunWorkbench(isolatedWindow, screenshotRoot);
+                isolatedWindow.Close(); Pump(300); return 0;
+            }
             if (args.Length > 0 && args[0] == "--workbench-test")
             {
                 EditorInteraction024Specs.RunAudio();
+                EditorInteraction025Specs.RunPointer(screenshotRoot);
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
                 RunApplicationSmoke(screenshotRoot);
                 return 0;
@@ -59,6 +90,7 @@ internal static class Program
             EditorInteraction022Specs.RunPointer();
             EditorInteraction023Specs.RunPointer();
             EditorInteraction024Specs.RunAudio();
+            EditorInteraction025Specs.RunPointer(screenshotRoot);
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
             OsuSkinPlaytestSpecs.Run(root, screenshotRoot);
@@ -158,6 +190,9 @@ internal static class Program
         Stroke(window, Key.C, RawInputModifiers.Control);
         timeline.SetCurrentBeat(10);
         Stroke(window, Key.V, RawInputModifiers.Control);
+        PumpUntil(() => timeline.HasPendingPaste);
+        Require(tab.Session.Document.Notes.Count == 2, "Ctrl+V committed before placement");
+        Click(window, timeline.GetPlacementEvidenceProbe()!.TapTarget.SurfacePoint + (Vector)origin, RawInputModifiers.None);
         PumpUntil(() => tab.Session.Document.Notes.Count == 4);
         Stroke(window, Key.Z, RawInputModifiers.Control);
         Require(tab.Session.Document.Notes.Count == 2, "window paste undo failed");
@@ -250,6 +285,7 @@ internal static class Program
         PumpUntil(() => transport.PlaybackSnapshot?.IsPlaying == false);
         Pump(250);
         Require(transport.PlaybackSnapshot?.IsPlaying == false, "pending wheel seek resumed after explicit Space pause");
+        EditorInteraction025Specs.CheckPlayback(window, probe.TapTarget.SurfacePoint + (Vector)origin);
         Require(factory.Outputs.Any(output => output.Format.SampleRate == 16000 && output.BytesRead > 0) &&
             factory.Outputs.All(output => output.ReadFailure == null), "simulated sink did not consume real DSP output cleanly");
         var fixedRate = (ComboBox)typeof(MainWindow).GetField("fixedRatePicker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
@@ -344,6 +380,7 @@ internal static class Program
         EditorInteraction022Specs.RunWorkbench(window);
         EditorInteraction023Specs.RunWorkbench(window, screenshots);
         EditorInteraction024Specs.RunWorkbench(window, screenshots);
+        EditorInteraction025Specs.RunWorkbench(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

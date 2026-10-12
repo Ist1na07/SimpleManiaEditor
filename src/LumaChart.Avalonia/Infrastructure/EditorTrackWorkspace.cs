@@ -93,8 +93,8 @@ public sealed class EditorTrackWorkspace
         }, SourcePath = referencePath };
         if (kind is EditorTrackKind.Draft or EditorTrackKind.Reference)
         {
-            var document = reference?.Clone() ?? new ChartDocument { KeyCount = main.KeyCount,
-                Metadata = main.Metadata.Clone(), Timing = main.Timing.Select(t => t.Clone()).ToList() };
+            var document = reference?.Clone() ?? main.Clone();
+            if (reference == null) document.Notes.Clear();
             var session = new EditorSession();
             session.ReplaceDocument(document);
             session.IsReadOnly = kind == EditorTrackKind.Reference;

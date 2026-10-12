@@ -33,21 +33,23 @@ public sealed partial class MainWindow
 
     private async Task PasteNoteClipboardAsync()
     {
-        var tab = viewModel.ActiveTab; var session = activeSecondaryTrack?.Track.Session ?? tab?.Session;
-        var surface = activeSecondaryTrack?.Surface ?? timeline;
+        var tab = viewModel.ActiveTab;
+        var surface = pasteHoverSurface?.Session is { IsReadOnly: false, CanEditNotes: true } ? pasteHoverSurface : activeSecondaryTrack?.Surface ?? timeline;
+        var session = surface.Session;
         if (tab == null || session == null || playtestInProgress) return;
-        var beat = surface.CurrentBeat; var serial = session.ChangeSerial;
+        var serial = session.ChangeSerial;
         try
         {
             await clipboardWriteTask;
             var text = Clipboard == null ? null : await Clipboard.TryGetTextAsync();
-            if (playtestInProgress || viewModel.ActiveTab != tab || !ReferenceEquals(session, activeSecondaryTrack?.Track.Session ?? viewModel.ActiveTab?.Session) || serial != session.ChangeSerial) return;
-            if (!string.IsNullOrWhiteSpace(text) && (text != lastNoteClipboardText || viewModel.EditorClipboard?.EffectCount == 0))
+            if (playtestInProgress || viewModel.ActiveTab != tab || !ReferenceEquals(session, surface.Session) || serial != session.ChangeSerial) return;
+            if (!string.IsNullOrWhiteSpace(text) && (text != lastNoteClipboardText || viewModel.EditorClipboard == null))
             {
-                var map = new TimingMap(session.Document.Timing);
-                var count = NoteTextCodeService.Import(session, text, map.BeatToMilliseconds(BeatPosition.FromDouble(beat, 1_000_000)));
-                viewModel.SetStatus($"已在播放位置粘贴 {count} 个音符"); UpdateSelectionUi(); return;
+                StartPendingNotePaste(NoteTextCodeService.Parse(session.Document, text), surface);
+                return;
             }
+            if (viewModel.EditorClipboard is { NoteCount: > 0 } clipboard)
+            { StartPendingNotePaste(clipboard.SnapshotNotes().ToArray(), surface); return; }
             PasteInternalSelection();
         }
         catch (Exception ex) { viewModel.SetStatus($"粘贴失败：{ex.Message}"); }
@@ -56,7 +58,8 @@ public sealed partial class MainWindow
     private Control BuildNoteCodeImport()
     {
         AutomationProperties.SetAutomationId(noteCodeBox, "Inspector.Note.Code");
-        var import = new Button { Content = "按代码原始时间导入", Margin = new Thickness(0, 6, 0, 0) };
+        var import = new Button { Content = "应用", Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Stretch };
+        ApplyWpfPrimaryButtonStyle(import);
         AutomationProperties.SetAutomationId(import, "Inspector.Note.ImportCode");
         import.Click += (_, _) =>
         {
@@ -70,7 +73,8 @@ public sealed partial class MainWindow
             }
             catch (Exception ex) { viewModel.SetStatus($"音符代码未导入：{ex.Message}"); }
         };
-        return new Expander { Header = "音符文本代码", IsExpanded = true, Margin = new Thickness(0, 14, 0, 0),
-            Content = new StackPanel { Children = { noteCodeBox, import, new TextBlock { Text = "Ctrl+C 复制选中音符代码；Ctrl+V 放到播放位置。此处导入保留代码中的原始时间；代码不包含音频文件。", TextWrapping = global::Avalonia.Media.TextWrapping.Wrap, FontSize = 11 } } } };
+        return new StackPanel { Spacing = 6, Margin = new Thickness(0, 14, 0, 0), Children = {
+            new TextBlock { Text = "音符文本代码", FontSize = 14 }, noteCodeBox, import,
+            new TextBlock { Text = "应用：按代码原始时间添加到当前轨道。Ctrl+V：移动虚影后单击放置，Esc / 右键取消。代码不包含音频文件。", TextWrapping = global::Avalonia.Media.TextWrapping.Wrap, FontSize = 12 } } };
     }
 }

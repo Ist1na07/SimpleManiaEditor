@@ -490,7 +490,7 @@ public static class BasicChartEditingService
         catch (OverflowException)
         {
         }
-        return BeatPosition.FromDouble(anchor.Value + value.Value - origin.Value);
+        return BeatPosition.FromDouble(anchor.Value + value.Value - origin.Value, BeatPosition.MaximumPreservedDenominator);
     }
 
     private static long LeastCommonMultiple(long left, long right) =>

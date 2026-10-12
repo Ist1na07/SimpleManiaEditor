@@ -2,12 +2,12 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前为 0.1.24 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前为 0.1.25 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
-关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.24/`，包含编辑器和官方游戏宿主各自的运行时。
+关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.25/`，包含编辑器和官方游戏宿主各自的运行时。
 
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
-- [0.1.24 音画校准与编辑体验](docs/RELEASE-0.1.24.md)：0.1x 不变调、Offset 微调、完整音频可视化、选中样式和展开设置。
+- [0.1.25 校准器与虚影粘贴](docs/RELEASE-0.1.25.md)：低速播放优化、校准跳转修复、音画校准器、虚影粘贴与草稿时间对齐。
 - [0.1.21 osu 最小模式与操作优化](docs/RELEASE-0.1.21.md)：覆盖绘制、连续滑块、镜像/翻转/书签快捷键、工具栏整理和导出参数统一。
 - [0.1.20 编辑交互与文本代码](docs/RELEASE-0.1.20.md)：精确暂停位置、中心对称框、多选右键删除、系统剪贴板音符分享。
 - [0.1.19 中心对车](docs/RELEASE-0.1.19.md)：范围与参与列、单键/LN 实时预览与成对放置、选区补齐、一次撤销和独立工具设置。
