@@ -34,6 +34,8 @@ try {
     # These are public, generic feature descriptions. Developer handoff,
     # performance reports, demos and test fixtures are deliberately not copied.
     Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/FEATURES.md') -Destination (Join-Path $destination 'FEATURES.md')
+    $publicReleaseNotes = Join-Path $taskRoot "docs/RELEASE-$version.md"
+    if (Test-Path -LiteralPath $publicReleaseNotes) { Copy-Item -LiteralPath $publicReleaseNotes -Destination (Join-Path $destination 'ReleaseNotes.md') }
     [IO.File]::WriteAllText((Join-Path $destination 'Start-Editor.cmd'), @'
 @echo off
 setlocal
@@ -47,37 +49,12 @@ set "LUMACHART_AVALONIA_EDITING_ROOT=%LUMACHART_AVALONIA_LOCAL_DATA_ROOT%\Editin
 set "LUMACHART_AVALONIA_SINGLE_INSTANCE_SCOPE=simple-mania-editor-distribution"
 set "LUMACHART_AVALONIA_WORKSPACE_ROOT="
 set "LUMACHART_AVALONIA_ALLOW_MULTIPLE_INSTANCES="
-powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0app\Initialize-Distribution.ps1"
-if errorlevel 1 (
-  echo Could not initialize the editor's local data folder.
-  pause
-  exit /b 1
-)
 if "%~1"=="--smoke-test" (
   "%~dp0app\SimpleManiaEditor.exe" --smoke-test
   exit /b
 )
 start "" "%~dp0app\SimpleManiaEditor.exe" %*
 '@.Replace("`n", "`r`n"), [Text.ASCIIEncoding]::new())
-    [IO.File]::WriteAllText((Join-Path $app 'Initialize-Distribution.ps1'), @'
-$ErrorActionPreference = 'Stop'
-$profileRoot = $env:LUMACHART_AVALONIA_LOCAL_DATA_ROOT
-if ([string]::IsNullOrWhiteSpace($profileRoot)) { throw 'Missing distribution profile root.' }
-[IO.Directory]::CreateDirectory($profileRoot) | Out-Null
-$preferences = Join-Path $profileRoot 'workspace.json'
-if (-not (Test-Path -LiteralPath $preferences)) {
-    $defaults = @{ WorkspaceRoot = (Join-Path $profileRoot 'Maps') }
-    # FileMode.CreateNew never overwrites a simultaneous first launch or the
-    # mapper's saved workspace choice. JSON encoding also handles Unicode paths.
-    try {
-        $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($defaults | ConvertTo-Json))
-        $file = [IO.File]::Open($preferences, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-        try { $file.Write($bytes, 0, $bytes.Length); $file.Flush() } finally { $file.Dispose() }
-    } catch [IO.IOException] {
-        if (-not (Test-Path -LiteralPath $preferences)) { throw }
-    }
-}
-'@, [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText((Join-Path $destination 'README.md'), @"
 # SimpleManiaEditor $version · Windows x64 分发包
 
@@ -88,11 +65,11 @@ if (-not (Test-Path -LiteralPath $preferences)) {
 
 推荐 Windows 10/11 64 位。首次官方试玩会初始化资源，可能需要等待。
 
-快捷操作：Space 播放/暂停，F5 从当前位置试玩，试玩 Shift 暂停、Esc 返回；Ctrl+滚轮调网格、Shift+滚轮调倍速、Alt+滚轮缩放。更多功能见 FEATURES.md。
+快捷操作：Space 播放/暂停，F5 从当前位置试玩，试玩 Shift 暂停、Esc 返回；Ctrl+滚轮调网格、Shift+滚轮调倍速、Alt+滚轮缩放。更多功能见 FEATURES.md。设置 → 外观可自动/手动调整 UI 大小；点击左上角品牌进入曲库，添加只读 Songs 目录，按曲名/作者/难度搜索。
 
 分发包不含制作者的谱面、音乐、皮肤、个人设置、工作缓存或测试素材。随官方程序提供的默认界面/皮肤素材属于程序资源。
 
-启动入口使用独立的本机配置目录：%LOCALAPPDATA%\SimpleManiaEditor\Distribution，初始谱面目录为其中的 Maps；可在曲库中更改创作目录。设置、备份、缓存和自行导入的皮肤在运行后生成，不在此原始分发包内，也不继承开发体验版 Preview 的编辑会话。
+启动入口使用独立的本机配置目录：%LOCALAPPDATA%\SimpleManiaEditor\Distribution，初始谱面目录为包体旁的 Maps；可在曲库中更改创作目录。已保存的目录选择会保留。设置、备份、缓存和自行导入的皮肤在运行后生成，不在此原始分发包内，也不继承开发体验版 Preview 的编辑会话。
 
 升级时完整解压新包，再使用同一启动入口；本机配置和创作文件保留。转发时使用提供的原始 ZIP，避免把运行后的个人资料重新打包。
 

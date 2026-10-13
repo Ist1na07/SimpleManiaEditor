@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.1.27</Version>
+    <Version>0.1.28</Version>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
@@ -19,6 +19,7 @@
     <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" />
     <!-- Matches upstream's deliberate AutoMapper 13 pin. Never disable auditing globally. -->
     <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-rvv3-g6hj-g44x" />
+    <Compile Include="../LumaChart.Application/Workspaces/OsuFileSafetyPolicy.cs" Link="Safety/OsuFileSafetyPolicy.cs" />
     <ProjectReference Include="../SimpleManiaEditor.PlaytestBridge/SimpleManiaEditor.PlaytestBridge.csproj" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="ppy.osu.Game" Version="2026.916.0" />

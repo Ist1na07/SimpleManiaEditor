@@ -13,15 +13,18 @@ public sealed class WindowsDisplayScaleSettings
     public WindowsDisplayScaleSettings(
         double uiScale = 1,
         double fontScale = 1,
-        bool displayScaleInitialized = false)
+        bool displayScaleInitialized = false,
+        bool? automaticUiScale = null)
     {
         UiScale = DisplayScalePolicy.NormalizeUiScale(uiScale);
         FontScale = DisplayScalePolicy.NormalizeFontScale(fontScale);
         DisplayScaleInitialized = displayScaleInitialized;
+        AutomaticUiScale = automaticUiScale ?? !displayScaleInitialized;
     }
 
     public static WindowsDisplayScaleSettings Default { get; } = new();
 
+    public bool AutomaticUiScale { get; }
     public double UiScale { get; }
     public double FontScale { get; }
     public bool DisplayScaleInitialized { get; }
@@ -29,33 +32,33 @@ public sealed class WindowsDisplayScaleSettings
     public WindowsDisplayScaleSettings Normalize() => new(
         UiScale,
         FontScale,
-        DisplayScaleInitialized);
+        DisplayScaleInitialized, AutomaticUiScale);
 
     public WindowsDisplayScaleSettings WithUiScale(double value) => new(
         value,
         FontScale,
-        DisplayScaleInitialized);
+        true, false);
 
     public WindowsDisplayScaleSettings WithFontScale(double value) => new(
         UiScale,
         value,
-        DisplayScaleInitialized);
+        DisplayScaleInitialized, AutomaticUiScale);
 
     /// <summary>
-    /// Applies the WPF-compatible screen recommendation exactly once. Width and
+    /// Applies the current-monitor recommendation in automatic mode. Width and
     /// height must be effective DIPs, not physical pixels.
     /// </summary>
     public WindowsDisplayScaleSettings InitializeForFirstScreen(
         double effectiveScreenWidth,
         double effectiveScreenHeight)
     {
-        if (DisplayScaleInitialized) return Normalize();
+        if (DisplayScaleInitialized && !AutomaticUiScale) return Normalize();
         return new WindowsDisplayScaleSettings(
             DisplayScalePolicy.RecommendUiScale(
                 effectiveScreenWidth,
                 effectiveScreenHeight),
-            fontScale: 1,
-            displayScaleInitialized: true);
+            fontScale: FontScale,
+            displayScaleInitialized: true, automaticUiScale: true);
     }
 }
 
@@ -65,7 +68,7 @@ public sealed class WindowsDisplayScaleSettings
 /// </summary>
 public static class WindowsDisplayScaleSettingsStore
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     private const string FileName = "display-scale-settings.json";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -88,11 +91,12 @@ public static class WindowsDisplayScaleSettingsStore
             var persisted = JsonSerializer.Deserialize<PersistedSettings>(
                 bytes,
                 JsonOptions);
-            return persisted?.SchemaVersion == CurrentSchemaVersion
+            return persisted?.SchemaVersion is 1 or CurrentSchemaVersion
                 ? new WindowsDisplayScaleSettings(
                     persisted.UiScale,
                     persisted.FontScale,
-                    persisted.DisplayScaleInitialized)
+                    persisted.DisplayScaleInitialized,
+                    persisted.AutomaticUiScale ?? (!persisted.DisplayScaleInitialized || Math.Abs(persisted.UiScale - 1) < .001))
                 : WindowsDisplayScaleSettings.Default;
         }
         catch (Exception exception)
@@ -122,7 +126,8 @@ public static class WindowsDisplayScaleSettingsStore
                     SchemaVersion = CurrentSchemaVersion,
                     UiScale = normalized.UiScale,
                     FontScale = normalized.FontScale,
-                    DisplayScaleInitialized = normalized.DisplayScaleInitialized
+                    DisplayScaleInitialized = normalized.DisplayScaleInitialized,
+                    AutomaticUiScale = normalized.AutomaticUiScale
                 },
                 JsonOptions);
             using (var output = new FileStream(
@@ -157,6 +162,7 @@ public static class WindowsDisplayScaleSettingsStore
 
     private sealed class PersistedSettings
     {
+        public bool? AutomaticUiScale { get; set; }
         public int SchemaVersion { get; set; }
         public double UiScale { get; set; } = 1;
         public double FontScale { get; set; } = 1;

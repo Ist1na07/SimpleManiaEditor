@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using osu.Framework;
 using osu.Framework.Platform;
 using SimpleManiaEditor.PlaytestBridge;
@@ -14,7 +15,9 @@ internal static class Program
         {
             if (args.Length < 2 || args[0] != "--request") throw new ArgumentException("Use --request <manifest.json>.");
             requestPath = Path.GetFullPath(args[1]);
+            OsuFileSafetyPolicy.RequireWritable(requestPath);
             var request = PlaytestRequest.Read(requestPath);
+            OsuFileSafetyPolicy.RequireWritable(request.DataRoot);
             Directory.CreateDirectory(request.DataRoot);
             // The framework's portable data directory follows the working directory.
             // Every database, imported skin, log and configuration belongs to this host.
@@ -53,7 +56,7 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            if (requestPath != null) File.WriteAllText(requestPath + ".error.txt", exception.ToString());
+            if (requestPath != null && !OsuFileSafetyPolicy.IsProtectedPath(requestPath)) File.WriteAllText(requestPath + ".error.txt", exception.ToString());
             Console.Error.WriteLine(exception);
             return 1;
         }

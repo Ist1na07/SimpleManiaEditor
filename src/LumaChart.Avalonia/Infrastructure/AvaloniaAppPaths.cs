@@ -37,6 +37,13 @@ public static class AvaloniaAppPaths
     /// instance scope that the wrapper would have supplied. Normal installs do
     /// not contain client-profile.txt and remain unchanged.
     /// </summary>
+    public static void ValidateWritableLocations()
+    {
+        var locations = Locations;
+        foreach (var root in new[] { locations.Settings, locations.PersistentEditing, locations.ResourceCache, locations.SessionScratch })
+            OsuFileSafetyPolicy.RequireWritable(root);
+    }
+
     public static void ConfigureSiblingClientProfileEnvironment()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -272,6 +279,13 @@ public static class AvaloniaAppPaths
         {
             try
             {
+                if (PathsEqual(ownSetting, Path.Combine(LocalDataRoot, "Maps")))
+                {
+                    if (Directory.Exists(ownSetting)) new EditorLibraryCatalog(LocalDataRoot).AddRoot(ownSetting);
+                    var portable = ResolveDefaultWorkspaceRoot();
+                    SaveWorkspaceRoot(portable);
+                    return portable;
+                }
                 var root = EnsureDirectory(ownSetting);
                 // Also validate a root junction now: the workspace resolves it
                 // during construction, where a failure used to abort startup.
@@ -299,22 +313,22 @@ public static class AvaloniaAppPaths
     /// </summary>
     public static string ResolveDefaultWorkspaceRoot()
     {
-        var wpfSetting = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LumaChart Studio",
-            "workspace.json");
-        var existingWpfRoot = TryReadWorkspaceRoot(wpfSetting);
-        if (!string.IsNullOrWhiteSpace(existingWpfRoot) && Directory.Exists(existingWpfRoot))
-            return Path.GetFullPath(existingWpfRoot);
-
-        var besideApplication = Path.Combine(AppContext.BaseDirectory, "LumaChart Workspace");
-        try { return EnsureDirectory(besideApplication); }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        var packageRoot = ResolvePackageRoot(AppContext.BaseDirectory);
+        var besideApplication = Path.Combine(packageRoot, "Maps");
+        try { OsuFileSafetyPolicy.RequireWritable(besideApplication); return EnsureDirectory(besideApplication); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             return EnsureDirectory(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                 "SimpleManiaEditor Maps"));
         }
+    }
+
+    public static string ResolvePackageRoot(string applicationDirectory)
+    {
+        var directory = new DirectoryInfo(Path.GetFullPath(applicationDirectory));
+        return directory.Name.Equals("app", StringComparison.OrdinalIgnoreCase) && directory.Parent is { } parent &&
+            File.Exists(Path.Combine(parent.FullName, "Start-Editor.cmd")) ? parent.FullName : directory.FullName;
     }
 
     public static IReadOnlyList<string> EnumerateCompatibilityWorkspaceRoots()
@@ -500,6 +514,8 @@ public static class AvaloniaAppPaths
         ArgumentException.ThrowIfNullOrWhiteSpace(targetRoot);
         legacyRoot = Path.GetFullPath(legacyRoot);
         targetRoot = Path.GetFullPath(targetRoot);
+        OsuFileSafetyPolicy.RequireWritable(targetRoot);
+        if (OsuFileSafetyPolicy.IsProtectedPath(legacyRoot)) return true;
         var legacyManifest = Path.Combine(legacyRoot, "desktop-workspace", "workspace.json");
         var targetManifest = Path.Combine(targetRoot, "desktop-workspace", "workspace.json");
         if (PathsEqual(legacyRoot, targetRoot) ||

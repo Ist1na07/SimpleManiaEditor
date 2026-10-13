@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 
@@ -121,6 +122,7 @@ public static class WindowsRecycleBinService
     /// </param>
     public static WindowsRecycleBinOperationResult MoveToRecycleBin(string path, IntPtr ownerWindow)
     {
+        OsuFileSafetyPolicy.RequireWritable(path);
         var descriptor = Describe(path);
         if (!OperatingSystem.IsWindows())
         {

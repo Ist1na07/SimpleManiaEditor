@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using LumaChart.Core.Localization;
 using System.Globalization;
 using System.IO.Compression;
@@ -22,6 +23,8 @@ public static class ChartExportService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        OsuFileSafetyPolicy.RequireWritable(request.DestinationPath);
+        if (!string.IsNullOrWhiteSpace(request.SessionScratchRoot)) OsuFileSafetyPolicy.RequireWritable(request.SessionScratchRoot);
         ArgumentNullException.ThrowIfNull(request.Document);
         ArgumentNullException.ThrowIfNull(request.Options);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.DestinationPath);

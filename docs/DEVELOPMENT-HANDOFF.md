@@ -1,4 +1,14 @@
-# 0.1.27 当前基线
+# 0.1.28 当前基线
+
+UI scale schema2新增AutomaticUiScale，Recommend基准2560x1440，最低55%，ScreenFromWindow有效DIP。旧schema1的100%视为自动，其余手动保留。正常启动2300x1300×比例按工作区限制，旧指针UI规格强制100%因为其历史坐标辅助未乘缩放；新LibraryDisplay028Specs单独验1080/1440。
+
+AvaloniaWorkspaceController在当前CreationRoot外建立引用资源副本，核心DesktopDocumentWorkspace仍允许泛用外部原件，但保护整个osu安装及Songs。外部非游戏单文件绝不递归复制父目录；游戏mapset保留子资源，跳过reparse与游戏程序/数据库/配置。OsuFileSafetyPolicy逐路径组件解析junction，导出/删除/资源目标/缓存等共用；官方host链接同一文件并验证DataRoot/请求路径。未触碰用户osu实文件做实机复现。
+
+EditorLibraryCatalog只存roots/charts路径；后台扫描合并CurrentRoot/CreationRoot/只读roots/已知files，头部缓存；ViewModel.LibraryUpdates增量更新曲目并合并扫描期间的新变更。来源筛选在内存中，不在每项上做文件系统探测。切换创作目录仍保持旧收录。品牌按钮ShowLibrary暂停音频并刷新磁盘。路径不可用保留索引其余来源并给提示。
+
+新增--library-028用于独立UI/存储回归，完整scripts/Test.ps1也包含该规格。构建分发使用Package-Distribution.ps1的新空目录，根项目Start-Editor直接启动新分发app EXE以保留Preview配置；分发根入口用独立Distribution配置。Package旁Maps默认；已选工作区不自动搬动；旧Distribution本机Maps加链接后切换新默认。发行包不得包含用户目录/曲目/皮肤/设置。
+
+# 0.1.27 历史基线
 
 本轮定位到SoundTouch长粒度的局部时间扭曲，并非MP3播放器/频谱使用不同decoder。用户原曲只读207.94ms首声，旧.1x119.06ms；新原PCMquiet envelope保护输出207.53ms，从100ms seek约207.76ms。SoundTouch24/28/12 full search；quick search及极短grain虽快但非谐波音色回归失败。慢倍率原PCM前置半seek窗口14ms，并以原样本数/倍率限制总时长。该14ms是本DSP搜索策略，不是声卡/谱面/检测器的全局延迟。
 

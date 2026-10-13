@@ -100,7 +100,8 @@ public static class DesktopChartLibraryService
     public static async Task<IReadOnlyList<DesktopLibraryChartEntry>> ScanAsync(
         string root,
         IProgress<DesktopLibraryScanProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DesktopLibraryMetadataCache? metadataCache = null)
     {
         root = LocalLibraryRootResolver.Resolve(root).ResolvedRoot;
         var options = new EnumerationOptions
@@ -124,9 +125,7 @@ public static class DesktopChartLibraryService
         {
             try
             {
-                var entry = Path.GetExtension(path).Equals(".osu", StringComparison.OrdinalIgnoreCase)
-                    ? ReadOsu(path, root)
-                    : ReadMalody(path, root);
+                var entry = metadataCache == null ? ReadChart(path, root) : metadataCache.Read(path, root);
                 if (entry != null) entries.Add(entry);
             }
             catch
@@ -141,6 +140,11 @@ public static class DesktopChartLibraryService
         }).ConfigureAwait(false);
         return entries.ToArray();
     }
+
+    public static DesktopLibraryChartEntry? ReadChart(string path, string root) =>
+        Path.GetExtension(path).Equals(".osu", StringComparison.OrdinalIgnoreCase)
+            ? ReadOsu(path, root)
+            : Path.GetExtension(path).Equals(".mc", StringComparison.OrdinalIgnoreCase) ? ReadMalody(path, root) : null;
 
     public static IReadOnlyList<DesktopLibraryFolderEntry> GroupByFolder(
         IEnumerable<DesktopLibraryChartEntry> charts,
@@ -249,7 +253,7 @@ public static class DesktopChartLibraryService
             path,
             FileMode.Open,
             FileAccess.Read,
-            FileShare.ReadWrite,
+            FileShare.ReadWrite | FileShare.Delete,
             32 * 1024,
             FileOptions.SequentialScan);
         using var json = JsonDocument.Parse(stream, new JsonDocumentOptions
@@ -298,7 +302,7 @@ public static class DesktopChartLibraryService
         };
     }
 
-    private static DesktopLibraryChartEntry ReadOsu(string path, string root)
+    private static DesktopLibraryChartEntry? ReadOsu(string path, string root)
     {
         var general = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -309,7 +313,9 @@ public static class DesktopChartLibraryService
         var sawMetadata = false;
         var sawDifficulty = false;
         var sawEvents = false;
-        foreach (var raw in File.ReadLines(path))
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 32768, FileOptions.SequentialScan);
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is { } raw)
         {
             var line = raw.Trim();
             if (line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal)) continue;
@@ -348,6 +354,7 @@ public static class DesktopChartLibraryService
             if (target != null) target[line[..colon].Trim()] = line[(colon + 1)..].Trim();
         }
 
+        if (general.TryGetValue("Mode", out var mode) && mode != "3") return null;
         var info = new FileInfo(path);
         var folder = info.DirectoryName!;
         return new DesktopLibraryChartEntry

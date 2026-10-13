@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.IO.Compression;
@@ -6425,14 +6425,14 @@ internal static class Program
             $"100+={WindowsDisplayScaleStepPolicy.ResolvePercent(100, 80, 200, 1):R}");
 
         var recommendationPassed =
-            Equal(DisplayScalePolicy.RecommendUiScale(1366, 768), 1) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(1920, 1080), 1) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(2560, 1440), 1.35) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(3840, 2160), 2) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(3840 / 1.25, 2160 / 1.25), 1.6) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(3840 / 1.5, 2160 / 1.5), 1.35) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(3840 / 2d, 2160 / 2d), 1) &&
-            Equal(DisplayScalePolicy.RecommendUiScale(1968, 1107), 1.05) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(1366, 768), .55) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(1920, 1080), .75) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(2560, 1440), 1) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(3840, 2160), 1.5) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(3840 / 1.25, 2160 / 1.25), 1.2) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(3840 / 1.5, 2160 / 1.5), 1) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(3840 / 2d, 2160 / 2d), .75) &&
+            Equal(DisplayScalePolicy.RecommendUiScale(1968, 1107), .75) &&
             Equal(DisplayScalePolicy.RecommendUiScale(double.NaN, 1080), 1) &&
             Equal(DisplayScalePolicy.RecommendUiScale(1920, double.PositiveInfinity), 1) &&
             Equal(DisplayScalePolicy.RecommendUiScale(0, 1080), 1) &&
@@ -6460,8 +6460,8 @@ internal static class Program
         var initializedAgain = customized.InitializeForFirstScreen(3840, 2160);
         var initializationPassed =
             firstScreen.DisplayScaleInitialized &&
-            Equal(firstScreen.UiScale, 1.6) &&
-            Equal(firstScreen.FontScale, 1) &&
+            Equal(firstScreen.UiScale, 1.2) &&
+            Equal(firstScreen.FontScale, 1.4) &&
             initializedAgain.DisplayScaleInitialized &&
             Equal(initializedAgain.UiScale, 1.35) &&
             Equal(initializedAgain.FontScale, 1.25) &&

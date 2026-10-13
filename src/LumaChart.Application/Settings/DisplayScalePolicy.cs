@@ -6,7 +6,7 @@ namespace LumaChart.Application.Settings;
 /// </summary>
 public static class DisplayScalePolicy
 {
-    public const double MinimumUiScale = .8;
+    public const double MinimumUiScale = .55;
     public const double MaximumUiScale = 2;
     public const double MinimumFontScale = .8;
     public const double MaximumFontScale = 1.6;
@@ -24,11 +24,9 @@ public static class DisplayScalePolicy
         }
 
         var relative = Math.Min(
-            effectiveScreenWidth / 1920d,
-            effectiveScreenHeight / 1080d);
-        var recommended = Math.Max(
-            1,
-            Math.Round(relative * 20, MidpointRounding.AwayFromZero) / 20d);
+            effectiveScreenWidth / 2560d,
+            effectiveScreenHeight / 1440d);
+        var recommended = Math.Round(relative * 20, MidpointRounding.AwayFromZero) / 20d;
         return NormalizeUiScale(recommended);
     }
 

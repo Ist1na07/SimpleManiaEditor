@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using LumaChart.Core.Localization;
 
 namespace LumaChart.Application.Libraries;
@@ -53,6 +54,7 @@ public static class DesktopLibraryChartDeletionPlanner
                 chart);
 
         if (!TryNormalizePath(workspaceRoot, out var workspacePath) ||
+            OsuFileSafetyPolicy.IsProtectedPath(chartPath) || !OsuFileSafetyPolicy.IsWithin(chartPath, workspacePath) ||
             !IsSameOrDescendant(chartPath, workspacePath))
             return Blocked(
                 DesktopLibraryChartDeletionBlockReason.UnsafeWorkspaceBoundary,

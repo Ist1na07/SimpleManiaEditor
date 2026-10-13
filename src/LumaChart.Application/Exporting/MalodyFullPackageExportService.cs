@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text.Encodings.Web;
@@ -25,6 +26,8 @@ public static class MalodyFullPackageExportService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        OsuFileSafetyPolicy.RequireWritable(request.DestinationArchivePath);
+        if (!string.IsNullOrWhiteSpace(request.SessionScratchRoot)) OsuFileSafetyPolicy.RequireWritable(request.SessionScratchRoot);
         var result = await ChartFullPackageExportService.ExportAsync(
                 new ChartFullPackageExportRequest(
                     request.Document,

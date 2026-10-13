@@ -54,15 +54,26 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
         if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
-        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
+        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
         {
             TrackWorkspaceSpecs.Run(root);
             SongsProtectionSpecs.Run(root);
+            LibraryDisplay028Specs.RunSafety(root);
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
+            if (args.Length > 0 && args[0] == "--library-028")
+            {
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var libraryWindow = new MainWindow([]) { Width = 1440, Height = 960 }; libraryWindow.Show(); Pump(1500);
+                var model = (MainWindowViewModel)typeof(MainWindow).GetField("viewModel", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(libraryWindow)!;
+                var creation = model.CreateAsync("LibraryInitial028"); PumpUntil(() => creation.IsCompleted); creation.GetAwaiter().GetResult();
+                typeof(MainWindow).GetMethod("ShowEditorSurface", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(libraryWindow, [true]); Pump(80);
+                LibraryDisplay028Specs.Run(libraryWindow, screenshotRoot);
+                return 0;
+            }
             if (args.Length > 0 && args[0] == "--seek-stress-025")
             {
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
@@ -178,6 +189,11 @@ internal static class Program
         var window = new MainWindow([]) { Width = 1440, Height = 960 };
         window.Show();
         Pump(1500);
+        // Historical pointer probes add local DIP offsets directly to window
+        // coordinates; keep those workflows at 100%. The DPI suite below uses
+        // transformed coordinates and separately checks compact layouts.
+        var displayScale = (WindowsDisplayScaleController)typeof(MainWindow).GetField("displayScaleController", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+        displayScale.UpdateUiScale(1); Pump(80);
         Require((window.Title ?? "").Contains("SimpleManiaEditor", StringComparison.Ordinal), "fork title missing");
         var timeline = (TimelineSurface)typeof(MainWindow).GetField("timeline", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         Require(timeline.InteractionProfile == EditorInteractionProfile.OsuMania, "application did not use osu profile");
@@ -402,6 +418,7 @@ internal static class Program
         TrackPlayback026Specs.Run(window);
         AudioSettings026Specs.Run(window, screenshots);
         TimelineSettings027Specs.Run(window, screenshots);
+        LibraryDisplay028Specs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

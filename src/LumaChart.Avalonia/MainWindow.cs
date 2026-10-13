@@ -1251,6 +1251,8 @@ public sealed partial class MainWindow : PlatformWindow
             displayScaleSettings);
         popupScaleController = new AvaloniaPopupScaleController(
             () => displayScaleController.CurrentSettings);
+        PositionChanged += (_, _) => RefreshMonitorUiScale();
+        PropertyChanged += (_, e) => { if (e.Property.Name == "RenderScaling") RefreshMonitorUiScale(); };
         libraryList.ContextMenu = CreateLibraryFolderContextMenu();
         displayScaleSettings = displayScaleController.CurrentSettings;
         RefreshDisplayScaleSettingsUi();
@@ -3602,7 +3604,12 @@ public sealed partial class MainWindow : PlatformWindow
                 }
             }
         };
-        bar.Children.Add(brand);
+        var brandButton = new Button { Content = brand, Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0), Padding = new Thickness(0), Focusable = false };
+        AutomationProperties.SetAutomationId(brandButton, "Library.Home");
+        ToolTip.SetTip(brandButton, "返回曲库");
+        brandButton.Click += (_, _) => ShowLibrary(focusSearch: true);
+        bar.Children.Add(brandButton);
 
         titleUserNameText.Text = "Guest";
         titleUserNameText.FontSize = 11;
@@ -4029,7 +4036,7 @@ public sealed partial class MainWindow : PlatformWindow
         var headerPadding = new Thickness(0);
         var headerActionMargin = new Thickness(0);
 #else
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var header = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto"), RowSpacing = 12 };
         var headerPadding = new Thickness(20, 15, 20, 14);
         var headerActionMargin = new Thickness(
             WindowsLibraryLayoutPolicy.HeaderActionOuterMargin,
@@ -4046,7 +4053,7 @@ public sealed partial class MainWindow : PlatformWindow
         libraryCountText.VerticalAlignment = VerticalAlignment.Center;
         var description = new TextBlock
         {
-            Text = "首页按歌曲文件夹归组；单击歌曲卡片即可展开或收起谱面列表。支持 Malody 二级目录与谱包。工作目录可选择游戏谱面存放路径。",
+            Text = "创作谱面按歌曲归组，点击展开难度并打开编辑。可添加只读 Songs 曲库；打开外部谱面时建立创作副本。",
             Foreground = new SolidColorBrush(Color.Parse("#7F898E")),
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap
@@ -4097,10 +4104,9 @@ public sealed partial class MainWindow : PlatformWindow
             VerticalAlignment = VerticalAlignment.Center
         };
 #else
-        var headerActions = new StackPanel
+        var headerActions = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing = 0,
             VerticalAlignment = VerticalAlignment.Center
         };
 #endif
@@ -4136,7 +4142,7 @@ public sealed partial class MainWindow : PlatformWindow
 #else
         AddHeaderAction(libraryDeleteSelectedButton);
 #endif
-        var importChart = PrimaryButton("导入谱面", async (_, _) => await PickAndOpenChartAsync());
+        var importChart = PrimaryButton("导入谱面 / 谱包", async (_, _) => await PickAndOpenChartAsync());
         ApplyWpfPrimaryButtonStyle(importChart);
         importChart.Padding = new Thickness(15, 8);
         importChart.Margin = headerActionMargin;
@@ -4154,12 +4160,6 @@ public sealed partial class MainWindow : PlatformWindow
         create.Margin = headerActionMargin;
         AutomationProperties.SetAutomationId(create, "Library.NewChart");
         AddHeaderAction(create);
-        var open = PrimaryButton("打开文件", async (_, _) => await PickAndOpenChartAsync());
-        ApplyWpfToolButtonStyle(open);
-        open.Padding = new Thickness(15, 8);
-        open.Margin = headerActionMargin;
-        AutomationProperties.SetAutomationId(open, "Library.OpenFile");
-        AddHeaderAction(open);
         var workspace = PrimaryButton("选择工作目录", async (_, _) => await PickWorkspaceAsync());
         ApplyWpfToolButtonStyle(workspace);
         workspace.Padding = new Thickness(15, 8);
@@ -4167,6 +4167,7 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(workspace, "Library.ChooseWorkspace");
         if (PlatformFileImportServices.Current?.SupportsWorkspaceDirectorySelection != false)
             AddHeaderAction(workspace);
+        AddHeaderAction(BuildAddLibraryRootButton());
         var refresh = PrimaryButton(
             "刷新索引",
             async (_, _) => await RefreshLibraryWithErrorUiAsync());
@@ -4179,15 +4180,8 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetRow(headerActions, 1);
         header.Children.Add(headerActions);
 #else
-        var actionScroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = headerActions,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(actionScroll, 1);
-        header.Children.Add(actionScroll);
+        Grid.SetRow(headerActions, 1);
+        header.Children.Add(headerActions);
 #endif
         libraryView.Children.Add(new Border
         {
@@ -4200,7 +4194,7 @@ public sealed partial class MainWindow : PlatformWindow
 
         var filters = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("*,220"),
+            ColumnDefinitions = new ColumnDefinitions("*,240,200"),
             ColumnSpacing = WindowsLibraryLayoutPolicy.FilterColumnSpacing,
             Margin = WindowsLibraryLayoutPolicy.FilterMargin
         };
@@ -4274,7 +4268,10 @@ public sealed partial class MainWindow : PlatformWindow
             if (librarySortBox.SelectedItem is LibrarySortChoice choice)
                 viewModel.SetLibrarySort(choice.Sort);
         };
-        Grid.SetColumn(librarySortBox, 1);
+        Grid.SetColumn(librarySortBox, 2);
+        var sourcePicker = BuildLibrarySourcePicker();
+        Grid.SetColumn(sourcePicker, 1);
+        filters.Children.Add(sourcePicker);
         filters.Children.Add(librarySortBox);
         Grid.SetRow(filters, 1);
 #if LUMACHART_SHARED
@@ -10286,6 +10283,7 @@ public sealed partial class MainWindow : PlatformWindow
         {
             Spacing = 10, HorizontalAlignment = HorizontalAlignment.Stretch, Children =
             {
+                BuildDisplayScaleSettings(),
                 TimingField("Note 对齐", anchorGrid),
                 TimingField("栅格宽度（每列）", gridLaneWidthSlider), gridLaneWidthValueText,
                 TimingField("主编辑区域 X 轴偏移", mainEditorHorizontalOffsetSlider), mainEditorHorizontalOffsetValueText,
@@ -10298,7 +10296,7 @@ public sealed partial class MainWindow : PlatformWindow
                 TimingField("小节线粗细", barLineThicknessSlider), barLineThicknessValueText,
                 TimingField("分度线粗细（保留层级）", subdivisionLineThicknessSlider), subdivisionLineThicknessValueText,
                 TimingField("判定线位置（画面高度）", judgementLinePositionSlider), judgementLinePositionValueText,
-                judgementStyleGrid, BuildDisplayScaleSettings(), BuildRenderBackendSelector()
+                judgementStyleGrid, BuildRenderBackendSelector()
             }
         };
         AutomationProperties.SetAutomationId(appearance, "Settings.Appearance");
@@ -11055,7 +11053,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private Control BuildDisplayScaleSettings()
     {
-        uiScaleSlider.Minimum = 80;
+        uiScaleSlider.Minimum = 55;
         uiScaleSlider.Maximum = 200;
         uiScaleSlider.Value = displayScaleSettings.UiScale * 100;
         uiScaleSlider.TickFrequency = 5;
@@ -11143,13 +11141,14 @@ public sealed partial class MainWindow : PlatformWindow
                         FontSize = WindowsInspectorParityPolicy.SettingsSectionTitleFontSize,
                         FontWeight = FontWeight.SemiBold
                     },
+                    BuildAutomaticUiScaleOption(),
                     TimingField("界面缩放", uiScaleStepper),
                     uiScaleValueText,
                     TimingField("字体缩放", fontScaleStepper),
                     fontScaleValueText,
                     new TextBlock
                     {
-                        Text = AvaloniaLocalizationCatalog.Format("首次使用会按主屏有效分辨率从 1920 × 1080 起自动计算界面比例；系统 DPI 已放大时不会重复放大。之后可随时手动调整。"),
+                        Text = AvaloniaLocalizationCatalog.Format("自动模式按当前屏幕有效分辨率计算：1080p 约 75%，1440p 约 100%；已计入系统 DPI。手动调节界面缩放后退出自动模式。"),
                         Foreground = MutedBrush,
                         FontSize = 10,
                         TextWrapping = TextWrapping.Wrap,
@@ -13780,7 +13779,7 @@ public sealed partial class MainWindow : PlatformWindow
         }
         var displayScaleBeforeInitialization = displayScaleSettings;
         displayScaleSettings = displayScaleController.InitializeForScreen(
-            OperatingSystem.IsWindows() ? Screens?.Primary : null);
+            OperatingSystem.IsWindows() ? ResolveDisplayScaleScreen() : null);
         if (!displayScaleBeforeInitialization.DisplayScaleInitialized ||
             Math.Abs(displayScaleBeforeInitialization.UiScale - displayScaleSettings.UiScale) > 1e-12 ||
             Math.Abs(displayScaleBeforeInitialization.FontScale - displayScaleSettings.FontScale) > 1e-12)
@@ -17005,10 +17004,9 @@ public sealed partial class MainWindow : PlatformWindow
         RangeBaseValueChangedEventArgs eventArgs)
     {
         if (suppressDisplayScaleControls) return;
-        displayScaleSettings = displayScaleController.UpdateScales(
-            uiScaleSlider.Value / 100d,
-            fontScaleSlider.Value / 100d,
-            ResolveDisplayScaleScreen());
+        displayScaleSettings = ReferenceEquals(sender, fontScaleSlider)
+            ? displayScaleController.UpdateFontScale(fontScaleSlider.Value / 100d, ResolveDisplayScaleScreen())
+            : displayScaleController.UpdateUiScale(uiScaleSlider.Value / 100d, ResolveDisplayScaleScreen());
         displayScaleSettingsDirty = true;
         RefreshDisplayScaleSettingsUi();
         ScheduleDisplayScaleSettingsSave();
@@ -17042,6 +17040,7 @@ public sealed partial class MainWindow : PlatformWindow
         suppressDisplayScaleControls = true;
         try
         {
+            if (automaticUiScaleBox != null) automaticUiScaleBox.IsChecked = displayScaleSettings.AutomaticUiScale;
             uiScaleSlider.Value = displayScaleSettings.UiScale * 100;
             fontScaleSlider.Value = displayScaleSettings.FontScale * 100;
             uiScaleValueText.Text = $"{displayScaleSettings.UiScale:P0}";
@@ -17069,11 +17068,9 @@ public sealed partial class MainWindow : PlatformWindow
     {
         try
         {
-            // WPF 1.1.0 bases both recommendation and minimum-size clamping on
-            // SystemParameters' primary-screen values. Keep runtime slider
-            // updates on that same authority instead of silently switching the
-            // policy when the window happens to sit on another monitor.
-            return Screens?.Primary;
+            // Use the monitor hosting this window, after operating-system DPI,
+            // so automatic mode follows the actual editing surface.
+            return Screens?.ScreenFromWindow(this) ?? Screens?.Primary;
         }
         catch (InvalidOperationException)
         {
@@ -17499,7 +17496,9 @@ public sealed partial class MainWindow : PlatformWindow
             titleRomanizationCancellation.Cancel();
         if (artistRomanizationCancellation != null && artistRomanizationTabId != activeTabId)
             artistRomanizationCancellation.Cancel();
-        workspaceText.Text = AvaloniaLocalizationCatalog.Format("工作目录  {0}", viewModel.WorkspaceRoot);
+        RefreshLibrarySourceChoices();
+        workspaceText.Text = "创作目录  " + viewModel.CreationRoot + (viewModel.LibraryWarnings.Count == 0 ? "" : "  · 部分目录不可用：" + string.Join("；", viewModel.LibraryWarnings));
+        ToolTip.SetTip(workspaceText, workspaceText.Text);
         AutomationProperties.SetName(workspaceText, workspaceText.Text);
         statusText.Text = viewModel.Status;
         libraryStatusText.Text = viewModel.Status;
@@ -17532,7 +17531,7 @@ public sealed partial class MainWindow : PlatformWindow
         var libraryContent = WindowsLibraryContentPolicy.Resolve(
             viewModel.LibraryEntries.Count,
             viewModel.LibraryFolders.Count,
-            viewModel.LibrarySearchQuery,
+            viewModel.LibrarySearchQuery.Length > 0 ? viewModel.LibrarySearchQuery : viewModel.LibrarySourceFilter,
             viewModel.IsScanning);
 #if LUMACHART_SHARED
         tabletLibraryScroll.IsVisible = libraryContent.ShowLibraryList;
@@ -24490,7 +24489,9 @@ public sealed partial class MainWindow : PlatformWindow
     {
         audioAnalysisCancellation?.Cancel();
         libraryVisible = true;
+        _ = audioTransport.PauseAsync();
         UpdateUi();
+        if (initialized && !viewModel.IsScanning) StartDeferredLibraryScan();
         if (!focusSearch) return;
         Dispatcher.UIThread.Post(() =>
         {

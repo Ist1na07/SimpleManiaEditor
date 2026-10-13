@@ -71,14 +71,14 @@ public static class WindowsDisplayScaleStepPolicy
 }
 
 /// <summary>
-/// Owns Windows Avalonia's WPF-compatible layout and font scaling behavior.
+/// Owns Windows Avalonia's monitor-aware layout and independent font scaling.
 /// Screen bounds supplied by Avalonia are physical pixels and are converted to
 /// effective DIPs with <see cref="Screen.Scaling"/> before applying policy.
 /// </summary>
 public sealed class WindowsDisplayScaleController
 {
-    private const double StartupBaseWidth = 1320;
-    private const double StartupBaseHeight = 800;
+    private const double StartupBaseWidth = 2300;
+    private const double StartupBaseHeight = 1300;
     private const double WorkAreaStartupFraction = .94;
 
     private readonly PlatformWindow window;
@@ -151,8 +151,8 @@ public sealed class WindowsDisplayScaleController
         fontScaleController.CapturedBaselineCount);
 
     /// <summary>
-    /// Applies the first-screen recommendation once, applies saved scaling, and
-    /// initializes a normal window to the WPF 1320x800 scaled startup size. This
+    /// Applies automatic or saved scaling and initializes a roomy normal
+    /// window clamped to the current monitor. This
     /// is the only method that changes the current Width/Height and Position.
     /// </summary>
     public WindowsDisplayScaleSettings InitializeForScreen(Screen? screen)
@@ -182,6 +182,14 @@ public sealed class WindowsDisplayScaleController
     /// </summary>
     public void Apply(Screen? screen = null) => ApplyCore(ResolveMetrics(screen));
 
+    public WindowsDisplayScaleSettings SetAutomaticUiScale(bool automatic, Screen? screen = null)
+    {
+        CurrentSettings = new WindowsDisplayScaleSettings(CurrentSettings.UiScale, CurrentSettings.FontScale,
+            displayScaleInitialized: true, automaticUiScale: automatic);
+        Apply(screen);
+        return CurrentSettings;
+    }
+
     public WindowsDisplayScaleSettings UpdateScales(
         double requestedUiScale,
         double requestedFontScale,
@@ -200,10 +208,12 @@ public sealed class WindowsDisplayScaleController
         Screen? screen = null) =>
         UpdateScales(requestedUiScale, CurrentSettings.FontScale, screen);
 
-    public WindowsDisplayScaleSettings UpdateFontScale(
-        double requestedFontScale,
-        Screen? screen = null) =>
-        UpdateScales(CurrentSettings.UiScale, requestedFontScale, screen);
+    public WindowsDisplayScaleSettings UpdateFontScale(double requestedFontScale, Screen? screen = null)
+    {
+        CurrentSettings = CurrentSettings.WithFontScale(requestedFontScale);
+        Apply(screen);
+        return CurrentSettings;
+    }
 
     /// <summary>
     /// Explicitly rescans content created since the previous Apply. Callers
@@ -258,7 +268,9 @@ public sealed class WindowsDisplayScaleController
 
     private void ApplyCore(WindowsDisplayScaleMetrics metrics)
     {
-        CurrentSettings = CurrentSettings.Normalize();
+        CurrentSettings = metrics.EffectiveScreenWidth > 0 && CurrentSettings.AutomaticUiScale
+            ? CurrentSettings.InitializeForFirstScreen(metrics.EffectiveScreenWidth, metrics.EffectiveScreenHeight)
+            : CurrentSettings.Normalize();
         lastMetrics = metrics;
         if (metrics.EffectiveScreenWidth > 0 && metrics.EffectiveScreenHeight > 0)
             hasScreenMetrics = true;

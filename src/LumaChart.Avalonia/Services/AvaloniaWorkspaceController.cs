@@ -34,6 +34,7 @@ public sealed class AvaloniaWorkspaceController
 
     public string DefaultCreator { get; }
     public string WorkspaceRoot => workspace.LibraryRoot;
+    public string CreationRoot => workspace.CreationRoot;
     public string ResolvedWorkspaceRoot => workspace.ResolvedLibraryRoot;
 
     /// <summary>Non-null when construction fell back from an unavailable root.</summary>
@@ -117,6 +118,7 @@ public sealed class AvaloniaWorkspaceController
         await tabIoGate.WaitAsync(cancellationToken);
         try
         {
+            sourcePath = await PrepareEditableSourceAsync(sourcePath, cancellationToken).ConfigureAwait(false);
             return await workspace.OpenAsync(sourcePath, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -133,6 +135,7 @@ public sealed class AvaloniaWorkspaceController
         await tabIoGate.WaitAsync(cancellationToken);
         try
         {
+            sourcePath = await PrepareEditableSourceAsync(sourcePath, cancellationToken).ConfigureAwait(false);
             return await workspace.OpenAsync(sourcePath, osuTimingImportMode, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -142,6 +145,10 @@ public sealed class AvaloniaWorkspaceController
         }
     }
 
+    private Task<string> PrepareEditableSourceAsync(string source, CancellationToken cancellationToken) =>
+        OsuSongsWorkspacePolicy.GetEditableCopyAsync(source, workspace.CreationRoot, cancellationToken,
+            forceCopy: !OsuFileSafetyPolicy.IsWithin(source, workspace.CreationRoot));
+
     public async Task<IReadOnlyList<DesktopChartTab>> OpenProjectDirectoryAsync(
         string directoryPath,
         CancellationToken cancellationToken = default)
@@ -149,8 +156,13 @@ public sealed class AvaloniaWorkspaceController
         await tabIoGate.WaitAsync(cancellationToken);
         try
         {
-            return await workspace.OpenProjectDirectoryAsync(directoryPath, cancellationToken)
-                .ConfigureAwait(false);
+            var opened = new List<DesktopChartTab>();
+            foreach (var path in DesktopDocumentWorkspace.EnumerateProjectChartPaths(directoryPath))
+            {
+                var source = await PrepareEditableSourceAsync(path, cancellationToken).ConfigureAwait(false);
+                opened.Add(await workspace.OpenAsync(source, cancellationToken).ConfigureAwait(false));
+            }
+            return opened;
         }
         finally
         {
@@ -172,7 +184,7 @@ public sealed class AvaloniaWorkspaceController
         var imported = await Task.Run(
                 () => ChartArchiveImportService.ExtractToUniqueDirectoryAsync(
                     archivePath,
-                    workspace.LibraryRoot,
+                    workspace.CreationRoot,
                     PlatformArchiveDirectoryCreators.Current
                         ?? ManagedArchiveDirectoryCreator.Instance,
                     cancellationToken),

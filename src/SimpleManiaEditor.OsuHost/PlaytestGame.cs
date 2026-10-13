@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using System.Text.Json;
 using osu.Framework.Allocation;
 using osu.Framework.Configuration;
@@ -107,7 +108,9 @@ internal partial class PlaytestGame : OsuGame
         if (!residentIdle) { report?.Invoke(new("error", path, Detail: "试玩宿主正忙。")); return; }
         try
         {
+            OsuFileSafetyPolicy.RequireWritable(path);
             var next = PlaytestRequest.Read(path);
+            OsuFileSafetyPolicy.RequireWritable(next.DataRoot);
             if (!Path.GetFullPath(next.DataRoot).Equals(Path.GetFullPath(request.DataRoot), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("试玩数据目录不匹配。");
             request = next; requestPath = path; launched = false; verificationStarted = false; verificationEscapeRequested = false;
@@ -145,7 +148,7 @@ internal partial class PlaytestGame : OsuGame
         try
         {
             // Model managers copy into their content store; PreferHardLinks remains false.
-            var parameters = new ImportParameters { ImportImmediately = true };
+            var parameters = new ImportParameters { ImportImmediately = true, PreferHardLinks = false };
             var skinMapPath = Path.Combine(request.DataRoot, "editor-skin-imports.json");
             var skinMap = File.Exists(skinMapPath)
                 ? JsonSerializer.Deserialize<Dictionary<string, Guid>>(File.ReadAllText(skinMapPath)) ?? [] : [];
@@ -251,8 +254,11 @@ internal partial class PlaytestGame : OsuGame
 
     // Official imports normally consume .osz/.osk archives. Keep user's files and
     // our disposable handoff intact, including archives dropped onto the game UI.
-    public override Task Import(ImportTask[] imports, ImportParameters parameters = default) =>
-        base.Import(imports.Select(RetainedImportTask.Wrap).ToArray(), parameters);
+    public override Task Import(ImportTask[] imports, ImportParameters parameters = default)
+    {
+        parameters.PreferHardLinks = false;
+        return base.Import(imports.Select(RetainedImportTask.Wrap).ToArray(), parameters);
+    }
 
     private sealed class RetainedImportTask : ImportTask
     {

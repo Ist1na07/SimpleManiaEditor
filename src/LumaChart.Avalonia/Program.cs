@@ -25,6 +25,13 @@ internal static class Program
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(WindowsSingleInstancePolicy.ScopeEnvironment)))
             Environment.SetEnvironmentVariable(WindowsSingleInstancePolicy.ScopeEnvironment, "simple-mania-editor-preview");
         AvaloniaAppPaths.ConfigureSiblingClientProfileEnvironment();
+        try { AvaloniaAppPaths.ValidateWritableLocations(); }
+        catch (Exception exception)
+        {
+            WindowsNativeMessageBox.Show(IntPtr.Zero, WindowsLibraryLauncherParityPolicy.CreateOperationError("存储路径不能写入 osu! 本体目录", exception));
+            Environment.ExitCode = 2;
+            return;
+        }
         PlatformExternalUriServices.Current = new WindowsShellExternalUriService();
         PlatformTextInputServices.Current = new WindowsTextInputService();
         PlatformArchiveDirectoryCreators.Current = WindowsArchiveDirectoryCreator.Instance;

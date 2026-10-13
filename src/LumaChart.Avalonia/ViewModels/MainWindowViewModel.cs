@@ -12,7 +12,7 @@ using LumaChart.Core.Models;
 
 namespace LumaChart.Avalonia.ViewModels;
 
-public sealed class MainWindowViewModel
+public sealed partial class MainWindowViewModel
 {
     private readonly AvaloniaWorkspaceController workspace;
     private readonly bool runStartupMaintenance;
@@ -21,6 +21,8 @@ public sealed class MainWindowViewModel
     // it open, and that replacement failed.
     private readonly SemaphoreSlim saveVerificationGate = new(1, 1);
     private CancellationTokenSource? scanCancellation;
+    private readonly EditorLibraryCatalog libraryCatalog;
+    private readonly DesktopLibraryMetadataCache libraryMetadataCache = new();
     private MixedSelectionClipboard? mixedSelectionClipboard;
     private readonly BatchObservableCollection<DesktopLibraryChartEntry> libraryEntries = [];
     private readonly BatchObservableCollection<DesktopLibraryFolderView> libraryFolders = [];
@@ -37,6 +39,7 @@ public sealed class MainWindowViewModel
     {
         this.workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         LibrarySort = AvaloniaAppPaths.LoadLibrarySort();
+        libraryCatalog = new EditorLibraryCatalog(AvaloniaAppPaths.LocalDataRoot);
         workspace.Changed += Workspace_Changed;
     }
 
@@ -72,6 +75,30 @@ public sealed class MainWindowViewModel
     public IReadOnlyList<DesktopChartTab> Tabs => workspace.Tabs;
     public DesktopChartTab? ActiveTab => workspace.ActiveTab;
     public string WorkspaceRoot => workspace.WorkspaceRoot;
+    public string CreationRoot => workspace.CreationRoot;
+    public IReadOnlyList<string> LinkedLibraryRoots => libraryCatalog.Roots;
+    public IReadOnlyList<string> LibraryWarnings { get; private set; } = [];
+    public string? LibrarySourceFilter { get; private set; }
+
+    public async Task AddLibraryRootAsync(string root)
+    {
+        libraryCatalog.AddRoot(root);
+        await RefreshLibraryAsync();
+    }
+
+    public async Task RemoveLibraryRootAsync(string root)
+    {
+        libraryCatalog.RemoveRoot(root);
+        if (LibrarySourceFilter == root) LibrarySourceFilter = null;
+        await RefreshLibraryAsync();
+    }
+
+    public void SetLibrarySourceFilter(string? root)
+    {
+        LibrarySourceFilter = root;
+        ApplyLibraryFilterAndSort();
+        RaiseStateChanged();
+    }
     public string ResolvedWorkspaceRoot => workspace.ResolvedWorkspaceRoot;
 
     /// <summary>
@@ -172,46 +199,85 @@ public sealed class MainWindowViewModel
         scanCancellation?.Dispose();
         scanCancellation = new CancellationTokenSource();
         var cancellationToken = scanCancellation.Token;
+        var scanSerial = libraryMutationSerial;
+        var scanRoot = workspace.ResolvedWorkspaceRoot;
+        var creationRoot = workspace.CreationRoot;
         IsScanning = true;
         LastLibraryScanError = null;
         Status = AvaloniaLocalizationCatalog.Format("正在扫描曲库：{0}", WorkspaceRoot);
         RaiseStateChanged();
         try
         {
-            var entries = await workspace.ScanAsync(cancellationToken);
-            var workspaceRoot = workspace.ResolvedWorkspaceRoot;
+            var warnings = new List<string>();
+            try { libraryCatalog.Remember(Tabs.Select(tab => tab.SourcePath)); }
+            catch (IOException exception) { warnings.Add(exception.Message); }
+            var linkedRoots = libraryCatalog.Roots;
+            var rememberedCharts = libraryCatalog.Charts;
+            var entries = await Task.Run(async () =>
+            {
+                var merged = new Dictionary<string, DesktopLibraryChartEntry>(StringComparer.OrdinalIgnoreCase);
+                var roots = new[] { scanRoot, creationRoot }
+                    .Concat(linkedRoots).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                foreach (var root in roots)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        foreach (var chart in await DesktopChartLibraryService.ScanAsync(root, cancellationToken: cancellationToken, metadataCache: libraryMetadataCache))
+                            merged[chart.ChartPath] = chart;
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    { warnings.Add(root + "：" + exception.Message); }
+                }
+                foreach (var file in rememberedCharts)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (merged.ContainsKey(file) || !File.Exists(file)) continue;
+                    try
+                    {
+                        var chart = DesktopChartLibraryService.ReadChart(file, Path.GetDirectoryName(file)!);
+                        if (chart != null) merged[file] = chart;
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+                }
+                return (IReadOnlyList<DesktopLibraryChartEntry>)merged.Values.ToArray();
+            }, cancellationToken);
+            LibraryWarnings = warnings;
+            var workspaceRoot = scanRoot;
             var indexedFolders = await Task.Run(
                 () => DesktopChartLibraryService.GroupByFolder(
                     entries,
                     workspaceRoot),
                 cancellationToken);
-            var visibleFolders = await Task.Run(
-                () => DesktopChartLibraryService.FilterAndSort(
-                    indexedFolders,
-                    LibrarySearchQuery,
-                    LibrarySort),
-                cancellationToken);
+
             cancellationToken.ThrowIfCancellationRequested();
+            MergeConcurrentLibraryUpdates(ref entries, ref indexedFolders, scanSerial, workspaceRoot);
             libraryEntries.ReplaceAll(entries);
             libraryFolderIndex = indexedFolders;
-            libraryFolders.ReplaceAll(visibleFolders);
+            ApplyLibraryFilterAndSort();
             Status = entries.Count == 0
                 ? "曲库为空，可新建谱面、打开谱面或选择工作目录"
                 : AvaloniaLocalizationCatalog.Format("曲库已载入 {0:N0} 个文件夹 · {1:N0} 张谱面", libraryFolderIndex.Count, entries.Count);
         }
         catch (OperationCanceledException)
         {
-            Status = "曲库扫描已取消";
+            if (scanCancellation?.Token == cancellationToken) Status = "曲库扫描已取消";
         }
         catch (Exception exception)
         {
-            LastLibraryScanError = exception;
-            Status = AvaloniaLocalizationCatalog.Format("曲库扫描失败：{0}", AvaloniaLocalizationCatalog.Text(exception.Message));
+            if (scanCancellation?.Token == cancellationToken)
+            {
+                LastLibraryScanError = exception;
+                Status = AvaloniaLocalizationCatalog.Format("曲库扫描失败：{0}", AvaloniaLocalizationCatalog.Text(exception.Message));
+            }
         }
         finally
         {
-            IsScanning = false;
-            RaiseStateChanged();
+            if (scanCancellation?.Token == cancellationToken)
+            {
+                IsScanning = false;
+                RaiseStateChanged();
+            }
         }
     }
 
@@ -226,6 +292,9 @@ public sealed class MainWindowViewModel
 
     public async Task SwitchWorkspaceAsync(string root)
     {
+        OsuFileSafetyPolicy.RequireWritable(root);
+        scanCancellation?.Cancel();
+        libraryCatalog.Remember(Tabs.Select(tab => tab.SourcePath));
         await workspace.SwitchRootAsync(root);
         // An explicit choice ends a startup fallback; it is now the saved root.
         AvaloniaAppPaths.ClearWorkspaceRootFallback();
@@ -242,11 +311,14 @@ public sealed class MainWindowViewModel
 
     public async Task OpenAsync(string path, OsuNoteTimingImportMode? osuTimingImportMode)
     {
+        var alreadyOpen = Tabs.FirstOrDefault(tab => string.Equals(tab.SourcePath, path, StringComparison.OrdinalIgnoreCase));
+        if (alreadyOpen != null) { Activate(alreadyOpen.Id); return; }
         var tab = osuTimingImportMode.HasValue
             ? await workspace.OpenAsync(path, osuTimingImportMode.Value)
             : await workspace.OpenAsync(path);
         Status = AvaloniaLocalizationCatalog.Format("已打开 {0} · {1}", tab.DisplayTitle, tab.FormatBadge);
         RaiseStateChanged();
+        await UpdateLibraryChartsAsync([tab.SourcePath]);
     }
 
     public async Task<int> OpenProjectDirectoryAsync(string path)
@@ -254,6 +326,7 @@ public sealed class MainWindowViewModel
         var opened = await workspace.OpenProjectDirectoryAsync(path);
         Status = AvaloniaLocalizationCatalog.Format("已从项目目录打开 {0:N0} 张谱面", opened.Count);
         RaiseStateChanged();
+        await UpdateLibraryChartsAsync(workspace.Tabs.Select(tab => tab.SourcePath));
         return opened.Count;
     }
 
@@ -265,7 +338,7 @@ public sealed class MainWindowViewModel
         var imported = await workspace.ImportArchiveAsync(path);
         Status = AvaloniaLocalizationCatalog.Format("已导入谱包 · {0:N0} 张可打开谱面 / {1:N0} 张其他模式 / {2:N0} 张损坏谱面", imported.SupportedChartPaths.Count, imported.UnsupportedChartPaths.Count, imported.BrokenChartPaths.Count);
         RaiseStateChanged();
-        await RefreshLibraryAsync();
+        await UpdateLibraryChartsAsync(imported.SupportedChartPaths);
         return imported;
     }
 
@@ -344,7 +417,7 @@ public sealed class MainWindowViewModel
         var tab = await workspace.CreateAsync(documentTitle, creator, suggestedName);
         Status = AvaloniaLocalizationCatalog.Format("已新建 {0}", tab.DisplayTitle);
         RaiseStateChanged();
-        await RefreshLibraryAsync();
+        await UpdateLibraryChartsAsync([tab.SourcePath]);
     }
 
     public async Task<DesktopNamedAudioChartCreation> CreateNamedAudioChartAsync(
@@ -354,7 +427,7 @@ public sealed class MainWindowViewModel
         var result = await workspace.CreateNamedAudioChartAsync(requestedName, creator);
         Status = AvaloniaLocalizationCatalog.Format("已新建 {0}", result.Name);
         RaiseStateChanged();
-        await RefreshLibraryAsync();
+        await UpdateLibraryChartsAsync([result.Tab.SourcePath]);
         return result;
     }
 
@@ -454,6 +527,7 @@ public sealed class MainWindowViewModel
             workspace.DefaultCreator,
             tab.OsuTimingImportMode);
         var after = ChartStructuralFingerprint.Summarize(reloaded);
+        await UpdateLibraryChartsAsync([tab.SourcePath]);
         LastSaveRoundTrip = new SaveRoundTripResult(
             tab.SourcePath,
             before,
@@ -726,10 +800,14 @@ public sealed class MainWindowViewModel
 
     private void ApplyLibraryFilterAndSort()
     {
-        var folders = DesktopChartLibraryService.FilterAndSort(
-            libraryFolderIndex,
-            LibrarySearchQuery,
-            LibrarySort);
+        var folders = DesktopChartLibraryService.FilterAndSort(libraryFolderIndex, LibrarySearchQuery, LibrarySort);
+        if (LibrarySourceFilter is { } filter)
+        {
+            var root = OsuFileSafetyPolicy.ResolvePhysicalPath(filter).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            folders = folders.Select(view => new DesktopLibraryFolderView(view.Folder,
+                view.VisibleCharts.Where(chart => chart.ChartPath.StartsWith(root, StringComparison.OrdinalIgnoreCase)).ToArray()))
+                .Where(view => view.VisibleCharts.Count > 0).ToArray();
+        }
         libraryFolders.ReplaceAll(folders);
     }
 

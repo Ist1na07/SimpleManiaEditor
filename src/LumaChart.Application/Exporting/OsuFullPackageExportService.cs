@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 namespace LumaChart.Application.Exporting;
 
 /// <summary>
@@ -12,6 +13,8 @@ public static class OsuFullPackageExportService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        OsuFileSafetyPolicy.RequireWritable(request.DestinationArchivePath);
+        OsuFileSafetyPolicy.RequireWritable(request.SessionScratchRoot);
         ValidateDifficulty(request.OverallDifficulty, nameof(request.OverallDifficulty));
         ValidateDifficulty(request.HpDrainRate, nameof(request.HpDrainRate));
 

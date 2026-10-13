@@ -1,3 +1,4 @@
+using LumaChart.Application.Workspaces;
 using LumaChart.Core.Localization;
 
 namespace LumaChart.Application.Libraries;
@@ -92,7 +93,7 @@ public static class DesktopLibraryDeletionPlanner
                 return Blocked(
                     DesktopLibraryDeletionBlockReason.InvalidFolderPath,
                     InvalidFolderPathMessage);
-            if (!IsStrictDescendant(normalizedWorkspaceRoot, fullPath))
+            if (OsuFileSafetyPolicy.IsProtectedPath(fullPath) || !OsuFileSafetyPolicy.IsWithin(fullPath, normalizedWorkspaceRoot) || !IsStrictDescendant(normalizedWorkspaceRoot, fullPath))
                 return Blocked(
                     DesktopLibraryDeletionBlockReason.UnsafeWorkspaceBoundary,
                     UnsafeWorkspaceBoundaryMessage);

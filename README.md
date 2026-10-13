@@ -2,10 +2,11 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前为 0.1.27 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前为 0.1.28 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
-关闭旧窗口后双击 `Start-Editor.cmd` 启动，或 `Start-Demo.cmd` 打开 7K 演示。发布包位于 `dist/SimpleManiaEditor-0.1.27/`，包含编辑器和官方游戏宿主各自的运行时。
+关闭旧窗口后双击 `Start-Editor.cmd` 启动，`Start-Demo.cmd` 保留旧版 7K 演示入口。干净分发包位于 `dist/SimpleManiaEditor-0.1.28-Distribution/`，包含编辑器和官方游戏宿主各自的运行时。
 
+- [0.1.28 小屏界面、曲库与文件隔离](docs/RELEASE-0.1.28.md)：自动/手动 UI 大小、包体旁创作目录、多目录只读曲库与原件保护。
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
 - [0.1.27 慢放时间对齐、频谱与界面](docs/RELEASE-0.1.27.md)：修复 Albemuth 起音提前、缩短慢放粒度、保留反相声道频谱、全曲时间轴和直接设置分类。
 - [当前功能矩阵](docs/FEATURES.md)。

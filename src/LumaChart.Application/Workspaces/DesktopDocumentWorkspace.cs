@@ -98,6 +98,7 @@ public sealed class DesktopDocumentWorkspace
         manifestLockPath = manifestPath + ".lock";
         this.defaultCreator = defaultCreator;
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        OsuFileSafetyPolicy.RequireWritable(documentCacheRoot);
         Directory.CreateDirectory(documentCacheRoot);
     }
 
@@ -620,7 +621,7 @@ public sealed class DesktopDocumentWorkspace
         // first await. After that the workspace runs on the thread pool, where a
         // clone could observe a half-applied in-place edit.
         var requestedTab = Tabs.FirstOrDefault(candidate => candidate.Id == tabId);
-        if (requestedTab != null && OsuSongsWorkspacePolicy.IsSongsPath(requestedTab.SourcePath))
+        if (requestedTab != null && OsuFileSafetyPolicy.IsProtectedPath(requestedTab.SourcePath))
         {
             var editable = await OsuSongsWorkspacePolicy.GetEditableCopyAsync(requestedTab.SourcePath, SafeCreationRoot(), cancellationToken).ConfigureAwait(false);
             return await SaveAsAsync(tabId, editable, cancellationToken).ConfigureAwait(false);
@@ -691,7 +692,7 @@ public sealed class DesktopDocumentWorkspace
         CancellationToken cancellationToken = default)
     {
         destination = NormalizeSourcePath(destination, requireExisting: false);
-        if (OsuSongsWorkspacePolicy.IsSongsPath(destination))
+        if (OsuFileSafetyPolicy.IsProtectedPath(destination))
             throw new InvalidOperationException("Songs 是游戏谱面库，请另存到独立创作目录；发布到游戏库应使用明确的导出流程。");
         var destinationFormat = GetFormat(destination);
 
@@ -1740,6 +1741,7 @@ public sealed class DesktopDocumentWorkspace
         CancellationToken cancellationToken)
     {
         destination = Path.GetFullPath(destination);
+        OsuFileSafetyPolicy.RequireWritable(destination);
         var directory = Path.GetDirectoryName(destination)
                         ?? throw new InvalidOperationException("The chart source has no directory.");
         Directory.CreateDirectory(directory);
@@ -1832,7 +1834,7 @@ public sealed class DesktopDocumentWorkspace
 
     private (string Folder, string ChartPath) AllocateNewChartLocation(string? suggestedName)
     {
-        Directory.CreateDirectory(libraryRoot);
+        Directory.CreateDirectory(SafeCreationRoot());
         var now = timeProvider.GetLocalNow();
         var timestamp = now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         var stem = CreateSafeBaseName(suggestedName);
@@ -1846,7 +1848,7 @@ public sealed class DesktopDocumentWorkspace
     private (string Folder, string ChartPath, string Name) AllocateNamedAudioChartLocation(
         string? requestedName)
     {
-        Directory.CreateDirectory(libraryRoot);
+        Directory.CreateDirectory(SafeCreationRoot());
         var now = timeProvider.GetLocalNow();
         var timestamp = now.ToUnixTimeSeconds().ToString(
             System.Globalization.CultureInfo.InvariantCulture);
@@ -1979,11 +1981,13 @@ public sealed class DesktopDocumentWorkspace
     private static bool IsCommunityAscii(string value) =>
         value.All(character => character is >= ' ' and <= '~');
 
+    public string CreationRoot => SafeCreationRoot();
+
     private string SafeCreationRoot()
     {
-        if (!OsuSongsWorkspacePolicy.IsSongsPath(libraryRoot)) return libraryRoot;
+        if (!OsuFileSafetyPolicy.IsProtectedPath(libraryRoot)) return libraryRoot;
         var fallback = creationRootFallback?.Invoke();
-        return !string.IsNullOrWhiteSpace(fallback) && !OsuSongsWorkspacePolicy.IsSongsPath(fallback)
+        return !string.IsNullOrWhiteSpace(fallback) && !OsuFileSafetyPolicy.IsProtectedPath(fallback)
             ? fallback : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SimpleManiaEditor Maps");
     }
 
@@ -1991,6 +1995,7 @@ public sealed class DesktopDocumentWorkspace
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         var requested = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (!Directory.Exists(requested)) OsuFileSafetyPolicy.RequireWritable(requested);
         Directory.CreateDirectory(requested);
         var resolution = LocalLibraryRootResolver.Resolve(requested);
         return (resolution.RequestedRoot, resolution.ResolvedRoot);
@@ -2364,6 +2369,7 @@ internal static class DesktopChartAssetLocalizer
     {
         ArgumentNullException.ThrowIfNull(document);
         targetChartPath = Path.GetFullPath(targetChartPath);
+        OsuFileSafetyPolicy.RequireWritable(targetChartPath);
         var targetFolder = Path.GetDirectoryName(targetChartPath)
                            ?? throw new InvalidOperationException("The target chart path has no directory.");
         Directory.CreateDirectory(targetFolder);
@@ -2394,6 +2400,8 @@ internal static class DesktopChartAssetLocalizer
                 preferredRelative,
                 source,
                 cancellationToken).ConfigureAwait(false);
+            if (!OsuFileSafetyPolicy.IsWithin(destination, targetFolder)) throw new IOException("资源目标目录链接越界。");
+            OsuFileSafetyPolicy.RequireWritable(destination);
             if (!File.Exists(destination))
                 await CopyAtomicAsync(source, destination, cancellationToken).ConfigureAwait(false);
             var result = ToChartRelative(targetFolder, destination);
@@ -2429,7 +2437,7 @@ internal static class DesktopChartAssetLocalizer
             var folder = Path.GetDirectoryName(Path.GetFullPath(chartPath));
             if (string.IsNullOrEmpty(folder)) return null;
             var candidate = Path.GetFullPath(Path.Combine(folder, relative));
-            if (!IsInside(folder, candidate)) return null;
+            if (!IsInside(folder, candidate) || !OsuFileSafetyPolicy.IsWithin(candidate, folder)) return null;
             return File.Exists(candidate) ? candidate : null;
         }
         catch (Exception exception) when (
