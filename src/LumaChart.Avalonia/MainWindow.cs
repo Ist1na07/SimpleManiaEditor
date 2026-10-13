@@ -322,6 +322,7 @@ public sealed partial class MainWindow : PlatformWindow
     private bool startupAccountChoiceHandled;
     private OnlineAppConfigurationDto? appConfiguration;
     private WindowsAppUpdateSnapshot? appUpdateSnapshot;
+    private bool githubUpdateChecking;
     private readonly TextBlock settingsVersionText = new();
     private readonly AutomationBorder aboutLayer = new();
     private readonly TextBlock aboutContentText = new();
@@ -2881,7 +2882,7 @@ public sealed partial class MainWindow : PlatformWindow
         aboutVersionText.Margin = new Thickness(0, 5, 0, 0);
         AutomationProperties.SetAutomationId(aboutVersionText, "About.Version");
 
-        aboutContentText.Text = "SimpleManiaEditor 0.1.0\n面向 osu!mania / 7K 的本地编辑器\n基于 LumaChart Studio（MIT）改造。";
+        aboutContentText.Text = SimpleManiaProduct.AboutText;
         aboutContentText.Foreground = new SolidColorBrush(Color.Parse("#B8C1C3"));
         aboutContentText.TextWrapping = TextWrapping.Wrap;
         aboutContentText.LineHeight = 22;
@@ -2914,20 +2915,12 @@ public sealed partial class MainWindow : PlatformWindow
         Grid.SetColumn(close, 1);
         header.Children.Add(close);
 
-        var bilibili = PrimaryButton("B站个人主页", (_, _) =>
-            OpenExternalUrl("https://b23.tv/tp7HO4N"));
-        bilibili.Height = 38;
-        bilibili.HorizontalAlignment = HorizontalAlignment.Stretch;
-        bilibili.Margin = new Thickness(0, 0, 5, 0);
-        ApplyWpfToolButtonStyle(bilibili);
-        AutomationProperties.SetAutomationId(bilibili, "About.Bilibili");
-        var sponsor = PrimaryButton("赞助", (_, _) =>
-            OpenExternalUrl("https://www.ifdian.net/a/ddtt0?utm_source=copylink&utm_medium=link"));
-        sponsor.Height = 38;
-        sponsor.HorizontalAlignment = HorizontalAlignment.Stretch;
-        sponsor.Margin = new Thickness(5, 0);
-        ApplyWpfToolButtonStyle(sponsor);
-        AutomationProperties.SetAutomationId(sponsor, "About.Sponsor");
+        var repository = PrimaryButton("GitHub 仓库", (_, _) => OpenExternalUrl(SimpleManiaProduct.Repository));
+        repository.Height = 38;
+        repository.HorizontalAlignment = HorizontalAlignment.Stretch;
+        repository.Margin = new Thickness(5, 0);
+        ApplyWpfToolButtonStyle(repository);
+        AutomationProperties.SetAutomationId(repository, "About.Repository");
         var issueReport = PrimaryButton(
             "问题反馈",
             async (_, _) => await ShowIssueReportAsync());
@@ -2945,20 +2938,10 @@ public sealed partial class MainWindow : PlatformWindow
         aboutAdminButton.IsVisible = false;
         AutomationProperties.SetAutomationId(aboutAdminButton, "About.Admin");
 
-        var actions = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,*,*"),
-            RowDefinitions = new RowDefinitions("Auto,Auto")
-        };
+        var actions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
         actions.Children.Add(issueReport);
-        Grid.SetColumn(bilibili, 1);
-        bilibili.Margin = new Thickness(5, 0);
-        actions.Children.Add(bilibili);
-        Grid.SetColumn(sponsor, 2);
-        actions.Children.Add(sponsor);
-        Grid.SetRow(aboutAdminButton, 1);
-        Grid.SetColumnSpan(aboutAdminButton, 3);
-        actions.Children.Add(aboutAdminButton);
+        Grid.SetColumn(repository, 1);
+        actions.Children.Add(repository);
 
         var layout = new Grid
         {
@@ -2993,7 +2976,7 @@ public sealed partial class MainWindow : PlatformWindow
             Child = layout
         };
         AutomationProperties.SetAutomationId(aboutLayer, "About.Layer");
-        AutomationProperties.SetName(aboutLayer, "关于 LumaChart Studio");
+        AutomationProperties.SetName(aboutLayer, "关于 SimpleManiaEditor");
         return aboutLayer;
     }
 
@@ -9872,9 +9855,7 @@ public sealed partial class MainWindow : PlatformWindow
 
     private Control BuildApplicationInformationSettings()
     {
-        settingsVersionText.Text = WindowsAppUpdatePolicy.SettingsVersionText(
-            WindowsOnlineAccountHost.ClientVersion,
-            appUpdateSnapshot);
+        settingsVersionText.Text = $"当前版本 {SimpleManiaProduct.Version}";
         settingsVersionText.Foreground = new SolidColorBrush(Color.Parse("#7E8D91"));
         settingsVersionText.FontSize = 10;
         settingsVersionText.Margin = new Thickness(0, 3, 0, 9);
@@ -9887,27 +9868,19 @@ public sealed partial class MainWindow : PlatformWindow
         ApplyWpfToolButtonStyle(about);
         AutomationProperties.SetAutomationId(about, "Settings.About");
         var issueReport = PrimaryButton(
-            "问题反馈（测试）",
+            "问题反馈",
             async (_, _) => await ShowIssueReportAsync());
         issueReport.Height = 37;
         issueReport.HorizontalAlignment = HorizontalAlignment.Stretch;
         issueReport.Margin = new Thickness(0, 6, 0, 0);
         ApplyWpfPrimaryButtonStyle(issueReport);
         AutomationProperties.SetAutomationId(issueReport, "Settings.IssueReport");
-        var bilibili = PrimaryButton("B站个人主页", (_, _) =>
-            OpenExternalUrl("https://b23.tv/tp7HO4N"));
-        bilibili.Height = 37;
-        bilibili.HorizontalAlignment = HorizontalAlignment.Stretch;
-        bilibili.Margin = new Thickness(0, 6, 0, 0);
-        ApplyWpfToolButtonStyle(bilibili);
-        AutomationProperties.SetAutomationId(bilibili, "Settings.Bilibili");
-        var sponsor = PrimaryButton("赞助", (_, _) =>
-            OpenExternalUrl("https://www.ifdian.net/a/ddtt0?utm_source=copylink&utm_medium=link"));
-        sponsor.Height = 37;
-        sponsor.HorizontalAlignment = HorizontalAlignment.Stretch;
-        sponsor.Margin = new Thickness(0, 6, 0, 0);
-        ApplyWpfToolButtonStyle(sponsor);
-        AutomationProperties.SetAutomationId(sponsor, "Settings.Sponsor");
+        var repository = PrimaryButton("GitHub 仓库", (_, _) => OpenExternalUrl(SimpleManiaProduct.Repository));
+        repository.Height = 37;
+        repository.HorizontalAlignment = HorizontalAlignment.Stretch;
+        repository.Margin = new Thickness(0, 6, 0, 0);
+        ApplyWpfToolButtonStyle(repository);
+        AutomationProperties.SetAutomationId(repository, "Settings.Repository");
         var check = PrimaryButton(
             "检查更新",
             async (_, _) => await RefreshUpdatePolicyAndShowAsync(
@@ -9920,14 +9893,13 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(check, "Settings.CheckForUpdates");
 
         return SettingsSection(
-            "LumaChart Studio",
+            SimpleManiaProduct.Name,
             string.Empty,
             "Settings.ApplicationInformationSection",
             settingsVersionText,
             about,
             issueReport,
-            bilibili,
-            sponsor,
+            repository,
             check);
     }
 
@@ -22992,6 +22964,29 @@ public sealed partial class MainWindow : PlatformWindow
         bool blocksLogin,
         bool showWhenCurrent = true)
     {
+        if (!SimpleManiaProduct.OnlineEnabled)
+        {
+            if (githubUpdateChecking) return;
+            githubUpdateChecking = true;
+            viewModel.SetStatus("正在检查 GitHub Release…");
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                using var client = new HttpClient();
+                var result = await GitHubReleaseUpdates.CheckAsync(client, timeout.Token);
+                settingsVersionText.Text = result.Presentation.VersionText;
+                viewModel.SetStatus(result.Presentation.Title);
+                if (!windowCloseTeardownStarted) await ShowUpdatePromptAsync(result.Presentation, result.Download);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or JsonException)
+            {
+                viewModel.SetStatus("检查更新失败，可手动打开 GitHub 发布页。");
+                if (!windowCloseTeardownStarted)
+                    await ShowUpdatePromptAsync(GitHubReleaseUpdates.Present("暂时无法检查更新", "无法连接 GitHub 或请求次数受限。可打开发布页查看，编辑器仍可正常离线使用。"), new Uri(SimpleManiaProduct.Releases));
+            }
+            finally { githubUpdateChecking = false; }
+            return;
+        }
         try
         {
             using var timeout = new CancellationTokenSource(
@@ -23065,9 +23060,9 @@ public sealed partial class MainWindow : PlatformWindow
     private async Task ShowAboutAsync()
     {
         aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", AvaloniaClientBuildInfo.DisplayVersion);
-        aboutContentText.Text = appConfiguration?.AboutContent is { Length: > 0 } content
-            ? content
-            : "LumaChart Studio";
+        aboutContentText.Text = SimpleManiaProduct.OnlineEnabled
+            ? appConfiguration?.AboutContent ?? SimpleManiaProduct.AboutText
+            : SimpleManiaProduct.AboutText;
         if (aboutAdminButton != null)
             aboutAdminButton.IsVisible =
                 onlineAccountHost?.Session.IsAuthenticated == true &&
@@ -23094,6 +23089,11 @@ public sealed partial class MainWindow : PlatformWindow
 
     private async Task ShowIssueReportAsync()
     {
+        if (!SimpleManiaProduct.OnlineEnabled)
+        {
+            OpenExternalUrl(SimpleManiaProduct.Issues);
+            return;
+        }
         var settings = displayScaleController.CurrentSettings;
         var environment = WindowsIssueReportPolicy.BuildEnvironment(
             WindowsOnlineAccountHost.ClientVersion,

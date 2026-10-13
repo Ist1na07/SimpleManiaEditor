@@ -1,3 +1,7 @@
+## 0.1.29 public repository
+
+https://github.com/Ist1na07/SimpleManiaEditor · main. Curves remain .28; double-click library and GitHub releases/branding added. Release packaging and tests use SDK 10. Original source copyright retained with Ist1na in root and src LICENSE.
+
 # 0.1.28 当前基线
 
 UI scale schema2新增AutomaticUiScale，Recommend基准2560x1440，最低55%，ScreenFromWindow有效DIP。旧schema1的100%视为自动，其余手动保留。正常启动2300x1300×比例按工作区限制，旧指针UI规格强制100%因为其历史坐标辅助未乘缩放；新LibraryDisplay028Specs单独验1080/1440。
@@ -156,9 +160,9 @@ MainWindow.SettingsNavigation.cs固定搜索/4列分类导航/单内容滚动区
 当前隔离 SDK：
 
 ```powershell
-$env:NUGET_PACKAGES = 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-audit-bc77d02e8ce44c438d3a7de2e0060cbd\nuget'
-$env:DOTNET_CLI_HOME = 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-audit-bc77d02e8ce44c438d3a7de2e0060cbd\cli'
-./scripts/Test.ps1 -Dotnet 'C:\Users\Administrator\AppData\Local\Temp\sme-dotnet-audit-bc77d02e8ce44c438d3a7de2e0060cbd\sdk10\dotnet.exe' -RuntimeDotnet 'C:\Program Files\dotnet\dotnet.exe'
+# Optional: set NUGET_PACKAGES to a local package cache.
+# Use an installed .NET 10 SDK.
+./scripts/Test.ps1
 ```
 
 - 50 项核心 specs；自有 `tests/SimpleManiaEditor.UiSmoke` 测试实际 Avalonia 控件、真实解码/DSP、模拟设备和 Skia 截图。

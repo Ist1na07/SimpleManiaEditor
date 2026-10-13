@@ -240,6 +240,16 @@ public sealed class LibraryFolderCard : Border
             Children = { toggleButton, header }
         };
         headerHost.Tapped += HeaderHost_Tapped;
+        headerHost.DoubleTapped += async (_, e) =>
+        {
+            if (IsButtonSource(e.Source)) return;
+            e.Handled = true;
+            SynchronizeCurrentViewFromContainer();
+            if (currentView?.VisibleCharts.Count == 1)
+                await OpenChartAsync(currentView.VisibleCharts[0]);
+            else
+                SetExpandedPreservingViewport(true);
+        };
         AutomationProperties.SetAutomationId(
             headerHost,
             "Library.FolderExpanderHeader");
@@ -490,7 +500,26 @@ public sealed class LibraryFolderCard : Border
         };
         AutomationProperties.SetAutomationId(host, "Library.ChartRow");
         AutomationProperties.SetName(host, $"{chart.PickerTitle} · {chart.RelativePath}");
+        ToolTip.SetTip(host, "双击谱面打开编辑，也可点击右侧打开编辑按钮");
+        host.DoubleTapped += async (_, e) =>
+        {
+            if (IsButtonSource(e.Source)) return;
+            e.Handled = true;
+            await OpenChartAsync(chart);
+        };
         return host;
+    }
+
+    private static bool IsButtonSource(object? source) => source is Control control &&
+        (control is Button || control.GetVisualAncestors().OfType<Button>().Any());
+
+    private bool openingChart;
+    private async Task OpenChartAsync(DesktopLibraryChartEntry chart)
+    {
+        if (openingChart) return;
+        openingChart = true;
+        try { await openChartAsync(chart.ChartPath); }
+        finally { openingChart = false; }
     }
 
     private void ExpandButton_Click(object? sender, RoutedEventArgs eventArgs)
@@ -615,7 +644,8 @@ public sealed class LibraryFolderCard : Border
     private async void OpenButton_Click(object? sender, RoutedEventArgs eventArgs)
     {
         if (sender is not Button { Tag: DesktopLibraryChartEntry chart }) return;
-        await openChartAsync(chart.ChartPath);
+        eventArgs.Handled = true;
+        await OpenChartAsync(chart);
     }
 
     private static Button PrimaryButton(

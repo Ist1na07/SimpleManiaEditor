@@ -2,10 +2,13 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前为 0.1.28 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前为 0.1.29 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
-关闭旧窗口后双击 `Start-Editor.cmd` 启动，`Start-Demo.cmd` 保留旧版 7K 演示入口。干净分发包位于 `dist/SimpleManiaEditor-0.1.28-Distribution/`，包含编辑器和官方游戏宿主各自的运行时。
+[下载 Windows 分发包](https://github.com/Ist1na07/SimpleManiaEditor/releases) · [问题反馈](https://github.com/Ist1na07/SimpleManiaEditor/issues)
 
+下载后完整解压，双击包体根目录 `Start-Editor.cmd`。创作谱面默认保存在包旁 `Maps`，应用设置保存在独立用户目录。开发目录中关闭旧窗口后双击 `Start-Editor.cmd` 启动，`Start-Demo.cmd` 保留旧版 7K 演示入口。干净分发包位于 `dist/SimpleManiaEditor-0.1.29-Distribution/`，包含编辑器和官方游戏宿主各自的运行时。
+
+- [0.1.29 曲库快捷编辑与 GitHub 更新](docs/RELEASE-0.1.29.md)：双击进入编辑、项目关于/反馈和 Release 检查。
 - [0.1.28 小屏界面、曲库与文件隔离](docs/RELEASE-0.1.28.md)：自动/手动 UI 大小、包体旁创作目录、多目录只读曲库与原件保护。
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
 - [0.1.27 慢放时间对齐、频谱与界面](docs/RELEASE-0.1.27.md)：修复 Albemuth 起音提前、缩短慢放粒度、保留反相声道频谱、全曲时间轴和直接设置分类。
@@ -40,3 +43,23 @@
 - [原始需求](初步设计.txt)：保留用户的初始功能清单。
 
 开发分工：Codex 负责代码、自动化测试、构建与开发文档；用户把控功能、编辑体验和真实 osu! 环境验收。每个阶段交付可运行版本及验证记录。
+
+
+## 构建与测试
+
+Windows x64，安装 .NET 10 SDK（编辑器目标 .NET 8，官方试玩宿主目标 .NET 10）。
+
+```powershell
+./scripts/Test.ps1
+./scripts/Package-Distribution.ps1
+```
+
+分发包包含所需运行时，不需要接收者安装 .NET。脚本从全新发布目录打包，已有输出目录拒绝覆盖。新克隆的源码需要先构建分发包，根目录启动入口才能运行。
+
+维护者在测试、打包和推送 `main` 后，可运行 `scripts/Publish-GitHubRelease.ps1` 发布本版本。脚本使用已有 GitHub Git 登录，先上传到草稿并核验下载包 SHA256，再公开 Release；已发布版本拒绝覆盖。
+
+## 许可证
+
+本项目源代码采用 MIT，署名 **Ist1na**，保留 LumaChart 上游版权声明，见 [LICENSE](LICENSE)。[上游](https://github.com/cux-rn/LumaChartStudio-Client) 是本项目的基础。
+
+第三方组件各自的许可证继续有效，见 [第三方声明](src/THIRD-PARTY-NOTICES.md)。官方游戏资源包含 CC BY-NC 等条款，BASS/FFmpeg 等有独立条件；源代码的 MIT 不代表整个分发包可任意商用。

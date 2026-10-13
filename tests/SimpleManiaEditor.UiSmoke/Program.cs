@@ -72,6 +72,7 @@ internal static class Program
                 var creation = model.CreateAsync("LibraryInitial028"); PumpUntil(() => creation.IsCompleted); creation.GetAwaiter().GetResult();
                 typeof(MainWindow).GetMethod("ShowEditorSurface", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(libraryWindow, [true]); Pump(80);
                 LibraryDisplay028Specs.Run(libraryWindow, screenshotRoot);
+                Repository029Specs.Run(libraryWindow);
                 return 0;
             }
             if (args.Length > 0 && args[0] == "--seek-stress-025")
@@ -419,6 +420,7 @@ internal static class Program
         AudioSettings026Specs.Run(window, screenshots);
         TimelineSettings027Specs.Run(window, screenshots);
         LibraryDisplay028Specs.Run(window, screenshots);
+        Repository029Specs.Run(window);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

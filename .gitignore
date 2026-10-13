@@ -10,4 +10,9 @@ artifacts/
 *.local.*
 .codex-nuget-packages/
 data/
+Maps/
+Editing Cache/
+LumaChart Workspace/
+.env
+.env.*
 !fixtures/**

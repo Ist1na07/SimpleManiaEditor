@@ -63,13 +63,13 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Product>SimpleManiaEditor</Product>
-    <Company>LumaChart</Company>
-    <Authors>LumaChart</Authors>
-    <Description>Windows-only Avalonia migration client for LumaChart Studio.</Description>
-    <Copyright>Copyright © LumaChart contributors</Copyright>
-    <Version>0.1.28</Version>
-    <AssemblyVersion>0.1.28.0</AssemblyVersion>
-    <FileVersion>0.1.28.0</FileVersion>
+    <Company>Ist1na</Company>
+    <Authors>Ist1na; LumaChart contributors</Authors>
+    <Description>Local osu!mania chart editor focused on 7K mapping.</Description>
+    <Copyright>Copyright 漏 LumaChart contributors</Copyright>
+    <Version>0.1.29</Version>
+    <AssemblyVersion>0.1.29.0</AssemblyVersion>
+    <FileVersion>0.1.29.0</FileVersion>
   </PropertyGroup>
 
 </Project>
