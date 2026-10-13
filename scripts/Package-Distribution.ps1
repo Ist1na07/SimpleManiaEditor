@@ -1,0 +1,128 @@
+param([string]$Dotnet = 'dotnet', [string]$OutputDirectory = '')
+$ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+[xml]$definition = Get-Content -LiteralPath (Join-Path $taskRoot 'src/LumaChart.Avalonia/LumaChart.Avalonia.csproj') -Raw
+$version = [string](($definition.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    $OutputDirectory = Join-Path $taskRoot "dist/SimpleManiaEditor-$version-Distribution"
+}
+$destination = [IO.Path]::GetFullPath($OutputDirectory)
+if (Test-Path -LiteralPath $destination) { throw 'Choose a new, empty distribution path. Existing folders may contain user work.' }
+$zipPath = $destination + '-win-x64.zip'
+if (Test-Path -LiteralPath $zipPath) { throw 'Distribution archive already exists; choose a new output path.' }
+$stage = Join-Path $taskRoot ('artifacts/distribution-build-' + [Guid]::NewGuid().ToString('N'))
+$publish = Join-Path $stage 'publish'
+$app = Join-Path $destination 'app'
+New-Item -ItemType Directory -Path $publish -Force | Out-Null
+Push-Location $taskRoot
+try {
+    # Never publish into, or copy from, a folder that has been run by a mapper.
+    & $Dotnet publish 'src/LumaChart.Avalonia/LumaChart.Avalonia.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $publish
+    if ($LASTEXITCODE -ne 0) { throw 'Editor publish failed.' }
+    & $Dotnet publish 'src/SimpleManiaEditor.OsuHost/SimpleManiaEditor.OsuHost.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o (Join-Path $publish 'osu-host')
+    if ($LASTEXITCODE -ne 0) { throw 'Official host publish failed.' }
+    & (Join-Path $PSScriptRoot 'Collect-OsuHostNotices.ps1') -Destination (Join-Path $publish 'osu-host')
+    New-Item -ItemType Directory -Path $app -Force | Out-Null
+    foreach ($file in Get-ChildItem -LiteralPath $publish -File -Recurse) {
+        $relative = [IO.Path]::GetRelativePath($publish, $file.FullName)
+        if ($file.Extension -eq '.pdb' -or $relative -eq 'README.md') { continue }
+        $target = Join-Path $app $relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+        Copy-Item -LiteralPath $file.FullName -Destination $target
+    }
+    # These are public, generic feature descriptions. Developer handoff,
+    # performance reports, demos and test fixtures are deliberately not copied.
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/FEATURES.md') -Destination (Join-Path $destination 'FEATURES.md')
+    [IO.File]::WriteAllText((Join-Path $destination 'Start-Editor.cmd'), @'
+@echo off
+setlocal
+if not exist "%~dp0app\SimpleManiaEditor.exe" (
+  echo Please extract the entire ZIP before starting the editor.
+  pause
+  exit /b 1
+)
+set "LUMACHART_AVALONIA_LOCAL_DATA_ROOT=%LOCALAPPDATA%\SimpleManiaEditor\Distribution"
+set "LUMACHART_AVALONIA_EDITING_ROOT=%LUMACHART_AVALONIA_LOCAL_DATA_ROOT%\Editing Cache"
+set "LUMACHART_AVALONIA_SINGLE_INSTANCE_SCOPE=simple-mania-editor-distribution"
+set "LUMACHART_AVALONIA_WORKSPACE_ROOT="
+set "LUMACHART_AVALONIA_ALLOW_MULTIPLE_INSTANCES="
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0app\Initialize-Distribution.ps1"
+if errorlevel 1 (
+  echo Could not initialize the editor's local data folder.
+  pause
+  exit /b 1
+)
+if "%~1"=="--smoke-test" (
+  "%~dp0app\SimpleManiaEditor.exe" --smoke-test
+  exit /b
+)
+start "" "%~dp0app\SimpleManiaEditor.exe" %*
+'@.Replace("`n", "`r`n"), [Text.ASCIIEncoding]::new())
+    [IO.File]::WriteAllText((Join-Path $app 'Initialize-Distribution.ps1'), @'
+$ErrorActionPreference = 'Stop'
+$profileRoot = $env:LUMACHART_AVALONIA_LOCAL_DATA_ROOT
+if ([string]::IsNullOrWhiteSpace($profileRoot)) { throw 'Missing distribution profile root.' }
+[IO.Directory]::CreateDirectory($profileRoot) | Out-Null
+$preferences = Join-Path $profileRoot 'workspace.json'
+if (-not (Test-Path -LiteralPath $preferences)) {
+    $defaults = @{ WorkspaceRoot = (Join-Path $profileRoot 'Maps') }
+    # FileMode.CreateNew never overwrites a simultaneous first launch or the
+    # mapper's saved workspace choice. JSON encoding also handles Unicode paths.
+    try {
+        $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($defaults | ConvertTo-Json))
+        $file = [IO.File]::Open($preferences, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $file.Write($bytes, 0, $bytes.Length); $file.Flush() } finally { $file.Dispose() }
+    } catch [IO.IOException] {
+        if (-not (Test-Path -LiteralPath $preferences)) { throw }
+    }
+}
+'@, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $destination 'README.md'), @"
+# SimpleManiaEditor $version · Windows x64 分发包
+
+1. 将 ZIP **完整解压**到一个文件夹。
+2. 双击根目录 **Start-Editor.cmd** 启动。
+
+包内自带编辑器和官方 osu!mania 试玩所需的 .NET 运行时；无需安装 Python、Node.js、.NET SDK 或另一个 osu! 客户端。请保留整个 app 文件夹，不要只取出其中的 exe。
+
+推荐 Windows 10/11 64 位。首次官方试玩会初始化资源，可能需要等待。
+
+快捷操作：Space 播放/暂停，F5 从当前位置试玩，试玩 Shift 暂停、Esc 返回；Ctrl+滚轮调网格、Shift+滚轮调倍速、Alt+滚轮缩放。更多功能见 FEATURES.md。
+
+分发包不含制作者的谱面、音乐、皮肤、个人设置、工作缓存或测试素材。随官方程序提供的默认界面/皮肤素材属于程序资源。
+
+启动入口使用独立的本机配置目录：%LOCALAPPDATA%\SimpleManiaEditor\Distribution，初始谱面目录为其中的 Maps；可在曲库中更改创作目录。设置、备份、缓存和自行导入的皮肤在运行后生成，不在此原始分发包内，也不继承开发体验版 Preview 的编辑会话。
+
+升级时完整解压新包，再使用同一启动入口；本机配置和创作文件保留。转发时使用提供的原始 ZIP，避免把运行后的个人资料重新打包。
+
+第三方许可与版权说明保留在 app/LICENSE、app/THIRD-PARTY-NOTICES.md、app/licenses 及 app/osu-host/licenses 中；打包不改变各组件的原有许可条件。
+"@, [Text.UTF8Encoding]::new($false))
+    # Validate before running or archiving: neither source directory nor an
+    # already-used installation is a permissible distribution input.
+    $files = @(Get-ChildItem -LiteralPath $destination -File -Recurse)
+    $forbiddenExtensions = @('.osu', '.osz', '.mc', '.mcz', '.osk', '.mp3', '.wav', '.ogg', '.flac', '.db', '.realm', '.cfg', '.log', '.pdb')
+    $records = @()
+    foreach ($file in $files) {
+        $relative = [IO.Path]::GetRelativePath($destination, $file.FullName).Replace('\', '/')
+        if ($file.Extension.ToLowerInvariant() -in $forbiddenExtensions -or
+            $relative -match '(?i)(^|/)(data|cache|backups?|logs?|skins?|songs|editing cache|lumaChart workspace|examples|performance)(/|$)') {
+            throw "Personal/test data forbidden in distribution: $relative"
+        }
+        if ($file.Extension -eq '.json' -and $file.Name -notmatch '(?i)\.(deps|runtimeconfig)\.json$') {
+            throw "Unexpected settings/JSON file: $relative"
+        }
+        $records += [pscustomobject]@{ Path = $relative; Bytes = $file.Length; Sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    $manifest = [pscustomobject]@{ Product = 'SimpleManiaEditor'; Version = $version; Runtime = 'Self-contained win-x64'; EntryPoint = 'Start-Editor.cmd'; UserDataIncluded = $false; Files = $records }
+    [IO.File]::WriteAllText((Join-Path $destination 'PACKAGE-MANIFEST.json'), ($manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+    $stdout = Join-Path $stage 'smoke.stdout.txt'; $stderr = Join-Path $stage 'smoke.stderr.txt'
+    $smoke = Start-Process -FilePath (Join-Path $app 'SimpleManiaEditor.exe') -ArgumentList '--smoke-test' -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    Get-Content -LiteralPath $stdout
+    Get-Content -LiteralPath $stderr
+    if ($smoke.ExitCode -ne 0) { throw 'Distribution runtime verification failed.' }
+    Compress-Archive -LiteralPath $destination -DestinationPath $zipPath
+    Get-FileHash -LiteralPath $zipPath -Algorithm SHA256
+    Write-Output "PASS clean distribution: $($files.Count) files, no personal maps/skins/settings; $zipPath"
+}
+finally { Pop-Location }
