@@ -134,6 +134,10 @@ public static class WindowsProEditorCommand
         if (group is < 0 or > ushort.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(group));
 
+        var replacedIds = replacedNoteId.HasValue
+            ? CenterSymmetryService.ExpandDeletion(session, [replacedNoteId.Value], symmetry)
+            : new HashSet<Guid>();
+
         var start = ResolveBeat(session, firstBeat, placementPolicy);
         BeatPosition? end = endBeat.HasValue
             ? ResolveBeat(session, endBeat.Value, placementPolicy)
@@ -142,7 +146,7 @@ public static class WindowsProEditorCommand
         if (end.HasValue && end.Value.CompareTo(start) <= 0)
             throw new ArgumentException("LN End Beat 必须晚于 Beat。", nameof(endBeat));
         if (session.Document.Notes.Any(note =>
-                note.Id != replacedNoteId &&
+                !replacedIds.Contains(note.Id) &&
                 ProEditorWorkspaceGeometry.GetColumn(note) == workspaceColumn &&
                 Math.Abs(note.Beat.Value - start.Value) <= BeatEpsilon))
             return null;
@@ -155,10 +159,10 @@ public static class WindowsProEditorCommand
         ProEditorWorkspaceGeometry.ApplyColumn(note, workspaceColumn, session.Document.KeyCount);
         var companion = symmetry == null ? null : CenterSymmetryService.CreateCompanion(note, symmetry, session.Document.KeyCount);
         if (companion != null && !CenterSymmetryService.CanAdd(session, companion,
-                session.Document.Notes.Where(n => n.Id != replacedNoteId).Append(note))) companion = null;
+                session.Document.Notes.Where(n => !replacedIds.Contains(n.Id)).Append(note))) companion = null;
         session.Mutate(document =>
         {
-            if (replacedNoteId.HasValue) document.Notes.RemoveAll(n => n.Id == replacedNoteId);
+            document.Notes.RemoveAll(n => replacedIds.Contains(n.Id));
             document.Notes.Add(note);
             if (companion != null) document.Notes.Add(companion);
         });

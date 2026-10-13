@@ -327,6 +327,7 @@ public sealed partial class TimelineSurface : Control
     private int placementLane = NoWorkspaceColumn;
     private BeatPosition placementStartBeat;
     private Guid? placementReplacedNoteId;
+    private Guid? placementReplacedCompanionId;
     private long placementStartChangeSerial;
     private Point? placementHoverPoint;
     private BeatPosition placementCurrentBeat;
@@ -339,6 +340,9 @@ public sealed partial class TimelineSurface : Control
     private TimelineTool tool = TimelineTool.Select;
     public EditorInteractionProfile InteractionProfile { get; set; } = EditorInteractionProfile.OsuMania;
     public bool ReverseTimeWheel { get; set; } = true;
+    // A synchronized track displays its own Timing, but navigation belongs to
+    // the main song grid. Never snap in the projected track and convert back.
+    public TimelineSurface? SynchronizedNavigationSource { get; set; }
     public EditorNoteStyle NoteStyle { get; set; } = EditorNoteStyle.Osu;
     public const double MinimumZoom = 12;
     public const double MaximumZoom = 4480;
@@ -1669,6 +1673,11 @@ public sealed partial class TimelineSurface : Control
                     if (placingNote)
                     {
                         placementReplacedNoteId = hit?.Id;
+                        placementReplacedCompanionId = null;
+                        if (hit != null && SymmetrySettings != null &&
+                            CenterSymmetryService.CreateCompanion(hit, SymmetrySettings, session.Document.KeyCount) is { } oldPair)
+                            placementReplacedCompanionId = session.Document.Notes.FirstOrDefault(n =>
+                                n.IsDraft == hit.IsDraft && CenterSymmetryService.SamePosition(n, oldPair))?.Id;
                         CaptureInteraction(eventArgs.Pointer, MouseButton.Left, point);
                     }
                 }
@@ -2272,6 +2281,11 @@ public sealed partial class TimelineSurface : Control
     private void HandleWheel(PointerWheelEventArgs eventArgs)
     {
         if (session == null) return;
+        if (SynchronizedNavigationSource is { } main && !ReferenceEquals(main, this))
+        {
+            main.HandleCompanionWheel(eventArgs);
+            return;
+        }
         Performance.MarkInput();
         if (InteractionProfile == EditorInteractionProfile.OsuMania && eventArgs.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
@@ -2677,6 +2691,7 @@ public sealed partial class TimelineSurface : Control
         var expectedSerial = placementStartChangeSerial;
         placingNote = false;
         placementReplacedNoteId = null;
+        placementReplacedCompanionId = null;
         placementLane = NoWorkspaceColumn;
         ReleaseInteractionCapture();
         if (!CanBeginNoteEdit("放置"))
@@ -2734,6 +2749,7 @@ public sealed partial class TimelineSurface : Control
         }
         placingNote = true;
         placementReplacedNoteId = null;
+        placementReplacedCompanionId = null;
         placementStartChangeSerial = session.ChangeSerial;
         placementLane = lane;
         placementStartBeat = beat;
@@ -3437,6 +3453,7 @@ public sealed partial class TimelineSurface : Control
         marqueeCandidates.Clear();
         placingNote = false;
         placementReplacedNoteId = null;
+        placementReplacedCompanionId = null;
         placementLane = NoWorkspaceColumn;
         placementStartBeat = BeatPosition.Zero;
         placementCurrentBeat = BeatPosition.Zero;
@@ -3925,7 +3942,7 @@ public sealed partial class TimelineSurface : Control
         {
             if (hiddenGroups.Contains(note.Group)) continue;
             if (erasingStroke && erasedNoteIds.Contains(note.Id)) continue;
-            if (placingNote && note.Id == placementReplacedNoteId) continue;
+            if (placingNote && (note.Id == placementReplacedNoteId || note.Id == placementReplacedCompanionId)) continue;
             // The resizing LN is drawn once from the pure preview state below.
             // Keeping the document copy here would leave a misleading old tail
             // visible while shortening or converting the LN to a Tap.

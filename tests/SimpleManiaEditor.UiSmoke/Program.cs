@@ -54,7 +54,7 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
         if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
-        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
+        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" && args[0] != "--regression-030" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
         {
@@ -64,6 +64,17 @@ internal static class Program
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
+            if (args.Length > 0 && args[0] == "--regression-030")
+            {
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                Regression030Specs.RunAudio(root);
+                DrawToolSpecs.Run();
+                SymmetryUiSpecs.RunPointer(screenshotRoot);
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var regressionWindow = new MainWindow([]) { Width = 1920, Height = 1080 }; regressionWindow.Show(); Pump(500);
+                Regression030Specs.RunEditor(regressionWindow);
+                regressionWindow.Close(); Pump(50); return 0;
+            }
             if (args.Length > 0 && args[0] == "--library-028")
             {
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
@@ -421,6 +432,8 @@ internal static class Program
         TimelineSettings027Specs.Run(window, screenshots);
         LibraryDisplay028Specs.Run(window, screenshots);
         Repository029Specs.Run(window);
+        Regression030Specs.RunAudio(Path.GetDirectoryName(screenshots)!);
+        Regression030Specs.RunEditor(window);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

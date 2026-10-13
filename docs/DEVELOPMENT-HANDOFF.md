@@ -1,3 +1,7 @@
+## 0.1.30 continuous rate and shared navigation
+
+Engine rate prep targets a future queued tail; ClockPlaybackRate/Position model the remaining old queued segment before the new rate. Main frame uses pump.PlaybackRate. Native PCM clear must use typed writes (WaveBuffer float[] view may have byte[] runtime type). Sync track wheel forwards to main, while note snapping remains in the track Timing. Source replacement expands original exact symmetry pair before adding new reflected notes. --regression-030 isolates these checks; full suite includes them.
+
 ## 0.1.29 public repository
 
 https://github.com/Ist1na07/SimpleManiaEditor · main. Curves remain .28; double-click library and GitHub releases/branding added. Release packaging and tests use SDK 10. Original source copyright retained with Ist1na in root and src LICENSE.

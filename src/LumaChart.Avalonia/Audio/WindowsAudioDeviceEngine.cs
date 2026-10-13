@@ -19,6 +19,7 @@ internal interface IWindowsAudioDeviceEngine : IDisposable
     TimeSpan Duration { get; }
     double OutputLatencyMilliseconds { get; }
     double PlaybackRate { get; set; }
+    double ClockPlaybackRate => PlaybackRate;
     bool PreservePitch { get; set; }
     float Volume { get; set; }
     WindowsAudioDeviceDiagnostics Diagnostics => default;
@@ -81,6 +82,10 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     private VolumeSampleProvider? localVolumeProvider;
     private volatile QueuedOverlayMixerSampleProvider? outputMixer;
     private double playbackRate = 1;
+    private bool continuousRateClock;
+    private double queuedPlaybackRate;
+    private long queuedPlaybackTicks;
+    private readonly Func<string, WaveStream> openDecoder;
     private bool preservePitch;
     private float volume = 1;
     private readonly Stopwatch positionClock = new();
@@ -123,10 +128,12 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     // elapsed time, which is what made a rate change flash the playhead ahead.
     private long clockVersion;
     private long transitionPositionTicks;
+    private double transitionPlaybackRate = 1;
     private int clockTransitionDepth;
 
     public WindowsAudioDeviceEngine(
-        double requestedOutputLatencyMilliseconds = DefaultRequestedOutputLatencyMilliseconds)
+        double requestedOutputLatencyMilliseconds = DefaultRequestedOutputLatencyMilliseconds,
+        Func<string, WaveStream>? openDecoder = null)
     {
         if (!double.IsFinite(requestedOutputLatencyMilliseconds) ||
             requestedOutputLatencyMilliseconds < MinimumRequestedOutputLatencyMilliseconds ||
@@ -135,6 +142,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 nameof(requestedOutputLatencyMilliseconds),
                 AvaloniaLocalizationCatalog.Format("输出延迟必须位于 {0:0} 到 {1:0} 毫秒之间。", MinimumRequestedOutputLatencyMilliseconds, MaximumRequestedOutputLatencyMilliseconds));
         this.requestedOutputLatencyMilliseconds = requestedOutputLatencyMilliseconds;
+        this.openDecoder = openDecoder ?? AudioDecoder.OpenWaveStream;
         measuredOutputLatencyMilliseconds = requestedOutputLatencyMilliseconds;
         endpointNotifications = new OutputDeviceNotificationClient(this);
         // The Windows check is load bearing, not a tidy-up of the catch below.
@@ -204,19 +212,11 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         ticks = Interlocked.Read(ref positionAnchorTicks);
         if (positionClock.IsRunning)
         {
-            long audibleTicks;
-            if (TryGetCachedAudioClockElapsedTicks(out var deviceTicks))
-            {
-                audibleTicks = deviceTicks;
-            }
-            else
-            {
-                var queuedTicks = (long)(
-                    Volatile.Read(ref measuredOutputLatencyMilliseconds) *
-                    TimeSpan.TicksPerMillisecond);
-                audibleTicks = Math.Max(0, positionClock.Elapsed.Ticks - queuedTicks);
-            }
-            ticks += (long)(audibleTicks * playbackRate);
+            var audibleTicks = ClockElapsedTicks();
+            // The endpoint still contains old-tempo samples after an in-stream
+            // change. Follow those first, then the newly installed tempo.
+            var queued = continuousRateClock ? Math.Min(audibleTicks, queuedPlaybackTicks) : 0;
+            ticks += (long)(queued * queuedPlaybackRate + (audibleTicks - queued) * playbackRate);
         }
 
         // Interlocked.Read is a full fence, so none of the reads above can
@@ -233,7 +233,11 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     private void BeginClockTransition(long positionTicks)
     {
         Interlocked.Exchange(ref transitionPositionTicks, positionTicks);
-        if (clockTransitionDepth++ == 0) Interlocked.Increment(ref clockVersion);
+        if (clockTransitionDepth++ == 0)
+        {
+            Volatile.Write(ref transitionPlaybackRate, ClockPlaybackRate);
+            Interlocked.Increment(ref clockVersion);
+        }
     }
 
     private void EndClockTransition()
@@ -253,11 +257,34 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         set => RunSerialized(() => SetPlaybackRateLocked(value), throwIfDisposed: false);
     }
 
+    public double ClockPlaybackRate
+    {
+        get
+        {
+            var version = Interlocked.Read(ref clockVersion);
+            if ((version & 1) != 0) return Volatile.Read(ref transitionPlaybackRate);
+            var rate = continuousRateClock && positionClock.IsRunning &&
+                ClockElapsedTicks() < queuedPlaybackTicks ? queuedPlaybackRate : playbackRate;
+            return Interlocked.Read(ref clockVersion) == version ? rate : Volatile.Read(ref transitionPlaybackRate);
+        }
+    }
+
+    private long ClockElapsedTicks()
+    {
+        if (TryGetCachedAudioClockElapsedTicks(out var ticks)) return ticks;
+        return Math.Max(0, positionClock.Elapsed.Ticks - (continuousRateClock ? 0 :
+            (long)(Volatile.Read(ref measuredOutputLatencyMilliseconds) * TimeSpan.TicksPerMillisecond)));
+    }
+
     private void SetPlaybackRateLocked(double value)
     {
         var boundedRate = WindowsPitchPreservingTimeStretchPolicy.ResolveSoundTouchTempo(value);
         if (Math.Abs(boundedRate - playbackRate) < .000001) return;
         if (source == null) { playbackRate = boundedRate; return; }
+        // Rapid changes must not treat a still-audible older queued segment as
+        // if it already had the newly installed processor's tempo.
+        while (IsPlaying && continuousRateClock && ClockElapsedTicks() < queuedPlaybackTicks)
+        { ThrowIfDisposed(); Thread.Sleep(1); }
         var position = TimeSpan.FromTicks(ReadPositionTicks());
         // A processor can contain old-tempo output and is being read on another
         // thread. Prepare the new tempo separately and swap at a read boundary.
@@ -307,7 +334,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     public void Load(string path) => RunSerialized(() =>
     {
         DisposePlayback();
-        var opened = AudioDecoder.OpenWaveStream(path);
+        var opened = openDecoder(path);
         source = opened;
         loadedSourcePath = Path.GetFullPath(path);
         Interlocked.Exchange(ref durationTicks, Math.Max(0, opened.TotalTime.Ticks));
@@ -394,7 +421,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
 
     private void SeekPrepared(TimeSpan target, Action? validateRequest, double? newPlaybackRate = null)
     {
-        var preparedSource = AudioDecoder.OpenWaveStream(loadedSourcePath!);
+        var preparedSource = openDecoder(loadedSourcePath!);
         PreparedMusicPipeline? pipeline = null;
         var committed = false;
         var oldSource = source!;
@@ -403,10 +430,35 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         {
             // Slow DSP priming runs on an independent decoder while the render
             // callback continues consuming the old pipeline without waiting.
-            pipeline = PreparedMusicPipeline.Build(preparedSource, target, newPlaybackRate ?? playbackRate, preservePitch, volume, ThrowIfDisposed);
+            var continuousRateChange = newPlaybackRate.HasValue && IsPlaying;
+            var previousRate = playbackRate;
+            if (continuousRateChange)
+            {
+                // Prepare ahead of the queued tail, while old playback keeps
+                // running. Decoder-open time is excluded from the old anchor.
+                var leadMilliseconds = 100d;
+                for (var attempt = 0; ; attempt++)
+                {
+                    ThrowIfDisposed();
+                    target = TimeSpan.FromTicks(Math.Min(durationTicks, ReadPositionTicks() +
+                        (long)(leadMilliseconds * previousRate * TimeSpan.TicksPerMillisecond)));
+                    var started = Stopwatch.GetTimestamp();
+                    pipeline = PreparedMusicPipeline.Build(preparedSource, target, newPlaybackRate!.Value, preservePitch, volume, ThrowIfDisposed);
+                    var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                    if (ReadPositionTicks() + QueuedSourceTicks(previousRate) <= target.Ticks + TimeSpan.TicksPerMillisecond ||
+                        target.Ticks == durationTicks) break;
+                    pipeline.Dispose(); pipeline = null;
+                    if (attempt >= 2) throw new InvalidOperationException("倍速准备超时，原播放继续；请稍后重试。");
+                    leadMilliseconds = Math.Max(leadMilliseconds * 2, elapsed * 2 + measuredOutputLatencyMilliseconds + 20);
+                }
+                while (IsPlaying && ReadPositionTicks() + QueuedSourceTicks(previousRate) < target.Ticks)
+                { ThrowIfDisposed(); Thread.Sleep(1); }
+            }
+            else pipeline = PreparedMusicPipeline.Build(preparedSource, target, newPlaybackRate ?? playbackRate, preservePitch, volume, ThrowIfDisposed);
             validateRequest?.Invoke();
             var resume = IsPlaying;
-            BeginClockTransition(target.Ticks);
+            var audibleAnchor = continuousRateChange && resume ? ReadPositionTicks() : target.Ticks;
+            BeginClockTransition(audibleAnchor);
             try
             {
                 transportEnvelope!.ChangeSource(() =>
@@ -416,8 +468,15 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                     if (newPlaybackRate.HasValue) playbackRate = newPlaybackRate.Value;
                     soundTouchProviders = pipeline.Stages;
                     localVolumeProvider = pipeline.Volume;
-                    Interlocked.Exchange(ref positionAnchorTicks, target.Ticks);
-                    if (resume) { ArmAudioClock(); positionClock.Restart(); }
+                    Interlocked.Exchange(ref positionAnchorTicks, audibleAnchor);
+                    if (resume)
+                    {
+                        ArmAudioClock(continuousRateChange);
+                        queuedPlaybackRate = previousRate;
+                        queuedPlaybackTicks = continuousRateChange
+                            ? Math.Max(0, (long)((target.Ticks - audibleAnchor) / previousRate)) : 0;
+                        positionClock.Restart();
+                    }
                     else positionClock.Reset();
                     committed = true;
                 });
@@ -801,8 +860,13 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         }
     }
 
-    private void ArmAudioClock()
+    private long QueuedSourceTicks(double rate) => (long)(Math.Clamp(
+        Volatile.Read(ref measuredOutputLatencyMilliseconds), 0, 250) * rate * TimeSpan.TicksPerMillisecond);
+
+    private void ArmAudioClock(bool continuousPlayback = false)
     {
+        continuousRateClock = continuousPlayback;
+        queuedPlaybackTicks = 0;
         Volatile.Write(ref audioClockArmed, false);
         lock (audioClockGate)
         {
@@ -816,7 +880,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 if (frequency == 0) return;
                 audioClockAnchor = position;
                 audioClockFrequency = frequency;
-                Interlocked.Exchange(ref audioClockHasAdvanced, 0);
+                Interlocked.Exchange(ref audioClockHasAdvanced, continuousPlayback ? 1 : 0);
                 Interlocked.Exchange(ref audioClockArmTimestamp, Stopwatch.GetTimestamp());
                 Volatile.Write(
                     ref lastAudioClockProbe,
@@ -1222,7 +1286,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             if (musicRead <= 0 && !musicEnded && !musicSourceEnded())
                 onTransientMusicZero?.Invoke();
             if (musicRead <= 0 && (musicEnded || musicSourceEnded())) Volatile.Write(ref musicEnded, true);
-            if (musicRead < count) Array.Clear(buffer, offset + musicRead, count - musicRead);
+            if (musicRead < count) AudioSampleBuffer.Clear(buffer, offset + musicRead, count - musicRead);
             SanitizeMusic(buffer, offset, Math.Max(0, musicRead));
             while (pending.TryDequeue(out var provider)) active.Add(provider);
             if (scratch.Length < count) scratch = new float[count];
@@ -1261,7 +1325,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             // zero. Emit one explicit silent device period before EOF so the
             // endpoint cannot keep replaying its previous short buffer.
             terminalSilenceReturned = true;
-            Array.Clear(buffer, offset, count);
+            AudioSampleBuffer.Clear(buffer, offset, count);
             return count;
         }
 
@@ -1316,7 +1380,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             if (sourceBuffer.Length < sourceCount) sourceBuffer = new float[sourceCount];
             var readFrames = source.Read(sourceBuffer, 0, sourceCount) / sourceChannels;
             var samples = readFrames * outputChannels;
-            Array.Clear(buffer, offset, samples);
+            AudioSampleBuffer.Clear(buffer, offset, samples);
             for (var frame = 0; frame < readFrames; frame++)
             {
                 var input = frame * sourceChannels;

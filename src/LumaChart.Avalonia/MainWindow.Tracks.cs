@@ -415,6 +415,7 @@ public sealed partial class MainWindow
                     surface.SnapAllNotes = timeline.SnapAllNotes;
                     surface.HideSvEditing = osuMinimalMode;
                     surface.Session!.SnapDivision = tab.Session.SnapDivision;
+                    surface.SynchronizedNavigationSource = view.Track.SyncScroll ? timeline : null;
                     if (anchor.HasValue && surface.Bounds.Height > 0 && surface.TranslatePoint(new Point(), trackPanels) is { } origin)
                         surface.SetViewportAnchor((anchor.Value.Y - origin.Y) / surface.Bounds.Height);
                     if (!view.Track.SyncScroll)

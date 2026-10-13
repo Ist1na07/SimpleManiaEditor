@@ -38,11 +38,13 @@ internal static class Repository029Specs
         header.RaiseEvent(new TappedEventArgs(InputElement.DoubleTappedEvent, null!) { Source = header });
         Require(opened.Count == 2 && card.CaptureDiagnostics().IsExpanded, "multi-difficulty folder must show choices instead of guessing");
 
+        var currentVersion = Version.Parse(SimpleManiaProduct.Version);
+        var nextVersion = $"{currentVersion.Major}.{currentVersion.Minor}.{currentVersion.Build + 1}";
         using var release = JsonDocument.Parse("""
             {"tag_name":"v0.1.30","draft":false,"prerelease":false,"body":"Release notes","assets":[
                 {"name":"SimpleManiaEditor-0.1.30-win-x64.zip","browser_download_url":"https://evil.example/fake.zip"},
                 {"name":"SimpleManiaEditor-0.1.30-Distribution-win-x64.zip","browser_download_url":"https://github.com/Ist1na07/SimpleManiaEditor/releases/download/v0.1.30/SimpleManiaEditor-0.1.30-Distribution-win-x64.zip"}]}
-            """);
+            """.Replace("0.1.30", nextVersion));
         var update = GitHubReleaseUpdates.Parse(release.RootElement);
         Require(update.Presentation.Title == "发现新版本" && update.Download!.Host == "github.com" && update.Presentation.Notice.Contains("Release notes"), "new release/download validation failed");
         using var current = JsonDocument.Parse($$"""{"tag_name":"v{{SimpleManiaProduct.Version}}","assets":[]} """);

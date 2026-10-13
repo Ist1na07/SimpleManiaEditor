@@ -2,12 +2,13 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前为 0.1.29 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前为 0.1.30 Windows 体验版，编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
 [下载 Windows 分发包](https://github.com/Ist1na07/SimpleManiaEditor/releases) · [问题反馈](https://github.com/Ist1na07/SimpleManiaEditor/issues)
 
-下载后完整解压，双击包体根目录 `Start-Editor.cmd`。创作谱面默认保存在包旁 `Maps`，应用设置保存在独立用户目录。开发目录中关闭旧窗口后双击 `Start-Editor.cmd` 启动，`Start-Demo.cmd` 保留旧版 7K 演示入口。干净分发包位于 `dist/SimpleManiaEditor-0.1.29-Distribution/`，包含编辑器和官方游戏宿主各自的运行时。
+下载后完整解压，双击包体根目录 `Start-Editor.cmd`。创作谱面默认保存在包旁 `Maps`，应用设置保存在独立用户目录。开发目录中关闭旧窗口后双击 `Start-Editor.cmd` 启动，`Start-Demo.cmd` 保留旧版 7K 演示入口。干净分发包位于 `dist/SimpleManiaEditor-0.1.30-Distribution/`，包含编辑器和官方游戏宿主各自的运行时。
 
+- [0.1.30 切速连续性与同步编辑](docs/RELEASE-0.1.30.md)：实际倍速时钟、缓冲切换、中心对称覆盖和主轨网格导航。
 - [0.1.29 曲库快捷编辑与 GitHub 更新](docs/RELEASE-0.1.29.md)：双击进入编辑、项目关于/反馈和 Release 检查。
 - [0.1.28 小屏界面、曲库与文件隔离](docs/RELEASE-0.1.28.md)：自动/手动 UI 大小、包体旁创作目录、多目录只读曲库与原件保护。
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。

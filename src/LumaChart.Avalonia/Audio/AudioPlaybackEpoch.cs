@@ -80,7 +80,7 @@ internal sealed class EpochGuardSampleProvider : ISampleProvider
 
         if (!token.IsCurrent)
         {
-            Array.Clear(buffer, offset, count);
+            AudioSampleBuffer.Clear(buffer, offset, count);
             return 0;
         }
 
@@ -89,7 +89,7 @@ internal sealed class EpochGuardSampleProvider : ISampleProvider
             throw new InvalidOperationException("The sample provider returned an invalid sample count.");
         if (token.IsCurrent) return read;
 
-        Array.Clear(buffer, offset, count);
+        AudioSampleBuffer.Clear(buffer, offset, count);
         return 0;
     }
 }

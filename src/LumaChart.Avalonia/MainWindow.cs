@@ -7876,6 +7876,7 @@ public sealed partial class MainWindow : PlatformWindow
         SyncFixedGridPicker(division);
         RefreshQuickValuesPaletteValues();
         timeline.InvalidateVisual();
+        SyncTrackViewports();
         viewModel.SetStatus($"当前网格 {GridLabel(division)}");
         MarkEditorViewSettingsDirty();
     }
@@ -15764,14 +15765,14 @@ public sealed partial class MainWindow : PlatformWindow
         }
         if (audioPositionPointerDown) return;
 
-        var visualPosition = editorVisualClock.Sample(pump.PositionMilliseconds, audioTransport.PlaybackRate,
+        var visualPosition = editorVisualClock.Sample(pump.PositionMilliseconds, pump.PlaybackRate,
             presentationTimeMilliseconds ?? editorVisualTime.Elapsed.TotalMilliseconds);
         if (pump.Output == WindowsKeySoundPlaybackOutput.SharedMusicClock)
-            visualPosition = EditorAudioVisualCalibration.ChartTime(visualPosition, audioTransport.PlaybackRate, editorAudioVisualOffsetMilliseconds);
+            visualPosition = EditorAudioVisualCalibration.ChartTime(visualPosition, pump.PlaybackRate, editorAudioVisualOffsetMilliseconds);
         var beat = timingMap.MillisecondsToBeat(visualPosition, 1_000_000).Value;
         SetProgrammaticPlaybackBeat(beat);
         lastCalibratedCursorMilliseconds = pump.Output == WindowsKeySoundPlaybackOutput.SharedMusicClock && editorAudioVisualOffsetMilliseconds != 0 ? visualPosition : null;
-        lastCalibratedCursorRate = audioTransport.PlaybackRate;
+        lastCalibratedCursorRate = pump.PlaybackRate;
         lastCalibratedCursorOffsetMilliseconds = editorAudioVisualOffsetMilliseconds;
         lastCalibratedCursorTabId = tab.Id;
         if (updatePositionUi) UpdatePlaybackPositionUi(beat);

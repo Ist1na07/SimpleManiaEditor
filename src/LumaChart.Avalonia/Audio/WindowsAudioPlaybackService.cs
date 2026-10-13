@@ -138,7 +138,8 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
                 return current with
                 {
                     Position = activeEngine.Position,
-                    Duration = activeEngine.Duration
+                    Duration = activeEngine.Duration,
+                    PlaybackRate = activeEngine.ClockPlaybackRate
                 };
             }
             catch (Exception exception) when (!IsCriticalException(exception))

@@ -156,6 +156,9 @@ internal static class OsuSkinPlaytestSpecs
         Require(game.Diagnostics.Playing && !Field<Border>(game,"gameChrome").IsVisible && !Field<Border>(game,"pauseOverlay").IsVisible,"gameplay chrome was not hidden");
         // Cold skin loading may run beyond the first note on a busy machine.
         // Reset judgements before moving the test clock back to that note.
+        // Hold the injected clock fixed while issuing this exact-time key hit;
+        // thread scheduling must not move it outside the judgement window.
+        Field<System.Diagnostics.Stopwatch>(game,"silentClock").Stop();
         Field<PlaytestSession>(game,"session").Prepare();
         typeof(PlaytestWindow).GetField("silentAnchorMilliseconds",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(game,900d - Field<System.Diagnostics.Stopwatch>(game,"silentClock").Elapsed.TotalMilliseconds);
         typeof(PlaytestWindow).GetMethod("RunFrame",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(game,null); Program.Pump(20);

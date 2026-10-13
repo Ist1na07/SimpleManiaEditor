@@ -1396,7 +1396,7 @@ public sealed class WindowsKeySoundService : IDisposable, IAsyncDisposable
         public int Read(float[] buffer, int offset, int count)
         {
             if (completed) return 0;
-            Array.Clear(buffer, offset, count);
+            AudioSampleBuffer.Clear(buffer, offset, count);
             while (pending.TryDequeue(out var voice))
             {
                 Interlocked.Decrement(ref pendingCount);
