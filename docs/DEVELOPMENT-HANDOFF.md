@@ -1,4 +1,14 @@
-# 0.1.26 当前基线
+# 0.1.27 当前基线
+
+本轮定位到SoundTouch长粒度的局部时间扭曲，并非MP3播放器/频谱使用不同decoder。用户原曲只读207.94ms首声，旧.1x119.06ms；新原PCMquiet envelope保护输出207.53ms，从100ms seek约207.76ms。SoundTouch24/28/12 full search；quick search及极短grain虽快但非谐波音色回归失败。慢倍率原PCM前置半seek窗口14ms，并以原样本数/倍率限制总时长。该14ms是本DSP搜索策略，不是声卡/谱面/检测器的全局延迟。
+
+SourceSilenceGuard只限制原PCM<-60dB区域，1ms桶4096环形记录，双声道同gain；原PCM始终独立于前置静音，避免时间基准被补偿污染。它不保证连续音乐内部所有瞬态逐采样定位。1x绕过stretch与guard。AudioVisualizationService改每声道FFT功率平均，防止反相抵消；首帧中心/音频范围保持原有定义。
+
+EventTimeRuler有音频时严格0..audioDuration，异步加载结束按(tab,source,duration)刷新；跨tab校验源路径，避免旧snapshot赋错时长。设置外观/快捷键是直接StackPanel，删除无用搜索自动展开逻辑和旧Expander测试。
+
+新增Audio027Specs：8倍率多段延迟脉冲、读块一致性、antiphase频谱；--audio-song-027只读用户样本首声/100ms seek/hash。Audio026Specs不再以同算法reference等同当成音质指标，增加非谐波四音频谱。TimelineSettings027Specs真实导入空谱音乐、全曲范围与直接设置分类。
+
+# 0.1.26 历史基线
 
 编辑保音高使用所有倍率单SoundTouchWaveProvider（100/28/20ms、高质量搜索），1x旁路；删除SMB多段和每段soft limiter。旧0.1x已知三音和弦实测带外能量约左43%/右76%，反映单正弦测试不足；新Audio026Specs覆盖10倍率mono/stereo、复杂扫频/非谐波/短噪声、同声道与静音声道、FFT、EOF、512/2048/8192块不变性，并逐样本对照未预热SoundTouch，确保没有因预热丢失开头。PrimedMusicSampleProvider保留20ms首块；NAudio WaveBuffer以byte[]重叠视图提供float[]，必须用Buffer.BlockCopy而非Array.Copy（真实device-path integration已复现并修复）。
 

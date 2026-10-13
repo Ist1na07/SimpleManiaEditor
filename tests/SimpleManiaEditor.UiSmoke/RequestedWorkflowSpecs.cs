@@ -48,7 +48,7 @@ internal static class RequestedWorkflowSpecs
         Require(model.ActiveTab!.Session.SnapDivision == 5, "manual quintuplet was overwritten by slider sync");
         slider.Value = 4; Require(model.ActiveTab.Session.SnapDivision == 6, "slider did not skip quintuplets");
         Field<ComboBox>(window, "fixedGridPicker").SelectedItem = 4;
-        var appearance = Find<Expander>(window, "Settings.Appearance");
+        var appearance = Find<StackPanel>(window, "Settings.Appearance");
         Require(Find<Slider>(window, "Settings.UiScale").GetLogicalAncestors().Contains(appearance), "display scale is outside appearance");
 
         var session = model.ActiveTab.Session; var original = session.Document.Clone();

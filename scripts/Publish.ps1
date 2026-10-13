@@ -30,6 +30,7 @@ try {
     if (Test-Path -LiteralPath $backlogNotes) {
         Copy-Item -LiteralPath $backlogNotes -Destination (Join-Path $publishRoot 'BACKLOG.md')
     }
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/FEATURES.md') -Destination (Join-Path $publishRoot 'FEATURES.md')
     $performanceNotes = Join-Path $taskRoot 'docs/performance'
     if (Test-Path -LiteralPath $performanceNotes) {
         Copy-Item -LiteralPath $performanceNotes -Destination $publishRoot -Recurse -Force

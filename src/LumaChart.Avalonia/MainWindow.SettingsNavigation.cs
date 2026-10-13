@@ -40,7 +40,6 @@ public sealed partial class MainWindow
         Grid.SetRow(scroll, 2); root.Children.Add(scroll);
         var buttons = new List<Button>();
         var offsets = new Dictionary<int, Vector>();
-        var expandedBeforeSearch = new Dictionary<Expander, bool>();
         var active = 0;
         for (var index = 0; index < sections.Length; index++)
         {
@@ -92,14 +91,6 @@ public sealed partial class MainWindow
                 content.Children[index].IsVisible = visible;
                 if (visible) count++;
                 buttons[index].Background = !searching && index == active ? AccentBrush : PanelBrush;
-                foreach (var expander in section.Content.GetLogicalDescendants().OfType<Expander>().Concat(section.Content is Expander self ? [self] : []))
-                {
-                    if (searching && visible)
-                    {
-                        expandedBeforeSearch.TryAdd(expander, expander.IsExpanded); expander.IsExpanded = true;
-                    }
-                    else if (expandedBeforeSearch.Remove(expander, out var previous)) expander.IsExpanded = previous;
-                }
             }
             empty.IsVisible = count == 0;
         }

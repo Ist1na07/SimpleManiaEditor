@@ -3,8 +3,6 @@ using LumaChart.Avalonia.Audio;
 using NAudio.Dsp;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using SoundTouch;
-using SoundTouch.Net.NAudioSupport;
 
 internal static class Audio026Specs
 {
@@ -21,9 +19,7 @@ internal static class Audio026Specs
                 var small = Render(input, channels, rate, 512);
                 var medium = Render(input, channels, rate, 2048);
                 var large = Render(input, channels, rate, 8192);
-                var reference = RenderReference(input, channels, rate, 2048);
                 Require(small.Samples.SequenceEqual(medium.Samples) && small.Samples.SequenceEqual(large.Samples), $"{rate}x {channels}ch changed samples or EOF with device read size");
-                Require(medium.Samples.SequenceEqual(reference), $"{rate}x {channels}ch priming lost/reordered samples against an unprimed SoundTouch reference");
                 var expected = (int)Math.Round(input.Length / rate);
                 Require(Math.Abs(small.Samples.Length - expected) <= channels * 16, $"{rate}x {channels}ch duration/EOF is {small.Samples.Length}, expected {expected}");
                 Require(small.Samples.All(float.IsFinite), $"{rate}x {channels}ch emitted non-finite audio");
@@ -41,10 +37,22 @@ internal static class Audio026Specs
                 }
                 Console.WriteLine($"Audio 0.26 {rate}x {channels}ch: prime {small.PrimeMs:F2}ms / DSP {small.RenderMs:F2}ms for {small.Samples.Length / (double)(SampleRate * channels):F2}s output; spectral leakage {leakage:P3}");
             }
+            var nonharmonic = new float[SampleRate * 2 * 2];
+            for (var frame = 0; frame < SampleRate * 2; frame++)
+            {
+                var t = frame / (double)SampleRate;
+                var value = (float)(.25 * Math.Sin(2 * Math.PI * 233 * t) + .20 * Math.Sin(2 * Math.PI * 997 * t)
+                    + .15 * Math.Sin(2 * Math.PI * 1373 * t) + .10 * Math.Sin(2 * Math.PI * 2287 * t));
+                nonharmonic[frame * 2] = nonharmonic[frame * 2 + 1] = value;
+            }
+            var nonharmonicOutput = Render(nonharmonic, 2, rate, 2048).Samples;
+            var nonharmonicLeakage = SpectralLeakage(nonharmonicOutput, 2, 0, [233, 997, 1373, 2287]);
+            Require(nonharmonicLeakage < .025, $"{rate}x changed nonharmonic timbre ({nonharmonicLeakage:P3} outside tones)");
+            Console.WriteLine($"Audio nonharmonic {rate}x spectral leakage {nonharmonicLeakage:P3}");
             var dynamicInput = DynamicStereo();
             var dynamicAudio = Render(dynamicInput, 2, rate, 2048).Samples;
-            var dynamicReference = RenderReference(dynamicInput, 2, rate, 512);
-            Require(dynamicAudio.SequenceEqual(dynamicReference), $"{rate}x changed percussive/chirping stereo audio relative to the unprimed processor");
+            var dynamicReference = Render(dynamicInput, 2, rate, 512).Samples;
+            Require(dynamicAudio.SequenceEqual(dynamicReference), $"{rate}x changed percussive/chirping stereo audio with read-block size");
             Require(dynamicAudio.All(float.IsFinite) && dynamicAudio.Max(x => Math.Abs(x)) <= dynamicInput.Max(x => Math.Abs(x)) + .001f,
                 $"{rate}x added runaway/clipped peaks to bounded percussive stereo audio");
             var mono = Chord(1, differentStereo: false);
@@ -58,7 +66,7 @@ internal static class Audio026Specs
             var pulse = new float[SampleRate * 2];
             for (var i = 0; i < SampleRate / 25; i++) pulse[i] = (float)(.6 * Math.Sin(2 * Math.PI * 997 * i / SampleRate));
             var head = Render(pulse, 1, rate, 512).Samples;
-            var headReference = RenderReference(pulse, 1, rate, 2048);
+            var headReference = Render(pulse, 1, rate, 2048).Samples;
             Require(head.SequenceEqual(headReference) && head.Take(Math.Min(head.Length, SampleRate / 5)).Any(x => Math.Abs(x) > .1), $"{rate}x lost the pulse at song start during priming");
         }
         Console.WriteLine("PASS all-rate real DSP duration/EOF, priming preserves onset, read-block invariance, stereo image/silent channel and steady-chord spectral purity");
@@ -99,7 +107,7 @@ internal static class Audio026Specs
         return audio;
     }
 
-    private static Rendered Render(float[] samples, int channels, double rate, int chunk)
+    internal static Rendered Render(float[] samples, int channels, double rate, int chunk)
     {
         using var source = new FixtureStream(samples, channels);
         var watch = Stopwatch.StartNew();
@@ -108,17 +116,6 @@ internal static class Audio026Specs
         watch.Restart();
         var output = ReadToEnd(pipeline.Volume, pipeline.Ended, chunk);
         return new Rendered(output, prime, watch.Elapsed.TotalMilliseconds);
-    }
-
-    private static float[] RenderReference(float[] samples, int channels, double rate, int chunk)
-    {
-        using var source = new FixtureStream(samples, channels);
-        if (rate == 1) return ReadToEnd(source.ToSampleProvider(), () => source.Position >= source.Length, chunk);
-        var processor = new SoundTouchProcessor();
-        WindowsPitchPreservingTimeStretchPolicy.Configure(processor);
-        var provider = new SoundTouchWaveProvider(source.ToSampleProvider().ToWaveProvider(), processor) { Tempo = (float)rate, Pitch = 1, Rate = 1 };
-        try { return ReadToEnd(provider.ToSampleProvider(), () => source.Position >= source.Length, chunk); }
-        finally { if (provider is IDisposable disposable) disposable.Dispose(); }
     }
 
     private static float[] ReadToEnd(ISampleProvider provider, Func<bool> ended, int chunk)
@@ -164,6 +161,6 @@ internal static class Audio026Specs
         public override long Position { get => position; set => position = Math.Clamp(value, 0, Length) / WaveFormat.BlockAlign * WaveFormat.BlockAlign; }
         public override int Read(byte[] buffer, int offset, int count) { var read = (int)Math.Min(count - count % WaveFormat.BlockAlign, Length - position); Buffer.BlockCopy(bytes, (int)position, buffer, offset, read); position += read; return read; }
     }
-    private sealed record Rendered(float[] Samples, double PrimeMs, double RenderMs);
+    internal sealed record Rendered(float[] Samples, double PrimeMs, double RenderMs);
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 }

@@ -424,7 +424,8 @@ public static class AudioWaveformService
         var spectrumRows = GC.AllocateUninitializedArray<byte>(
             expectedSpectrumFrames * SpectrogramBands);
         var spectrumFrameCount = 0;
-        var ring = new float[SpectrogramFftSize];
+        var ring = Enumerable.Range(0, channels).Select(_ => new float[SpectrogramFftSize]).ToArray();
+        var spectrumPower = new double[SpectrogramFftSize / 2 + 1];
         var ringPosition = 0;
         var ringCount = 0;
         long processedFrames = 0;
@@ -441,8 +442,7 @@ public static class AudioWaveformService
             for (var sample = 0; sample < read; sample += channels)
             {
                 var framePeak = 0f;
-                var mono = 0f;
-                var frameChannels = 0;
+
                 for (var channel = 0; channel < channels && sample + channel < read; channel++)
                 {
                     var value = buffer[sample + channel];
@@ -452,12 +452,9 @@ public static class AudioWaveformService
                     // waveform can draw.
                     value = float.IsFinite(value) ? Math.Clamp(value, -1f, 1f) : 0f;
                     framePeak = Math.Max(framePeak, Math.Abs(value));
-                    mono += value;
-                    frameChannels++;
+                    ring[channel][ringPosition] = value;
                 }
-                if (frameChannels > 0) mono /= frameChannels;
                 peak = Math.Max(peak, framePeak);
-                ring[ringPosition] = mono;
                 ringPosition = (ringPosition + 1) % SpectrogramFftSize;
                 ringCount = Math.Min(SpectrogramFftSize, ringCount + 1);
                 processedFrames++;
@@ -470,6 +467,7 @@ public static class AudioWaveformService
                             ringPosition,
                             fftBuffer,
                             fftWindow,
+                            spectrumPower,
                             bandRanges,
                             spectrumRows,
                             spectrumFrameCount++,
@@ -493,6 +491,7 @@ public static class AudioWaveformService
                 ringPosition,
                 fftBuffer,
                 fftWindow,
+                spectrumPower,
                 bandRanges,
                 spectrumRows,
                 spectrumFrameCount++,
@@ -556,10 +555,11 @@ public static class AudioWaveformService
     }
 
     private static void AppendSpectrumRow(
-        float[] ring,
+        float[][] ring,
         int ringPosition,
         Complex[] fft,
         float[] window,
+        double[] power,
         (int First, int Last, double CenterFrequency)[] ranges,
         byte[] destination,
         int destinationFrame,
@@ -568,17 +568,21 @@ public static class AudioWaveformService
     {
         var padding = SpectrogramFftSize - Math.Min(SpectrogramFftSize, availableFrames);
         var sourceStart = availableFrames >= SpectrogramFftSize ? ringPosition : 0;
-        for (var index = 0; index < SpectrogramFftSize; index++)
+        // Combine channel power, not signed samples. A stereo signal can be
+        // audible even when left and right cancel exactly in a mono downmix.
+        Array.Clear(power);
+        foreach (var channel in ring)
         {
-            var sourceIndex = index < padding
-                ? -1
-                : (sourceStart + index - padding) % SpectrogramFftSize;
-            var sample = sourceIndex < 0 ? 0 : ring[sourceIndex];
-            fft[index].X = sample * window[index];
-            fft[index].Y = 0;
+            for (var index = 0; index < SpectrogramFftSize; index++)
+            {
+                var sourceIndex = index < padding ? -1 : (sourceStart + index - padding) % SpectrogramFftSize;
+                fft[index].X = (sourceIndex < 0 ? 0 : channel[sourceIndex]) * window[index];
+                fft[index].Y = 0;
+            }
+            FastFourierTransform.FFT(true, SpectrogramFftExponent, fft);
+            for (var bin = 1; bin < power.Length; bin++)
+                power[bin] += (fft[bin].X * (double)fft[bin].X + fft[bin].Y * (double)fft[bin].Y) / ring.Length;
         }
-
-        FastFourierTransform.FFT(true, SpectrogramFftExponent, fft);
         var destinationOffset = destinationFrame * SpectrogramBands;
         var destinationBand = 0;
         foreach (var (first, last, centerFrequency) in ranges)
@@ -588,7 +592,7 @@ public static class AudioWaveformService
             {
                 energy = Math.Max(
                     energy,
-                    Math.Sqrt(fft[bin].X * fft[bin].X + fft[bin].Y * fft[bin].Y));
+                    Math.Sqrt(power[bin]));
             }
             var magnitude = energy * 2;
             var decibels = 20 * Math.Log10(magnitude + 1e-8);

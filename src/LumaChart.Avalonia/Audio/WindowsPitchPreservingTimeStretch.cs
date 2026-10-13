@@ -5,9 +5,11 @@ namespace LumaChart.Avalonia.Audio;
 
 internal static class WindowsPitchPreservingTimeStretchPolicy
 {
-    public const int SequenceDurationMilliseconds = 100;
+    // Short, stereo-linked grains limit the temporal movement of attacks. The
+    // former 100ms grains repeated percussion and advanced it by ~90ms at .1x.
+    public const int SequenceDurationMilliseconds = 24;
     public const int SeekWindowDurationMilliseconds = 28;
-    public const int OverlapDurationMilliseconds = 20;
+    public const int OverlapDurationMilliseconds = 12;
     public const int MaximumReadAttemptsPerDevicePeriod = 4;
 
     public static double ResolveSoundTouchTempo(double playbackRate) =>

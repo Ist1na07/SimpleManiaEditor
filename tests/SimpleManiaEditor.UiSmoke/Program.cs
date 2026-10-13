@@ -32,9 +32,14 @@ internal static class Program
             catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
             finally { File.Delete(fixture); }
         }
+        if (args.Length > 0 && args[0] == "--audio-song-027")
+        {
+            try { Audio027Specs.CheckSong(args[1]); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--audio-026")
         {
-            try { Audio026Specs.Run(); return 0; }
+            try { Audio026Specs.Run(); Audio027Specs.Run(); return 0; }
             catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
         }
         if (args.Length > 0 && args[0] == "--seek-benchmark")
@@ -91,7 +96,7 @@ internal static class Program
             if (args.Length > 0 && args[0] == "--workbench-test")
             {
                 EditorInteraction024Specs.RunAudio();
-                Audio026Specs.Run();
+                Audio026Specs.Run(); Audio027Specs.Run();
                 EditorInteraction025Specs.RunPointer(screenshotRoot);
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
                 RunApplicationSmoke(screenshotRoot);
@@ -106,7 +111,7 @@ internal static class Program
             EditorInteraction022Specs.RunPointer();
             EditorInteraction023Specs.RunPointer();
             EditorInteraction024Specs.RunAudio();
-            Audio026Specs.Run();
+            Audio026Specs.Run(); Audio027Specs.Run();
             EditorInteraction025Specs.RunPointer(screenshotRoot);
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
             StablePlaytestUiSpecs.Run(screenshotRoot);
@@ -368,10 +373,8 @@ internal static class Program
         var inspectorTabs = (TabControl)typeof(MainWindow).GetField("editorInspectorTabs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         inspectorTabs.SelectedItem = settingsTab;
         Dispatcher.UIThread.RunJobs();
-        var appearance = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => AutomationProperties.GetAutomationId(e) == "Settings.Appearance");
-        Require(appearance.IsExpanded, "editor appearance should be expanded by default");
+        var appearance = window.GetLogicalDescendants().OfType<StackPanel>().Distinct().Single(e => AutomationProperties.GetAutomationId(e) == "Settings.Appearance");
         window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.2").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        appearance.IsExpanded = true;
         Pump(100);
         var skinPicker = window.GetVisualDescendants().OfType<ComboBox>().Single(c => AutomationProperties.GetAutomationId(c) == "Editor.NoteStyle");
         skinPicker.SelectedIndex = 1;
@@ -381,10 +384,8 @@ internal static class Program
         Require(timeline.NoteStyle == EditorNoteStyle.Osu && EditorPresentationSettingsStore.LoadNoteStyle() == EditorNoteStyle.Osu,
             "skin selector did not restore/persist osu default");
         OptionControlsSpecs.Run(window, screenshots);
-        var shortcuts = window.GetLogicalDescendants().OfType<Expander>().Distinct().Single(e => Equals(e.Header, "快捷键"));
-        Require(shortcuts.IsExpanded, "shortcut settings should be expanded by default");
+        var shortcuts = window.GetLogicalDescendants().OfType<StackPanel>().Distinct().Single(e => AutomationProperties.GetAutomationId(e) == "Settings.ShortcutsSection");
         window.GetLogicalDescendants().OfType<Button>().Distinct().Single(b => AutomationProperties.GetAutomationId(b) == "Settings.Navigate.1").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        shortcuts.IsExpanded = true;
         Pump(100);
         RequestedWorkflowSpecs.Run(window, screenshots);
         WorkbenchRegressionSpecs.Run(window, screenshots);
@@ -400,6 +401,7 @@ internal static class Program
         EditorInteraction025Specs.RunWorkbench(window, screenshots);
         TrackPlayback026Specs.Run(window);
         AudioSettings026Specs.Run(window, screenshots);
+        TimelineSettings027Specs.Run(window, screenshots);
         tab.Session.Mutate(d => d.Metadata.AudioFile = "");
         Pump(150);
         save = viewModel.SaveAndVerifyAsync(tab.Id);

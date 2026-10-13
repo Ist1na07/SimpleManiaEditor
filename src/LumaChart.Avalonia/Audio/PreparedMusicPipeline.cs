@@ -34,7 +34,15 @@ internal sealed record PreparedMusicPipeline(
             {
                 // One stereo-linked time-domain processor for every rate. Avoid
                 // serial pitch shifts and their per-channel phase/limiter artefacts.
-                IWaveProvider stageSource = boundedSource.ToWaveProvider();
+                var recordedSource = new SourceSilenceGuard.RecordingSource(boundedSource);
+                // The correlation search is forward-looking. Centre that
+                // search for slow playback, then cap the padded output to the
+                // original duration. The guard still reads unpadded PCM time.
+                var searchPaddingFrames = playbackRate <= .5
+                    ? (int)Math.Round(boundedSource.WaveFormat.SampleRate * WindowsPitchPreservingTimeStretchPolicy.SeekWindowDurationMilliseconds / 2000d)
+                    : 0;
+                var originalOutputSamples = (long)Math.Round(boundedSource.RemainingSamples / (boundedSource.WaveFormat.Channels * playbackRate)) * boundedSource.WaveFormat.Channels;
+                IWaveProvider stageSource = new LeadingSilenceSampleProvider(recordedSource, searchPaddingFrames).ToWaveProvider();
                 var processor = new SoundTouchProcessor();
                 var stageProvider = new SoundTouchWaveProvider(stageSource, processor)
                 {
@@ -46,8 +54,9 @@ internal sealed record PreparedMusicPipeline(
                 createdSoundTouchProviders.Add(stageProvider);
                 var createdContinuityProvider = new SoundTouchContinuitySampleProvider(
                     stageProvider.ToSampleProvider(), () => boundedSource.IsEnded);
-                musicProvider = createdContinuityProvider;
-                musicReallyEnded = () => createdContinuityProvider.IsEnded;
+                var aligned = new LengthCappedSampleProvider(new SourceSilenceGuard(createdContinuityProvider, recordedSource, playbackRate), originalOutputSamples);
+                musicProvider = aligned;
+                musicReallyEnded = () => aligned.IsEnded;
             }
             else
             {

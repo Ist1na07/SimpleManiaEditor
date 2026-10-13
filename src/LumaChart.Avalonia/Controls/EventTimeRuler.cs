@@ -52,7 +52,7 @@ public sealed class EventTimeRuler : Control
     public void SetDocument(EditorSession? value, TimingMap? timing, double audioDuration, IReadOnlyList<DesktopNavigationMarker> markers)
     {
         bookmarks = markers;
-        if (ReferenceEquals(session, value) && serial == (value?.ChangeSerial ?? -1) && Math.Abs(duration - audioDuration) < 1)
+        if (ReferenceEquals(session, value) && ReferenceEquals(map, timing) && serial == (value?.ChangeSerial ?? -1) && Math.Abs(duration - audioDuration) < 1)
         { InvalidateVisual(); return; }
         session = value; serial = value?.ChangeSerial ?? -1; map = timing; duration = audioDuration;
         if (value == null || timing == null) { Events = []; KiaiRanges = []; StartMilliseconds = 0; EndMilliseconds = 1000; InvalidateVisual(); return; }
@@ -60,11 +60,21 @@ public sealed class EventTimeRuler : Control
             .Select(t => new TimeRulerEvent(timing.BeatToMilliseconds(t.Beat), t.Id,
                 t.Bpm.HasValue ? $"BPM {t.Bpm:0.######}" : t.Effect == TimingEffectKind.Scroll ? $"SV {t.EffectValue:0.###}x" : t.Effect?.ToString() ?? "Offset",
                 t.Bpm.HasValue, OsuTimingPointSettings.Read(t).Kiai)).OrderBy(e => e.Milliseconds).ThenByDescending(e => e.Bpm).ToArray();
-        var noteTimes = value.Document.Notes.Where(n => !n.IsDraft).Select(n => (
-            Start: timing.BeatToMilliseconds(n.Beat), End: timing.BeatToMilliseconds(n.EndBeat ?? n.Beat))).ToArray();
-        StartMilliseconds = Math.Min(0, Math.Min(Events.Select(e => e.Milliseconds).DefaultIfEmpty(0).Min(), noteTimes.Select(n => n.Start).DefaultIfEmpty(0).Min()));
-        EndMilliseconds = Math.Max(StartMilliseconds + 1000, Math.Max(audioDuration,
-            Math.Max(noteTimes.Select(n => n.End).DefaultIfEmpty(0).Max(), Events.Select(e => e.Milliseconds).DefaultIfEmpty(0).Max()) + 1000));
+        if (double.IsFinite(audioDuration) && audioDuration > 0)
+        {
+            // The ruler is a song overview, independent of the last object,
+            // offset, or sparse/empty chart. Audio is never offset-trimmed.
+            StartMilliseconds = 0;
+            EndMilliseconds = Math.Max(1, audioDuration);
+        }
+        else
+        {
+            var noteTimes = value.Document.Notes.Where(n => !n.IsDraft).Select(n => (
+                Start: timing.BeatToMilliseconds(n.Beat), End: timing.BeatToMilliseconds(n.EndBeat ?? n.Beat))).ToArray();
+            StartMilliseconds = Math.Min(0, Math.Min(Events.Select(e => e.Milliseconds).DefaultIfEmpty(0).Min(), noteTimes.Select(n => n.Start).DefaultIfEmpty(0).Min()));
+            EndMilliseconds = Math.Max(StartMilliseconds + 1000,
+                Math.Max(noteTimes.Select(n => n.End).DefaultIfEmpty(0).Max(), Events.Select(e => e.Milliseconds).DefaultIfEmpty(0).Max()) + 1000);
+        }
         var ranges = new List<TimeRulerRange>(); double? start = null;
         foreach (var point in Events)
         {

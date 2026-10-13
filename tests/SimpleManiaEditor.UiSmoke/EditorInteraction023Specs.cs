@@ -42,24 +42,22 @@ internal static class EditorInteraction023Specs
     {
         Find<TabItem>(window, "Inspector.SettingsTab").IsSelected = true; Program.Pump(40);
         var search = Find<TextBox>(window, "Settings.Search");
-        var appearance = Find<Expander>(window, "Settings.Appearance");
-        // Prior test expands appearance; exercise search's temporary expansion explicitly.
-        appearance.IsExpanded = false;
+        var appearance = Find<StackPanel>(window, "Settings.Appearance");
         Click("Settings.Navigate.2"); Program.Pump(30);
-        Require(appearance.IsEffectivelyVisible && !appearance.IsExpanded, "appearance category did not open");
+        Require(appearance.IsEffectivelyVisible, "appearance category did not open");
         search.Text = "判定线"; Program.Pump(30);
-        Require(appearance.IsEffectivelyVisible && appearance.IsExpanded, "search did not expose folded matching options");
+        Require(appearance.IsEffectivelyVisible, "search did not expose matching options");
         search.Text = "unmatchable-setting-023"; Program.Pump(20);
         Require(!appearance.IsEffectivelyVisible, "unmatched section remained visible");
         search.Text = ""; Program.Pump(20);
-        Require(appearance.IsEffectivelyVisible && !appearance.IsExpanded, "clearing search did not restore expansion/category");
+        Require(appearance.IsEffectivelyVisible, "clearing search did not restore category");
         Click("Settings.Navigate.0"); Program.Pump(20);
         Require(!appearance.IsEffectivelyVisible, "category navigation leaves unrelated settings visible");
         using (var frame = window.CaptureRenderedFrame()!) frame.Save(Path.Combine(screenshots, "settings-navigation-023.png"), PngBitmapEncoderOptions.Default);
         var settings = new WindowsEditorShortcutSettings();
         Require(WindowsEditorShortcutGesture.Resolve(settings, Key.F5, KeyModifiers.None, true)?.Id == "Playtest", "F5 not available from option input");
         Require(WindowsEditorShortcutRouting.Resolve("Playtest").Route == WindowsEditorShortcutRoute.Playtest, "F5 command does not route to playtest");
-        Console.WriteLine("PASS settings categories, search, temporary fold expansion and configurable F5 routing");
+        Console.WriteLine("PASS settings categories, search, direct category content and configurable F5 routing");
         void Click(string id) => Find<Button>(window, id).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     }
 

@@ -10282,10 +10282,9 @@ public sealed partial class MainWindow : PlatformWindow
             spectrogramDetailSlider,
             spectrogramDetailValueText);
 
-        var appearance = new Expander
+        var appearance = new StackPanel
         {
-            Header = "外观", IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch,
-            Content = new StackPanel { Spacing = 5, Children =
+            Spacing = 10, HorizontalAlignment = HorizontalAlignment.Stretch, Children =
             {
                 TimingField("Note 对齐", anchorGrid),
                 TimingField("栅格宽度（每列）", gridLaneWidthSlider), gridLaneWidthValueText,
@@ -10300,7 +10299,7 @@ public sealed partial class MainWindow : PlatformWindow
                 TimingField("分度线粗细（保留层级）", subdivisionLineThicknessSlider), subdivisionLineThicknessValueText,
                 TimingField("判定线位置（画面高度）", judgementLinePositionSlider), judgementLinePositionValueText,
                 judgementStyleGrid, BuildDisplayScaleSettings(), BuildRenderBackendSelector()
-            } }
+            }
         };
         AutomationProperties.SetAutomationId(appearance, "Settings.Appearance");
         settingsAppearanceContent = new StackPanel { Spacing = 10, Children =
@@ -10718,23 +10717,14 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(shortcutStatusText, "Settings.Shortcuts.Status");
         RefreshShortcutButtons();
         RefreshShortcutLabels();
-        var expander = new Expander
+        var section = new StackPanel
         {
-            Header = "快捷键", IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch,
-            Content = new Border
-            {
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                Child = new StackPanel
-                {
-                    Spacing = 10,
-                    Children = { header, BuildInteractionProfileSelector(), shortcutListPanel, shortcutStatusText }
-                }
-            }
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Children = { header, BuildInteractionProfileSelector(), shortcutListPanel, shortcutStatusText }
         };
-        AutomationProperties.SetAutomationId(expander, "Settings.ShortcutsSection");
-        return expander;
+        AutomationProperties.SetAutomationId(section, "Settings.ShortcutsSection");
+        return section;
     }
 
     private void BeginShortcutCapture(string action)
@@ -16267,6 +16257,7 @@ public sealed partial class MainWindow : PlatformWindow
         var overviewAudioEndBeat = loaded && tab != null
             ? GetAudioTimingMap(tab).MillisecondsToBeat(duration.TotalMilliseconds).Value
             : 0;
+        RefreshEventTimeRulerAudioDuration();
         editorOverview.SetExternalEndBeat(overviewAudioEndBeat);
         difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
         suppressAudioControls = true;
@@ -17576,7 +17567,7 @@ public sealed partial class MainWindow : PlatformWindow
             editorOverview.SetIssues(timeline.ChartIssues);
             editorOverview.SetNavigationMarkers(activeTab.NavigationMarkers);
             difficultyOverview.SetEndBeat(editorOverview.DisplayEndBeat);
-            eventTimeRuler.SetDocument(activeTab.Session, GetAudioTimingMap(activeTab), audioTransport.PlaybackSnapshot?.Duration.TotalMilliseconds ?? 0, activeTab.NavigationMarkers);
+            RefreshEventTimeRuler();
             editorOverview.SetCurrentBeat(IsEditorPlaybackActive() && ReferenceEquals(activeTab, keySoundActiveTab) ? timeline.CurrentBeat : activeTab.CurrentBeat);
             RefreshNavigationMarkerUi();
             miniNoteCountText.Text = activeTab.Session.Document.Notes.Count.ToString(
