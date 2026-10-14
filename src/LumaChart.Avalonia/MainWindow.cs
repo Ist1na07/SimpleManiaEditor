@@ -1317,6 +1317,7 @@ public sealed partial class MainWindow : PlatformWindow
         };
         Closed += async (_, _) =>
         {
+            viewModel.StopLibraryWatching();
             if (OfficialPlaytestLauncher.ProcessRunner is OfficialPlaytestProcess process) await process.ShutdownAsync();
         };
         Activated += (_, _) =>
@@ -4151,6 +4152,10 @@ public sealed partial class MainWindow : PlatformWindow
         if (PlatformFileImportServices.Current?.SupportsWorkspaceDirectorySelection != false)
             AddHeaderAction(workspace);
         AddHeaderAction(BuildAddLibraryRootButton());
+        AddHeaderAction(MapperButton("批量整理", "Library.OrganizeSelected", async () => await ShowBatchAnnotationsAsync()));
+        AddHeaderAction(MapperButton("★ 收藏", "Library.Favorites", () => librarySearchBox.Text = "star:true"));
+        AddHeaderAction(MapperButton("未发布", "Library.Unpublished", () => librarySearchBox.Text = "state:未发布"));
+        AddHeaderAction(MapperButton("迁移记录", "Library.TransferHistory", async () => await ShowTransferHistoryAsync()));
         var refresh = PrimaryButton(
             "刷新索引",
             async (_, _) => await RefreshLibraryWithErrorUiAsync());
@@ -4197,7 +4202,10 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetHelpText(
             librarySearchBox,
             "搜索标题、原文、作者、版本或路径；中文输入法组合文本按正常失焦提交，不依赖 Enter。");
-        librarySearchBox.TextChanged += (_, _) => viewModel.SetLibrarySearch(librarySearchBox.Text);
+        librarySearchBox.PlaceholderText = "搜索曲名 / 备注 · tag:LN state:未发布 keys:7 star:true";
+        var searchDelay = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        searchDelay.Tick += async (_, _) => { searchDelay.Stop(); try { await viewModel.SetLibrarySearchAsync(librarySearchBox.Text); } catch (Exception exception) { viewModel.SetStatus("搜索失败：" + exception.Message); } };
+        librarySearchBox.TextChanged += (_, _) => { searchDelay.Stop(); searchDelay.Start(); };
         var searchHost = new Border
         {
             Margin = new Thickness(
@@ -4495,6 +4503,7 @@ public sealed partial class MainWindow : PlatformWindow
         {
             ItemsSource = new object[]
             {
+                new MenuItem { Header = "标签 / 备注 / 迁移…", Command = new MapperActionCommand(async () => await ShowLibraryChartDetailsAsync(chart)) },
                 reveal,
                 new Separator(),
                 delete
@@ -4776,7 +4785,7 @@ public sealed partial class MainWindow : PlatformWindow
             var card = new LibraryFolderCard(
                 OpenChartAsync,
                 CreateLibraryChartContextMenu,
-                libraryFolderExpansionState)
+                libraryFolderExpansionState, organizeChartAsync: ShowLibraryChartDetailsAsync)
             {
                 DataContext = view,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4805,7 +4814,7 @@ public sealed partial class MainWindow : PlatformWindow
             (view, _) => new LibraryFolderCard(
                 OpenChartAsync,
                 CreateLibraryChartContextMenu,
-                libraryFolderExpansionState)
+                libraryFolderExpansionState, organizeChartAsync: ShowLibraryChartDetailsAsync)
             {
                 DataContext = view,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -4822,7 +4831,7 @@ public sealed partial class MainWindow : PlatformWindow
                 var card = new LibraryFolderCard(
                     OpenChartAsync,
                     CreateLibraryChartContextMenu,
-                    libraryFolderExpansionState)
+                    libraryFolderExpansionState, organizeChartAsync: ShowLibraryChartDetailsAsync)
                 {
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     VerticalAlignment = VerticalAlignment.Stretch
@@ -5186,6 +5195,7 @@ public sealed partial class MainWindow : PlatformWindow
         AutomationProperties.SetAutomationId(restoreButton, "Editor.RestoreBackup");
         ToolTip.SetTip(restoreButton, "从备份恢复谱面");
         fileCommands.Children.Add(restoreButton);
+        fileCommands.Children.Add(MapperButton("版本历史", "Editor.Versions", async () => await ShowMapperVersionsAsync()));
 
         commandPlayButton = CommandIconButton(
             "M2,1 L13,7.5 L2,14 Z",
@@ -17470,7 +17480,7 @@ public sealed partial class MainWindow : PlatformWindow
         if (artistRomanizationCancellation != null && artistRomanizationTabId != activeTabId)
             artistRomanizationCancellation.Cancel();
         RefreshLibrarySourceChoices();
-        workspaceText.Text = "创作目录  " + viewModel.CreationRoot + (viewModel.LibraryWarnings.Count == 0 ? "" : "  · 部分目录不可用：" + string.Join("；", viewModel.LibraryWarnings));
+        workspaceText.Text = "创作目录  " + viewModel.CreationRoot + (viewModel.LibraryWarnings.Count == 0 ? "" : "  · 提示：" + string.Join("；", viewModel.LibraryWarnings));
         ToolTip.SetTip(workspaceText, workspaceText.Text);
         AutomationProperties.SetName(workspaceText, workspaceText.Text);
         statusText.Text = viewModel.Status;

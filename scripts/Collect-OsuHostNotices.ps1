@@ -1,12 +1,12 @@
-param([Parameter(Mandatory=$true)][string]$Destination)
+param([Parameter(Mandatory=$true)][string]$Destination, [string]$ProjectAssets = 'src/SimpleManiaEditor.OsuHost/obj/project.assets.json', [string]$Caption = 'Official gameplay host dependencies')
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
-$assets = Get-Content -LiteralPath (Join-Path $taskRoot 'src/SimpleManiaEditor.OsuHost/obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
+$assets = Get-Content -LiteralPath (Join-Path $taskRoot $ProjectAssets) -Raw | ConvertFrom-Json -AsHashtable
 $packageRoots = @($assets.packageFolders.Keys)
 $noticeRoot = Join-Path $Destination 'licenses/packages'
 New-Item -ItemType Directory -Path $noticeRoot -Force | Out-Null
 $lines = [Collections.Generic.List[string]]::new()
-$lines.Add('# Official gameplay host dependencies')
+$lines.Add('# ' + $Caption)
 $lines.Add('')
 $lines.Add('Pinned packages are unmodified. The notices below do not relicense their content; original copyright, licence files and terms remain in effect.')
 foreach ($name in ($assets.libraries.Keys | Sort-Object)) {

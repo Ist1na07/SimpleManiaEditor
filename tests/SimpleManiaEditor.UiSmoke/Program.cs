@@ -52,18 +52,32 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_LOCAL_DATA_ROOT", Path.Combine(root, "settings"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_EDITING_ROOT", Path.Combine(root, "editing"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
+        if (args.Length > 0 && args[0] == "--library-benchmark-031")
+        {
+            try { MapperLibrary031Specs.RunBenchmark(root); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
-        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" && args[0] != "--regression-030" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
+        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" && args[0] != "--regression-030" && args[0] != "--mapper-031" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
         {
             TrackWorkspaceSpecs.Run(root);
             SongsProtectionSpecs.Run(root);
             LibraryDisplay028Specs.RunSafety(root);
+            if (args.Length == 0 || !args[0].StartsWith("--")) MapperLibrary031Specs.RunStorage(root);
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
+            if (args.Length > 0 && args[0] == "--mapper-031")
+            {
+                MapperLibrary031Specs.RunStorage(root);
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var mapperWindow = new MainWindow([]) { Width = 1920, Height = 1080 }; mapperWindow.Show(); Pump(1000);
+                MapperLibrary031Specs.RunUi(mapperWindow, screenshotRoot); mapperWindow.Close(); Pump(100);
+                Console.WriteLine("PASS mapper031 " + root); return 0;
+            }
             if (args.Length > 0 && args[0] == "--regression-030")
             {
                 PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();

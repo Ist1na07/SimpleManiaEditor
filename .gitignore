@@ -13,6 +13,10 @@ data/
 Maps/
 Editing Cache/
 LumaChart Workspace/
+mapper-library.sqlite3*
+library-personal.json
+/Versions/
+/Transfers/
 .env
 .env.*
 !fixtures/**

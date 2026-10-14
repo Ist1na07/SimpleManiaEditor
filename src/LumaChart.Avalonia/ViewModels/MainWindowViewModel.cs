@@ -22,7 +22,10 @@ public sealed partial class MainWindowViewModel
     private readonly SemaphoreSlim saveVerificationGate = new(1, 1);
     private CancellationTokenSource? scanCancellation;
     private readonly EditorLibraryCatalog libraryCatalog;
-    private readonly DesktopLibraryMetadataCache libraryMetadataCache = new();
+    private readonly DesktopLibraryMetadataCache libraryMetadataCache;
+    public MapperLibraryStore MapperLibrary { get; }
+    public MapperVersionStore Versions { get; }
+    public MapsetTransferService Transfers { get; }
     private MixedSelectionClipboard? mixedSelectionClipboard;
     private readonly BatchObservableCollection<DesktopLibraryChartEntry> libraryEntries = [];
     private readonly BatchObservableCollection<DesktopLibraryFolderView> libraryFolders = [];
@@ -40,6 +43,10 @@ public sealed partial class MainWindowViewModel
         this.workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
         LibrarySort = AvaloniaAppPaths.LoadLibrarySort();
         libraryCatalog = new EditorLibraryCatalog(AvaloniaAppPaths.LocalDataRoot);
+        MapperLibrary = new MapperLibraryStore(AvaloniaAppPaths.LocalDataRoot);
+        libraryMetadataCache = new DesktopLibraryMetadataCache(MapperLibrary);
+        Versions = new MapperVersionStore(AvaloniaAppPaths.LocalDataRoot, MapperLibrary);
+        Transfers = new MapsetTransferService(AvaloniaAppPaths.LocalDataRoot, MapperLibrary);
         workspace.Changed += Workspace_Changed;
     }
 
@@ -202,6 +209,17 @@ public sealed partial class MainWindowViewModel
         var scanSerial = libraryMutationSerial;
         var scanRoot = workspace.ResolvedWorkspaceRoot;
         var creationRoot = workspace.CreationRoot;
+        try { await Task.Run(libraryMetadataCache.LoadPersistedHeaders, cancellationToken); }
+        catch (OperationCanceledException) { return; }
+        if (LibraryEntries.Count == 0)
+        {
+            var allowed = new[] { scanRoot, creationRoot }.Concat(libraryCatalog.Roots)
+                .Select(path => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar).ToArray();
+            var known = libraryCatalog.Charts.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var cached = libraryMetadataCache.CachedCharts.Where(chart => known.Contains(chart.ChartPath) || allowed.Any(prefix => chart.ChartPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))).ToArray();
+            ApplyPersonalSummaries(cached); libraryEntries.ReplaceAll(cached);
+            libraryFolderIndex = DesktopChartLibraryService.GroupByFolder(cached, scanRoot); ApplyLibraryFilterAndSort();
+        }
         IsScanning = true;
         LastLibraryScanError = null;
         Status = AvaloniaLocalizationCatalog.Format("正在扫描曲库：{0}", WorkspaceRoot);
@@ -209,6 +227,12 @@ public sealed partial class MainWindowViewModel
         try
         {
             var warnings = new List<string>();
+            try
+            {
+                var pending = Transfers.History().Count(record => record.State is not ("Complete" or "RolledBack"));
+                if (pending > 0) warnings.Add($"有 {pending} 个未完成迁移，请打开「迁移记录」恢复");
+            }
+            catch (IOException exception) { warnings.Add("迁移记录读取失败：" + exception.Message); }
             try { libraryCatalog.Remember(Tabs.Select(tab => tab.SourcePath)); }
             catch (IOException exception) { warnings.Add(exception.Message); }
             var linkedRoots = libraryCatalog.Roots;
@@ -218,6 +242,7 @@ public sealed partial class MainWindowViewModel
                 var merged = new Dictionary<string, DesktopLibraryChartEntry>(StringComparer.OrdinalIgnoreCase);
                 var roots = new[] { scanRoot, creationRoot }
                     .Concat(linkedRoots).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var verifiedRoots = new List<string>();
                 foreach (var root in roots)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -225,6 +250,7 @@ public sealed partial class MainWindowViewModel
                     {
                         foreach (var chart in await DesktopChartLibraryService.ScanAsync(root, cancellationToken: cancellationToken, metadataCache: libraryMetadataCache))
                             merged[chart.ChartPath] = chart;
+                        verifiedRoots.Add(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
                     }
                     catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                     { warnings.Add(root + "：" + exception.Message); }
@@ -240,6 +266,10 @@ public sealed partial class MainWindowViewModel
                     }
                     catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
                 }
+                libraryMetadataCache.Flush();
+                var stale = libraryMetadataCache.CachedCharts.Where(chart => !merged.ContainsKey(chart.ChartPath) &&
+                    verifiedRoots.Any(prefix => chart.ChartPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))).Select(chart => chart.ChartPath).ToArray();
+                MapperLibrary.ForgetHeaders(stale);
                 return (IReadOnlyList<DesktopLibraryChartEntry>)merged.Values.ToArray();
             }, cancellationToken);
             LibraryWarnings = warnings;
@@ -252,6 +282,7 @@ public sealed partial class MainWindowViewModel
 
             cancellationToken.ThrowIfCancellationRequested();
             MergeConcurrentLibraryUpdates(ref entries, ref indexedFolders, scanSerial, workspaceRoot);
+            ApplyPersonalSummaries(entries);
             libraryEntries.ReplaceAll(entries);
             libraryFolderIndex = indexedFolders;
             ApplyLibraryFilterAndSort();
@@ -276,6 +307,7 @@ public sealed partial class MainWindowViewModel
             if (scanCancellation?.Token == cancellationToken)
             {
                 IsScanning = false;
+                if (runStartupMaintenance) RestartLibraryWatcher();
                 RaiseStateChanged();
             }
         }
@@ -318,7 +350,10 @@ public sealed partial class MainWindowViewModel
             : await workspace.OpenAsync(path);
         Status = AvaloniaLocalizationCatalog.Format("已打开 {0} · {1}", tab.DisplayTitle, tab.FormatBadge);
         RaiseStateChanged();
+        if (!string.Equals(path, tab.SourcePath, StringComparison.OrdinalIgnoreCase)) MapperLibrary.LinkCopies(path, tab.SourcePath);
         await UpdateLibraryChartsAsync([tab.SourcePath]);
+        try { if (Versions.List(tab.SourcePath).Count == 0) await Versions.SaveAsync(tab.SourcePath, tab.Session.CaptureCommittedDocument(), "开始编辑", includeResources: true); }
+        catch (Exception exception) { LibraryWarnings = LibraryWarnings.Append("初始版本未记录：" + exception.Message).ToArray(); }
     }
 
     public async Task<int> OpenProjectDirectoryAsync(string path)
@@ -463,9 +498,15 @@ public sealed partial class MainWindowViewModel
                 ? Tabs.FirstOrDefault(candidate => candidate.Id == tabId.Value)
                 : ActiveTab;
             if (tab == null) return null;
-            var before = ChartStructuralFingerprint.Summarize(tab.Session.Document);
+            if (Versions.List(tab.SourcePath).Count == 0 && File.Exists(tab.SourcePath))
+            {
+                var original = await Task.Run(() => ChartDocumentImporter.ImportText(File.ReadAllText(tab.SourcePath), tab.SourcePath, "guest"));
+                await Versions.SaveAsync(tab.SourcePath, original, "首次保存前", includeResources: true);
+            }
+            var versionSnapshot = tab.Session.CaptureCommittedDocument();
+            var before = ChartStructuralFingerprint.Summarize(versionSnapshot);
             var save = await workspace.SaveAsync(tab.Id);
-            return await VerifySavedDocumentAsync(tab, before, save, saveAs: false);
+            return await VerifySavedDocumentAsync(tab, before, save, saveAs: false, versionSnapshot);
         }
         finally
         {
@@ -485,9 +526,10 @@ public sealed partial class MainWindowViewModel
                 ? Tabs.FirstOrDefault(candidate => candidate.Id == tabId.Value)
                 : ActiveTab;
             if (tab == null) return null;
-            var before = ChartStructuralFingerprint.Summarize(tab.Session.Document);
+            var versionSnapshot = tab.Session.CaptureCommittedDocument();
+            var before = ChartStructuralFingerprint.Summarize(versionSnapshot);
             var save = await workspace.SaveAsAsync(tab.Id, destination);
-            return await VerifySavedDocumentAsync(tab, before, save, saveAs: true);
+            return await VerifySavedDocumentAsync(tab, before, save, saveAs: true, versionSnapshot);
         }
         finally
         {
@@ -499,7 +541,8 @@ public sealed partial class MainWindowViewModel
         DesktopChartTab tab,
         ChartStructureSummary before,
         DesktopChartSaveResult save,
-        bool saveAs)
+        bool saveAs,
+        ChartDocument versionSnapshot)
     {
         if (!save.Saved)
         {
@@ -528,6 +571,8 @@ public sealed partial class MainWindowViewModel
             tab.OsuTimingImportMode);
         var after = ChartStructuralFingerprint.Summarize(reloaded);
         await UpdateLibraryChartsAsync([tab.SourcePath]);
+        try { await Versions.SaveAsync(tab.SourcePath, versionSnapshot, "保存", includeResources: Versions.List(tab.SourcePath).Count == 0); }
+        catch (Exception exception) { LibraryWarnings = LibraryWarnings.Append("版本记录失败：" + exception.Message).ToArray(); }
         LastSaveRoundTrip = new SaveRoundTripResult(
             tab.SourcePath,
             before,
@@ -798,9 +843,12 @@ public sealed partial class MainWindowViewModel
         RaiseStateChanged();
     }
 
-    private void ApplyLibraryFilterAndSort()
+    private void ApplyLibraryFilterAndSort(HashSet<string>? resolvedSearch = null, bool searchAlreadyResolved = false)
     {
-        var folders = DesktopChartLibraryService.FilterAndSort(libraryFolderIndex, LibrarySearchQuery, LibrarySort);
+        var matching = searchAlreadyResolved ? resolvedSearch : LibrarySearchQuery.Length == 0 ? null : MapperLibrary.Search(LibrarySearchQuery);
+        var folders = DesktopChartLibraryService.FilterAndSort(libraryFolderIndex, "", LibrarySort);
+        if (matching != null) folders = folders.Select(view => new DesktopLibraryFolderView(view.Folder, view.VisibleCharts.Where(chart => matching.Contains(chart.ChartPath)).ToArray()))
+            .Where(view => view.VisibleCharts.Count > 0).ToArray();
         if (LibrarySourceFilter is { } filter)
         {
             var root = OsuFileSafetyPolicy.ResolvePhysicalPath(filter).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;

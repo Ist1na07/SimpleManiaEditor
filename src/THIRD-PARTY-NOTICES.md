@@ -8,6 +8,10 @@ and place obligations on anyone who distributes a build of this software — see
 | Component | Licence |
 | --- | --- |
 | NAudio, NAudio.Vorbis | MIT |
+| Microsoft.Data.Sqlite 10.0.12 | MIT; SQLite is public domain |
+| SQLitePCLRaw 2.1.12 (core, provider, bundled native SQLite) | Apache-2.0; SQLite is public domain |
+| LibGit2Sharp 0.32.0 | MIT |
+| LibGit2Sharp.NativeBinaries 2.0.324 / libgit2 | GPL-2.0 with linking exception; original libgit2.license.txt is retained in licenses/packages |
 | ppy/osu mania Classic hit windows, lazer scroll-time and legacy skin rules (adapted) | MIT — `licenses/osu-MIT.txt` |
 | Official osu! Game, mania/osu/taiko/catch rulesets 2026.916.0; osu.Framework 2026.914.0 (playtest host) | MIT — `licenses/osu-MIT.txt` |
 | Official osu.Game.Resources 2026.909.0 (unmodified NuGet resources) | CC BY-NC 4.0 plus asset-specific notices — `licenses/osu-Resources-LICENSE.md` and bundled font notices |

@@ -39,15 +39,25 @@ public sealed class DesktopLibraryChartEntry
     public DateTime AddedTime { get; init; }
     public DateTime ModifiedTime { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
     public string DisplayTitle => string.IsNullOrWhiteSpace(TitleOriginal) ? Title : TitleOriginal;
+    [System.Text.Json.Serialization.JsonIgnore]
     public string DisplayArtist => string.IsNullOrWhiteSpace(ArtistOriginal) ? Artist : ArtistOriginal;
+    [System.Text.Json.Serialization.JsonIgnore]
     public string FormatBadgeText => Format.StartsWith("osu", StringComparison.OrdinalIgnoreCase)
         ? "OSU"
         : "MALODY";
+    [System.Text.Json.Serialization.JsonIgnore]
     public string Details => $"{DisplayArtist}  ·  {Version}  ·  {KeyCount}K  ·  {Format}";
+    [System.Text.Json.Serialization.JsonIgnore]
     public string PickerTitle => $"{DisplayTitle}  [{Version}]";
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string PersonalSummary { get; set; } = "";
+    [System.Text.Json.Serialization.JsonIgnore]
     public string PickerDetails => $"{KeyCount}K  ·  {Format}  ·  {Creator}";
+    [System.Text.Json.Serialization.JsonIgnore]
     public string AddedText => AddedTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
+    [System.Text.Json.Serialization.JsonIgnore]
     public string SearchText => searchText ??=
         ($"{Title}\n{TitleOriginal}\n{Artist}\n{ArtistOriginal}\n{Creator}\n{Version}\n" +
          $"{Format}\n{FormatBadgeText}\n{RelativePath}").ToLowerInvariant();
@@ -112,6 +122,8 @@ public static class DesktopChartLibraryService
             ReturnSpecialDirectories = false
         };
         var files = await Task.Run(() => Directory.EnumerateFiles(root, "*", options)
+            .Where(path => !Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(part => part.StartsWith(".sme-", StringComparison.OrdinalIgnoreCase) || part.Equals(".git", StringComparison.OrdinalIgnoreCase)))
             .Where(path => Path.GetExtension(path).Equals(".mc", StringComparison.OrdinalIgnoreCase) ||
                            Path.GetExtension(path).Equals(".osu", StringComparison.OrdinalIgnoreCase))
             .ToArray(), cancellationToken).ConfigureAwait(false);

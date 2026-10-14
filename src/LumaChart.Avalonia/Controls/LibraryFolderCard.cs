@@ -57,6 +57,7 @@ public sealed class LibraryFolderCard : Border
     private static readonly IBrush ToggleExpandedBrush =
         new SolidColorBrush(Color.Parse(
             WindowsLibraryLayoutPolicy.FolderToggleExpandedBackground));
+    private readonly Func<DesktopLibraryChartEntry, Task>? organizeChartAsync;
     private readonly Func<string, Task> openChartAsync;
     private readonly Func<DesktopLibraryChartEntry, ContextMenu> createChartContextMenu;
     private readonly WindowsLibraryFolderExpansionState expansionState;
@@ -120,8 +121,10 @@ public sealed class LibraryFolderCard : Border
         Func<string, Task> openChartAsync,
         Func<DesktopLibraryChartEntry, ContextMenu> createChartContextMenu,
         WindowsLibraryFolderExpansionState expansionState,
-        Func<string?, IImage?>? loadThumbnail = null)
+        Func<string?, IImage?>? loadThumbnail = null,
+        Func<DesktopLibraryChartEntry, Task>? organizeChartAsync = null)
     {
+        this.organizeChartAsync = organizeChartAsync;
         this.openChartAsync = openChartAsync ??
                               throw new ArgumentNullException(nameof(openChartAsync));
         this.createChartContextMenu = createChartContextMenu ??
@@ -337,7 +340,8 @@ public sealed class LibraryFolderCard : Border
         var folder = currentView.Folder;
         titleText.Text = folder.DisplayTitle;
         detailsText.Text = folder.Details;
-        relativePathText.Text = folder.RelativeFolderPath;
+        var personal = currentView.VisibleCharts.Select(chart => chart.PersonalSummary).Where(text => text.Length > 0).Distinct().Take(2).ToArray();
+        relativePathText.Text = folder.RelativeFolderPath + (personal.Length > 0 ? "  ·  " + string.Join(" / ", personal) : "");
         formatBadgeText.Text = folder.FormatBadgeText;
         addedText.Text = folder.AddedText;
         AutomationProperties.SetName(
@@ -489,6 +493,14 @@ public sealed class LibraryFolderCard : Border
             Children = { chartText, openButton }
         };
         Grid.SetColumn(openButton, 1);
+        if (chart.PersonalSummary.Length > 0) chartText.Children.Add(new TextBlock { Text = chart.PersonalSummary, FontSize = 12, Foreground = new SolidColorBrush(Color.Parse("#A9CAC8")), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 560 });
+        if (organizeChartAsync != null)
+        {
+            var organize = PrimaryButton("整理 / 迁移", async (_, _) => await organizeChartAsync(chart));
+            AutomationProperties.SetAutomationId(organize, "Library.ChartOrganize");
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Children = { organize } };
+            row.Children.Remove(openButton); buttons.Children.Add(openButton); Grid.SetColumn(buttons, 1); row.Children.Add(buttons);
+        }
 
         var host = new Border
         {

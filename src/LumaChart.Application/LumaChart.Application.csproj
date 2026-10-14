@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
     <ProjectReference Include="..\LumaChart.Core\LumaChart.Core.csproj" />
     <ProjectReference Include="..\LumaChart.Online\LumaChart.Online.csproj" />
   </ItemGroup>

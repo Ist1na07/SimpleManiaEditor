@@ -20,6 +20,7 @@ try {
     # Never publish into, or copy from, a folder that has been run by a mapper.
     & $Dotnet publish 'src/LumaChart.Avalonia/LumaChart.Avalonia.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $publish
     if ($LASTEXITCODE -ne 0) { throw 'Editor publish failed.' }
+    & (Join-Path $PSScriptRoot 'Collect-OsuHostNotices.ps1') -Destination $publish -ProjectAssets 'src/LumaChart.Avalonia/obj/project.assets.json' -Caption 'Editor dependencies'
     & $Dotnet publish 'src/SimpleManiaEditor.OsuHost/SimpleManiaEditor.OsuHost.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o (Join-Path $publish 'osu-host')
     if ($LASTEXITCODE -ne 0) { throw 'Official host publish failed.' }
     & (Join-Path $PSScriptRoot 'Collect-OsuHostNotices.ps1') -Destination (Join-Path $publish 'osu-host')
@@ -34,6 +35,7 @@ try {
     # These are public, generic feature descriptions. Developer handoff,
     # performance reports, demos and test fixtures are deliberately not copied.
     Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/FEATURES.md') -Destination (Join-Path $destination 'FEATURES.md')
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'docs/LIBRARY-VERSIONS.md') -Destination (Join-Path $destination 'LibraryGuide.md')
     $publicReleaseNotes = Join-Path $taskRoot "docs/RELEASE-$version.md"
     if (Test-Path -LiteralPath $publicReleaseNotes) { Copy-Item -LiteralPath $publicReleaseNotes -Destination (Join-Path $destination 'ReleaseNotes.md') }
     [IO.File]::WriteAllText((Join-Path $destination 'Start-Editor.cmd'), @'
@@ -65,7 +67,7 @@ start "" "%~dp0app\SimpleManiaEditor.exe" %*
 
 推荐 Windows 10/11 64 位。首次官方试玩会初始化资源，可能需要等待。
 
-快捷操作：Space 播放/暂停，F5 从当前位置试玩，试玩 Shift 暂停、Esc 返回；Ctrl+滚轮调网格、Shift+滚轮调倍速、Alt+滚轮缩放。更多功能见 FEATURES.md。设置 → 外观可自动/手动调整 UI 大小；点击左上角品牌进入曲库，添加只读 Songs 目录，按曲名/作者/难度搜索。
+快捷操作：Space 播放/暂停，F5 从当前位置试玩，试玩 Shift 暂停、Esc 返回；Ctrl+滚轮调网格、Shift+滚轮调倍速、Alt+滚轮缩放。更多功能见 FEATURES.md。设置 → 外观可自动/手动调整 UI 大小；点击左上角品牌进入曲库，添加只读 Songs 目录，按曲名/作者/难度搜索。曲库难度行「整理 / 迁移」可设置标签备注或搬迁整套谱面，顶部「版本历史」可留稿、比较和恢复；流程见 LibraryGuide.md。
 
 分发包不含制作者的谱面、音乐、皮肤、个人设置、工作缓存或测试素材。随官方程序提供的默认界面/皮肤素材属于程序资源。
 
@@ -78,12 +80,12 @@ start "" "%~dp0app\SimpleManiaEditor.exe" %*
     # Validate before running or archiving: neither source directory nor an
     # already-used installation is a permissible distribution input.
     $files = @(Get-ChildItem -LiteralPath $destination -File -Recurse)
-    $forbiddenExtensions = @('.osu', '.osz', '.mc', '.mcz', '.osk', '.mp3', '.wav', '.ogg', '.flac', '.db', '.realm', '.cfg', '.log', '.pdb')
+    $forbiddenExtensions = @('.osu', '.osz', '.mc', '.mcz', '.osk', '.mp3', '.wav', '.ogg', '.flac', '.db', '.sqlite3', '.sqlite3-wal', '.sqlite3-shm', '.realm', '.cfg', '.log', '.pdb')
     $records = @()
     foreach ($file in $files) {
         $relative = [IO.Path]::GetRelativePath($destination, $file.FullName).Replace('\', '/')
         if ($file.Extension.ToLowerInvariant() -in $forbiddenExtensions -or
-            $relative -match '(?i)(^|/)(data|cache|backups?|logs?|skins?|songs|editing cache|lumaChart workspace|examples|performance)(/|$)') {
+            $relative -match '(?i)(^|/)(data|cache|backups?|logs?|skins?|songs|editing cache|lumaChart workspace|examples|performance|versions|transfers|\.git)(/|$)') {
             throw "Personal/test data forbidden in distribution: $relative"
         }
         if ($file.Extension -eq '.json' -and $file.Name -notmatch '(?i)\.(deps|runtimeconfig)\.json$') {
