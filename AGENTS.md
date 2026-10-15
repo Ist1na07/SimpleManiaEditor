@@ -1,0 +1,6 @@
+# Project workflow
+
+- Normal iteration means a local build, appropriate tests, and updating Start-Editor.cmd. Use scripts/Build-Local.ps1. Do not create release ZIPs, tags or GitHub Releases unless the human explicitly asks for that specific publishing action. Repository creation or permission to push source does not authorize a Release. Publish-GitHubRelease.ps1 requires -ExplicitReleaseRequest and that current human instruction.
+- User maps, music, skins, settings, annotations, history and recovery data must be preserved. Real osu! installations are read-only inputs except the explicitly previewed and confirmed mapset transfer workflow. Do not reset, repair, change permissions or alter file associations of the user's osu! installation as a diagnostic shortcut.
+- Local cleanup uses scripts/Clean-LocalBuilds.ps1, which generates a fresh plan, resolves paths, protects active/demo/public runtimes and personal data, and verifies retained hashes. Never reuse a stale cleanup plan or recursively delete an old distribution directory that may contain user work.
+- Keep synthetic tests isolated. If a reported real-environment problem is not reproduced, state that limitation; do not call a defensive hardening change proof of the cause or claim the symptom is fixed.

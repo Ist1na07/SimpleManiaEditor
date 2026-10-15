@@ -1,7 +1,2 @@
 @echo off
-if not exist "%~dp0dist\SimpleManiaEditor-0.1.31-Distribution\app\SimpleManiaEditor.exe" (
-  echo The portable build is missing. See README.md for build instructions.
-  pause
-  exit /b 1
-)
-start "" "%~dp0dist\SimpleManiaEditor-0.1.31-Distribution\app\SimpleManiaEditor.exe" %*
+start "" "%~dp0dist\SimpleManiaEditor-0.1.32-Local-20261015-152451\app\SimpleManiaEditor.exe" %*

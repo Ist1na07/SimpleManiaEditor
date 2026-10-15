@@ -1,5 +1,6 @@
-param([string]$Archive = '')
+param([string]$Archive = '', [switch]$ExplicitReleaseRequest)
 $ErrorActionPreference = 'Stop'
+if (!$ExplicitReleaseRequest) { throw 'A GitHub release requires an explicit human request. Use Build-Local.ps1 for normal iteration; supply -ExplicitReleaseRequest only after that request.' }
 $taskRoot = Split-Path -Parent $PSScriptRoot
 [xml]$definition = Get-Content -LiteralPath (Join-Path $taskRoot 'src/LumaChart.Avalonia/LumaChart.Avalonia.csproj') -Raw
 $version = [string](($definition.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)

@@ -27,6 +27,7 @@ using osu.Game.Overlays.Settings.Sections;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Overlays.Settings;
 using osu.Game.Overlays.Settings.Sections.Input;
+using osu.Game.Overlays.Settings.Sections.General;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Input;
@@ -59,6 +60,7 @@ internal partial class PlaytestGame : OsuGame
     private int verificationPlayCount;
     private bool verificationEscapeFromPause;
     private bool verificationManualPause;
+    private bool installationActionsRestricted;
     protected override UserInputManager CreateUserInputManager()
     {
         PracticeInputManager input = verify
@@ -123,7 +125,26 @@ internal partial class PlaytestGame : OsuGame
         catch (Exception exception) { report?.Invoke(new("error", path, Detail: exception.Message)); }
     }
 
-    protected override Storage CreateStorage(GameHost host, Storage defaultStorage) => new osu.Game.IO.OsuStorage(host, host.GetStorage(request.DataRoot));
+    protected override Storage CreateStorage(GameHost host, Storage defaultStorage) => new FixedPlaytestStorage(host.GetStorage(request.DataRoot));
+    protected override void LoadComplete()
+    {
+        base.LoadComplete();
+        Settings.OnLoadComplete += _ => RestrictStandaloneInstallationActions();
+        if (Settings.IsLoaded) RestrictStandaloneInstallationActions();
+    }
+    private void RestrictStandaloneInstallationActions()
+    {
+        var buttons = Settings.ChildrenOfType<InstallationSettings>().Where(section => section.IsLoaded)
+            .SelectMany(section => section.ChildrenOfType<DangerousSettingsButtonV2>()).Where(button => button.IsLoaded).ToArray();
+        foreach (var button in buttons)
+        {
+            button.Action = null;
+            button.Enabled.Value = false;
+            button.CanBeShown.Value = false;
+            button.TooltipText = "试玩使用编辑器自己的数据目录。请在编辑器中管理创作目录。";
+        }
+        if (buttons.Length > 0) installationActionsRestricted = true;
+    }
     protected override Loader CreateLoader() => new PracticeStartupLoader(this);
 
     [BackgroundDependencyLoader]
@@ -189,6 +210,8 @@ internal partial class PlaytestGame : OsuGame
                             try
                             {
                                 var bindings = Settings.ChildrenOfType<BindingSettings>().Single();
+                                if (Settings.ChildrenOfType<InstallationSettings>().SelectMany(section => section.ChildrenOfType<DangerousSettingsButtonV2>()).Any(button => button.Enabled.Value || button.CanBeShown.Value))
+                                    throw new InvalidOperationException("Standalone client data migration is exposed in embedded playtest settings.");
                                 var configure = bindings.ChildrenOfType<SettingsButtonV2>().Single();
                                 if (!configure.Enabled.Value) throw new InvalidOperationException("Official keyboard configuration is locked in settings-only mode.");
                                 configure.Action.Invoke();
@@ -332,6 +355,9 @@ internal partial class PlaytestGame : OsuGame
     protected override void UpdateAfterChildren()
     {
         base.UpdateAfterChildren();
+        // Official sections are loaded lazily on first show, after the overlay's
+        // own LoadComplete event. Restrict them before that first frame is drawn.
+        if (!installationActionsRestricted && Settings?.IsLoaded == true && Settings.IsPresent) RestrictStandaloneInstallationActions();
         if (player?.IsLoaded != true || !player.GameplayReady || ScreenStack.CurrentScreen != player || verificationStarted) return;
         verificationStarted = true;
         File.WriteAllText(requestPath + ".ready.json", JsonSerializer.Serialize(new

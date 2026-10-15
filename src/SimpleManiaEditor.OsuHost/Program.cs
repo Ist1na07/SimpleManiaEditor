@@ -13,6 +13,7 @@ internal static class Program
         string? requestPath = null;
         try
         {
+            if (args.Length == 1 && args[0] == "--verify-storage") return PlaytestStorageVerification.Run();
             if (args.Length < 2 || args[0] != "--request") throw new ArgumentException("Use --request <manifest.json>.");
             requestPath = Path.GetFullPath(args[1]);
             OsuFileSafetyPolicy.RequireWritable(requestPath);

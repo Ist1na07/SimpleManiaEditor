@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.1.31</Version>
+    <Version>0.1.32</Version>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
@@ -22,6 +22,9 @@
     <Compile Include="../LumaChart.Application/Workspaces/OsuFileSafetyPolicy.cs" Link="Safety/OsuFileSafetyPolicy.cs" />
     <ProjectReference Include="../SimpleManiaEditor.PlaytestBridge/SimpleManiaEditor.PlaytestBridge.csproj" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <!-- Same ABI patch level; security updates for transitive official-client dependencies. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="10.0.13" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.MessagePack" Version="10.0.13" />
     <PackageReference Include="ppy.osu.Game" Version="2026.916.0" />
     <PackageReference Include="ppy.osu.Game.Rulesets.Mania" Version="2026.916.0" />
     <PackageReference Include="ppy.osu.Game.Rulesets.Osu" Version="2026.916.0" />
