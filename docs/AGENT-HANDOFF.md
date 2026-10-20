@@ -1,22 +1,33 @@
 # SimpleManiaEditor 新 Agent 交接说明
 
-交接日期：2026-10-20（0.1.37 收尾）。当前开发基线：**0.1.37 本地版**。本文件汇总有效需求、当前实现、验证边界和接手方法；详细技术沿革见 DEVELOPMENT-HANDOFF.md，完整功能矩阵见 FEATURES.md / BACKLOG.md。
+交接日期：2026-10-21（0.1.38 收尾）。当前开发基线：**0.1.38 本地版**。本文件汇总有效需求、当前实现、验证边界和接手方法；详细技术沿革见 DEVELOPMENT-HANDOFF.md，完整功能矩阵见 FEATURES.md / BACKLOG.md。
 
 ## 1. 首先要知道的状态
 
-- 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
-- 仓库：`https://github.com/Ist1na07/SimpleManiaEditor`，当前分支 `main`。
-- 交接时 HEAD：`e60a1a6`，2026-10-20，`Add 0.1.37: cached library entry, tab overflow paging, stretch noise fixes`。这次提交把自 0.1.33 起积压的全部源码、测试、脚本和文档一次性入库（81 个文件，+28,408/−23,057），**工作树已提交且干净**；只提交源码，没有 push、没有 tag、没有 Release。提交者身份沿用本仓库既有历史 `Codex <codex@local>`（只写在仓库级 user.name/user.email，未改全局配置）。
+- 工作目录：源码主 checkout `E:\Files\Developing\SimpleManiaEditor`；本轮文档在独立 worktree `E:\Files\Developing\sme-wt-docs`（分支 `docs/0.1.38`），Windows / PowerShell。不要跨 worktree 改文件，也不要碰主 checkout 里未提交的内容。
+- 仓库：`https://github.com/Ist1na07/SimpleManiaEditor`；源码在 `main`，文档分支为 `docs/0.1.38`。
+- 0.1.37 收尾时 HEAD：`e60a1a6`，2026-10-20，`Add 0.1.37: cached library entry, tab overflow paging, stretch noise fixes`。这次提交把自 0.1.33 起积压的全部源码、测试、脚本和文档一次性入库（81 个文件，+28,408/−23,057），**工作树已提交且干净**；只提交源码，没有 push、没有 tag、没有 Release。提交者身份沿用本仓库既有历史 `Codex <codex@local>`（只写在仓库级 user.name/user.email，未改全局配置）。0.1.38 的源码由只读编辑、搜索、索引和音频几条 feature 分支合并回 `main`，具体以 `git log` 为准。
 - **仍然不要 reset、checkout 覆盖、git clean 或 stash/drop。** 上一轮正是 25k 行主文件在工作树里长期没有快照才损失惨重；从现在起每完成一块可运行改动就小步提交，不要把几轮工作再堆在一起。
 - **0.1.37 源码事故（必须知道）**：收尾时一个 Agent 用默认限行的 read（约 950/25,257 行）读了 `src/LumaChart.Avalonia/MainWindow.cs` 后整文件写回，导致该文件被截断；当时工作树未提交，git 里没有任何快照。已用 ilspycmd 反编译 20:47 编译的 0.1.37 程序集恢复：保留 16 个未受损的 `MainWindow.*.cs` partial 的 313 个成员，重建主文件 1,437 个成员，并补回原文件末尾的 3 个辅助类型（WindowsAvaloniaEditorInputPolicy / WindowsOnlineRoomEditorAccess / WindowsOnlineRoomPermissionPolicy），把 ILSpy 的只读集合辅助类型还原成普通数组，清掉两处反编译状态变量。**代价：该文件的注释、原始格式和 `#if LUMACHART_SHARED` 分支代码已丢失（本 checkout 不构建该配置），并加了 `#nullable disable` 与告警抑制 pragma。其余源文件均为原件。** 证据在 artifacts/decompiled、artifacts/MainWindow.split.cs、artifacts/MainWindow.truncated.cs、artifacts/splitter。该文件已通过 -warnaserror 零警告编译并重跑全套回归；后续可逐步补注释、恢复 nullable。**教训：read 有默认行数上限，修改大文件必须指定 offset/limit 或改用 edit；工作树长期未提交本身就是风险（0.1.37 已提交为 e60a1a6，此后应小步提交，勿再堆积）。**
 - 接手先看 `git status --short` / `git diff` / 未跟踪文件。不要 reset、checkout 覆盖、git clean、自动 stash/drop 或将这些文件当残留删除。`docs/历史会话.md` 是最早期的需求与规划对话记录，现已入库，保留它（含用户最初的功能清单和工作方式约定）。
 - 正常入口：根目录 `Start-Editor.cmd`。当前指向：
-  `dist/SimpleManiaEditor-0.1.37-Local-20261020-212306/app/SimpleManiaEditor.exe`。
-- 当前版本在 `SimpleManiaProduct.cs`、Avalonia csproj 与 OsuHost csproj 中均为 0.1.37（宿主版本号此前滞后，本轮同步）。最近公开分发版记录为 0.1.31；本地 .32～.37 不能当作已公开发布。
-- 0.1.37 已修正：曲库进入不再扫描（只读缓存＋手动刷新）、标签页溢出可达、非 1x 播放每音符爆音。真实设备听感、真实 46k 目录刷新耗时、标签条真机手感仍未验收。
+  `dist/SimpleManiaEditor-0.1.38-Local-20261021-005605/app/SimpleManiaEditor.exe`；该包 smoke 与 storage 检查通过，未创建 ZIP/tag/Release。
+- 当前版本在 `SimpleManiaProduct.cs`、Avalonia csproj 与 OsuHost csproj 中均为 0.1.38。最近公开分发版记录为 0.1.31；本地 .32～.38 不能当作已公开发布。
+- 0.1.37 已修正（历史）：曲库进入不再扫描（只读缓存＋手动刷新）、标签页溢出可达、非 1x 播放每音符爆音。
+- 0.1.38 新增/修正：只读谱面顶栏「编辑」、osu 搜索语法、曲库索引 v2（全字段增量/后台回填/缺值降级）、非 1x 预取管线与起音重复/和弦误切修复。真实 46k 库迁移、真机听感、标签条手感与高 DPI/全屏/平板布局、真实大 mapset 克隆耗时仍未验收。
 - 若换电脑/工作目录：必须携带全部本地已修改与未跟踪源码；作品/个人资料另外完整备份。不要只带 GitHub 或只带 .osu。
 
-### 0.1.37 本轮变更（交接必读）
+### 0.1.38 本轮变更（交接必读）
+
+1. **只读谱面顶栏「编辑」**：只读曲库谱面激活时，顶部固定工具栏最左出现 accent「编辑」按钮（automation id `Editor.TopBar.EditReadOnly`，67×32，buttonY=51，在时间轴顶 107.3 之上）。点击会克隆整套谱面到 CreationRoot 并以可编辑标签打开，状态栏与 Toast 报出复制目录；克隆中按钮禁用并显示“正在复制…”。左工具栏原「克隆并编辑」（`Editor.CloneReadOnly`）已删除，左栏只放 note 工具/变换；只读状态文案改指顶部「编辑」。证据：单次点击 cloneMs 297–453，源与副本 SHA256 均为 `0D35F1D4…48A9`，源文件与只读标签保留；双击只增加 1 份副本；锁住源 `.osu` 后点击无新标签、源 hash 不变，状态显示“克隆未完成，原文件保留：…”。真实大 mapset 的克隆耗时未实测。
+2. **osu 搜索语法**：曲库两栏搜索框支持 `mapper=/creator=/author=`、`artist=`、`title=`、`diff=/version=`、`key=/keys=`（逗号列表与范围）、`bpm`、`cs`、`source`、`tag`、`format`、`state`、`note`、`star:true`（收藏）。`=` 与 `:` 同义，另有 `!=`/`!:`、`< <= <: > >= >:`、引号短语 `"..."`、`"..."!` 全等、`[难度]`、`-term` 负向。未知字段或畸形输入按 osu 行为回退纯文本，任何输入不抛异常；`ar/od/hp/dr`、star 评分、`ln`、`status` 提示“暂不支持 X（该条件按文本搜索）”。20k 同一数据集：旧 SQLite/FTS 文字查询 34–42ms → 新内存求值 2.6–4.1ms，运算符查询 1.2ms，解析一次 4–7µs，逐谱面匹配 0 字节分配；12 条共同词汇查询两引擎结果一致，`tag:` 两边统一为子串。另修复「★ 收藏」「未发布」按钮只筛左栏、对右栏只读 Songs 完全无效的问题：现在两栏都筛（右栏 3 行→1 行，清空恢复 3 行）。
+3. **曲库索引 v2**：按 osu 模型在导入时解析一次、字段全量落库，再进入只读缓存，刷新只处理变化。索引字段为 Title/Artist/Creator/Version/KeyCount/Format/Source/BPM/Length，加文件 size/mtime；个人标签仍在 personal 表。`Length` 是**可玩时长**（最后音符 END − 第一个音符 START，秒），不是音频时长；.osu 的 LN 用 objectParams end，Malody 用 TimingMap 折算，Malody 无 timing/音符时为 null 并提示。增量按 size/mtime 命中，只解析新增/变化、删除消失项：20k 首次导入 10,446.2ms，无变化刷新 287.8ms（纯枚举 114.3ms），改 1%（200 文件）443.4ms（全量解析 10,090.9ms，约 22.7×），删 10 个文件后 19,990 行且 SQLite 同步。旧 headers 原地 ALTER 加列并后台回填：1200 行旧 schema 迁移+回填 927.4ms，`length<60` 回填前 0 → 回填后 335；回填中搜索不崩，个人标签保留。缺值降级：Length 为 null 的行不参与 `length` 比较（被排除），状态栏提示“部分谱面时长未知，刷新索引后补齐”，回填后消失。进入曲库仍是缓存优先（20k 缓存行首次 browser build 147–160ms、再进 105–106ms，无目录扫描）。真实 46k 用户库的迁移/回填未实测。mania star rating 未实现（需要完整难度算法，未造假）；ar/od/hp/dr/ln/status 仍回退文本。
+4. **非 1x 音频（预取管线 + 起音重复/和弦误切修复）**：新增 `PrefetchingSampleProvider`：专用生产者线程 + 65536 帧（≈1.4s）环形缓冲，非 1x 管线全部走它，音频回调只做字节拷贝；**1x 保持直通，不预取、不拉伸**（gate-036 的 rate/seek/commit 语义依赖 decoder-time EOF）。真实 Albemuth MP3 只读、按设备节拍读、2s warm-up + 15s 稳态：回调 p99 0.012–0.28ms、over10=0、underrun=0、max ≤1.5ms，且与速率无关（2x 0.014ms / 0.1x 0.012ms @5ms 块）；改前 0.1x p99 15.75ms、189/4000 次 >10ms。起音重复（用户听到的“顿挫”主因）：删除每段结尾 64ms 历史回灌与补零，段尾改真实 flush；<100ms 段用自身最后 24ms 做 4ms 交叉淡变循环补预算。24 个 click 在 2x/1.5x/1.25x/1.1x/0.9x/0.75x/0.5x/0.25x/0.1x 全部出声 24 次（改前 48，0.1x 96），峰值 0.73（源 0.79 的 92%，改前 0.58），起音时刻误差 ≤0.2ms。稳态和弦误切：检测器改两遍判定（0.1.37 基线位置 + 后 5ms 与过去 200ms 均值 8 倍门限），8 秒三和弦 66 段 → 1 段；220Hz 分量与连续路径相等（改前 0.005–0.036 vs 连续 0.04–0.22）。50ms burst 内部零值间隙 10.85ms → 0ms；底鼓+底音 join step 80 → 0，maxJump 0.008–0.030（037 阈值 0.05）。取舍：完全连续 SoundTouch 在 0.5x–0.1x 会让起音提前 24–48ms，过不了 027 未改的 ±5ms 判据，所以保留“只在起音上升沿分段”，稳态和弦 1 段。已知限制：接缝台阶 0.0299 略高于内部目标 0.02（等于底音自身幅度 0.03，不是爆音，037 阈值内）；全部为设备前 PCM 与回调计时，无声卡/耳机实测。
+
+本轮验证：
+<!-- BATTERY-RESULTS -->
+
+### 0.1.37 本轮变更（历史）
 
 用户这轮提了三件事，均已完成编码、构建与 headless 验证；结论与边界如下。
 
@@ -31,12 +42,13 @@
 
 用户最不满意的是：功能虽然存在，但交互不合直觉，随后长时间逐个纠正。必须先在脑中走完实际 mapper 工作流，再改界面。按钮是否常驻、是否属于当前工具层级、焦点和快捷键冲突、取消是否会误操作、只读查看是否会阻止退出，都属于功能本身。
 
-- **2026-10-20 起的分工（用户明确要求）**：主会话/Lead 只做协调、把关和转述，具体的编码、构建、测试、排查交给子代理或智能体团队分片执行（提交源码这类极简单动作可以主会话自己做）。原因：单个会话上下文已到 500K，长上下文会明显削弱判断力。派活时必须写清文件范围与写作用域，避免两个 agent 同时改同一文件；构建与 suite 用 `scripts/Agent-Verify.ps1` 串行，不要让多个 dotnet build 抢 bin/obj。
+- **2026-10-20 起的分工（用户明确要求，0.1.38 沿用）**：主会话/Lead 只做协调、把关和转述，具体的编码、构建、测试、排查交给子代理或智能体团队分片执行（提交源码这类极简单动作可以主会话自己做）。原因：单个会话上下文已到 500K，长上下文会明显削弱判断力。派活时必须写清 worktree、文件范围与写作用域，禁止跨 worktree 修改，避免两个 agent 同时改同一文件；构建与 suite 用 `scripts/Agent-Verify.ps1` 串行，不要让多个 dotnet build 抢 bin/obj。
 - 有明确要求就直接完成；日常可逆实现不要重复请求许可。
 - 不自行改写已确定的操作习惯；新需求优先于早期记录。
 - 不随意扩大范围，不因为“已有代码”就把多余概念暴露给用户。
 - 进展说明简洁，长任务持续说明真正发现和剩余不确定性。
-- 测试通过不等于用户手感通过。未复现的实际问题要明确写“未复现/未定位”，不要将防护补丁说成根因已解决。
+- 测试通过不等于用户手感通过。未复现的实际问题要明确写“未复现/未定位”，不要将防护补丁说成根因已解决。0.1.38 的音频证据只到设备前 PCM 与回调计时；真实 4.6 万用户库迁移/回填只用 `%TEMP%` 合成数据，不能写成真实环境结论。
+- 交接文档里的本轮验证占位由 lead 在跑完 battery 后填入真实结果；未跑或失败的 suite 不要改写成 PASS，也不要把合成结果当成真机验收。
 - 用户允许过子代理排查；新接手 Agent 是否使用子代理按当次任务/自身工具规则执行。旧 Agent 的内存和会话不能当作可靠交接载体。
 - 用户曾建议使用本机 ZCode Desktop 的 commandcode / deepseek-v4.1-flash-fast 加速开发，这只是可选偏好，不表示已有可调用集成，也不是必须依赖。
 
@@ -124,11 +136,16 @@
 - 左上角品牌图标进入曲库。左栏是个人创作区（几十/上百图），右栏是选定只读 Songs（可几万图），独立搜索。
 - 进入曲库＝只读持久化索引缓存，不扫描磁盘；刷新目录只能由用户点「刷新索引」或明确操作触发。缓存可能不是最新，状态行/头部必须写清“只读缓存”和上次刷新时间；不要把“后台核对”又加回来。
 - 左栏包含旧版已收录的个人工作区，不能只用最新包的 Maps 路径筛选，否则又显示 0 张。
-- 左栏双击难度编辑；右栏双击只读查看原件，不自动克隆。需要编辑时显式“克隆并编辑”，复制并校验整套资源到工作区。
+- 左栏双击难度编辑；右栏双击只读查看原件，不自动克隆。需要编辑时点只读谱面顶部工具栏最左的「编辑」（旧左栏「克隆并编辑」已删除）：整套克隆到 CreationRoot、校验后以可编辑标签打开，状态栏/Toast 报出复制目录，克隆中按钮显示“正在复制…”。
 - 只读必须允许播放、定位、框选、复制、提取排列、切换标签、关闭标签/程序；只阻止真正修改/写原件。曾因元数据侧栏的隐式“应用”导致无法退出，已修复，不要重引入。
-- SQLite/FTS、头缓存、后台更新/搜索、文件监听、虚拟化行已经实现；没有 Mode 的 .osu 默认 standard，应排除。watcher 只做增量（保存/新建/删除）；overflow 或 >256 路径只提示“点刷新索引”，不得自动全量扫描。刷新时间存 index_metadata。
+- **索引字段**：v2 按 osu 模型在导入时解析一次、字段全量落库：Title/Artist/Creator/Version/KeyCount/Format/Source/BPM/Length，加文件 size/mtime；个人标签仍在 personal 表。Length 是可玩时长（最后音符 END − 第一个音符 START，秒），不是音频时长；.osu 的 LN 用 objectParams end，Malody 用 TimingMap 折算，Malody 无 timing/音符时保持 null 并提示。
+- **增量**：枚举目录 → 按 size/mtime 命中缓存 → 只解析新增/变化 → 删除消失项。20k：首次导入 10,446.2ms；无变化刷新 287.8ms（纯枚举 114.3ms）；改 1%（200 文件）443.4ms（全量解析 10,090.9ms，约 22.7×）；删除 10 个文件后索引 19,990 且 SQLite 同步。
+- **回填**：旧 headers 原地 ALTER 加列，后台回填；1200 行旧 schema 迁移+回填 927.4ms，`length<60` 回填前 0 → 回填后 335，回填中搜索不崩，个人标签保留。
+- **缺值降级**：Length 为 null 的行不参与 `length` 比较（被排除），状态栏提示“部分谱面时长未知，刷新索引后补齐”，回填后提示消失。
+- 搜索框使用 osu 语法（字段与运算符见 §1）；未知字段/畸形输入回退纯文本，`ar/od/hp/dr/ln/status` 与 star 评分提示不支持并按文本搜索。
+- SQLite 索引/头缓存、后台更新、内存求值搜索、文件监听、虚拟化行已经实现；没有 Mode 的 .osu 默认 standard，应排除。watcher 只做增量（保存/新建/删除）；overflow 或 >256 路径只提示“点刷新索引”，不得自动全量扫描。刷新时间存 index_metadata。
 - 启动先显示持久化快照，后台核对，返回页面不重复完整扫描。首次添加 Songs 仍需扫描，不能承诺冷启动无扫描“秒开”。
-- 真实索引隔离副本 46,599 条：首快照约 3.2s、热约 2.0s；20k 合成 UI 约15可见行。不是整程序启动耗时。
+- 进入曲库仍缓存优先：`--library-037` 复测 20k 缓存行首次 browser build 147–160ms、再次进入 105–106ms，无目录扫描；0.1.37 的真实 46.6k 隔离副本快照为 1.03/1.04s（0.1.34 约 3.2/2.0s），不是整程序启动耗时。
 - 个人收藏/标签/状态（例如未发布）/备注、批量整理、组合/排除搜索已有；不写 .osu。
 
 ### 多轨
@@ -161,39 +178,27 @@
 
 ## 7. 音频和试玩：本轮最需要谨慎接续的技术点
 
-### 编辑播放 0.1.36 / 0.1.37 的修复及边界
+### 编辑播放：0.1.38 预取管线与边界
 
-先读 DEVELOPMENT-HANDOFF.md 最前面的 0.1.36，以及 Audio/ 下这些文件：
+先读 DEVELOPMENT-HANDOFF.md 最前面的 0.1.38/0.1.37，以及 Audio/ 下这些文件：
 
-- `PreparedMusicPipeline.cs` / `TransientAnchoredStretchSampleProvider.cs` / `SourceSilenceGuard.cs`
+- `PrefetchingSampleProvider.cs`（0.1.38 新增）/ `PreparedMusicPipeline.cs` / `TransientAnchoredStretchSampleProvider.cs` / `SourceSilenceGuard.cs`
 - `WindowsAudioDeviceEngine.cs` / `WindowsAudioPlaybackService.cs`
 - `SourceTimedSampleProvider.cs` / `WindowsKeySoundPlaybackCoordinator.cs` / `WindowsKeySoundService.cs`
 - `ViewModels/WindowsAudioTransportViewModel.cs`
 
-过去用户反复报告慢放震荡、音乐早于频谱且早于按键音，尤其 0.1x。不能只加全局10ms经验补偿：已经发现不同层的实际问题。
+0.1.38 的完整证据见 §1 第 4 条，这里只列接续时不能弄错的边界：
 
-1. 原 SoundTouch/WSOLA 会从未来 grain 提前借到瞬态；有非静音底音时，仅静音门限无法保护。合成实际 WASAPI 输出前 PCM 中，0.1x 本应1000ms的攻击音出现在约791ms。
-2. 旧按键音按估算设备队列延迟排程，另有约15–30ms级误差。
-3. 倍速/seek准备占住操作gate时旧音乐仍播，但按键音因gate忙被拒绝且事件已消费。
-4. DSP flush补零会在极慢短音的有效尾部被取用，造成断续静音；短读也有尾音丢失和游标偏移问题。
+- 非 1x 全部走 `PrefetchingSampleProvider`（专用生产者线程 + 65536 帧≈1.4s 环形缓冲），音频回调只做字节拷贝；**1x 直通，不预取、不拉伸**，gate-036 的 rate/seek/commit 语义依赖 decoder-time EOF。
+- 起音重复按根因修：段尾 64ms 历史回灌与补零已删除，改真实 flush；<100ms 段用自身最后 24ms 做 4ms 交叉淡变循环补预算。24 个 click 在 2x/1.5x/1.25x/1.1x/0.9x/0.75x/0.5x/0.25x/0.1x 都只出声 24 次（改前 48，0.1x 96），峰值 0.73（源 0.79 的 92%），起音误差 ≤0.2ms。
+- 稳态和弦误切改为两遍判定（0.1.37 基线位置 + 后 5ms 与过去 200ms 均值 8 倍门限），8 秒三和弦 66 段 → 1 段；50ms burst 内部零值间隙 10.85ms → 0ms。
+- 取舍：完全连续 SoundTouch 在 0.5x–0.1x 会让起音提前 24–48ms，过不了 027 未改的 ±5ms 判据，所以保留“只在起音上升沿分段”，稳态和弦 1 段。
+- 已知限制：接缝台阶 0.0299 略高于内部目标 0.02（等于底音自身幅度 0.03，不是爆音，037 阈值内）；全部为设备前 PCM 与回调计时，没有声卡/耳机实测。
+- 全局音画校准独立于谱面 offset 且持久化；不要重置用户校准。
 
-现在的处理：
+0.1.36/0.1.37 的历史结论保留：0.1.36 定位并修正了 0.1x WSOLA 从未来 grain 借瞬态（合成输出中本应 1000ms 的攻击音出现在约 791ms）、按键音按估算队列延迟排程、倍速/seek gate 期间旧音乐仍播；0.1.37 修正了分段 flush 空读被当 EOF 补零（0.30 满量程台阶）、3ms 尾部衰减与接缝淡变、攻击边界 80ms、停用输出静音保护。这些是 0.1.38 预取与起音修复的前置，不要回退。
 
-- 1x旁路；保音高变速仍用SoundTouch，但以三频带能量攻击/静音释放切分source，每段输出以绝对sample预算结束，防止借入下一攻击和逐段累计舍入。
-- 分段尾部补有界的过去音频上下文，避免flush零进入有效尾音；源静音保护保留；旧经验14ms搜索padding移除。使用有界流式缓冲，没有全曲PCM，也没有新native库依赖。
-- 按键音携带绝对source毫秒，经过采样率转换与epoch guard后，由mixer的实际sample游标/实际rate决定延迟。
-- 后台prepare期间旧音乐/旧epoch继续排程，实际source commit前才失效旧epoch；异常路径恢复commit标志。
-- 非EOF短/零读有界重试，source-timed音效只随真实music PCM推进；保留末段partial PCM与显式终止静音。
-
-0.1.37 追加（针对“非 1x 有明显噪声”）：瞬时 SoundTouch 空读改为有界重试（不再把 flush 中段当 EOF 补零）；分段的实际数据短于预算时用 3ms 余弦衰减补尾（不再瞬时归零）；每段接缝 3ms 升余弦淡出/淡入，淡入等到第一个真实样本（避免 SoundTouch 前导静音后的突跳）；攻击边界最小间隔 80ms，避免 8ms 超短段和重复 attack 检测，但 release 边界仍立即切开（否则短 burst 会被合并出 10ms 空洞）；输出增益的 SourceSilenceGuard 已从 PreparedMusicPipeline 停用——它的按样本增益台阶本身就是爆音来源，攻击边界已由分段保证。合成鼓点＋底音九倍率最大采样台阶 0.006–0.014（改前 0.30）；数字静音仍残 0.082/音符；持续单音优于未分段参考。真实 MP3 起音 206.68–207.70ms。不要把这组数字说成真实设备听感验收。
-
-已验证：十倍率 mono/stereo、exact相同双声道/单侧静音、块大小一致性、长度/EOF/峰值、谐波/非谐波纯度、短脉冲连续性；实际WASAPI输出前PCM的1/.5/.25/.1合成music-key差约0.15ms；完整自定义44.1k按键音→48k音乐输出路径也通过。
-
-真实 Albemuth MP3 只读起音/seek测试：raw约207.94ms；五倍率伸缩起音207.53～207.76ms（**source时间**），1x约207.94ms；原SHA256不变。
-
-**这些不是扬声器/耳机声学延迟、屏幕Present或任意歌曲主观音质测试。0.1.36还没有用户实机反馈，不能先宣布所有音画问题根治。** 全局音画校准独立于谱面offset且持久化；不要重置用户校准。不同设备/音乐、极慢音质、长时间切速、复杂瞬态仍需验收。
-
-曾试验外部native伸缩实现但已拒绝，没有产品引用/分发；artifacts下失败实验/旧日志不是最终实现。不要把旧实验DLL顺手打包进产品。
+曾试验外部 native 伸缩实现但已拒绝，没有产品引用/分发；artifacts 下失败实验/旧日志不是最终实现。不要把旧实验 DLL 顺手打包进产品。
 
 ### 官方试玩
 
@@ -262,6 +267,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Mapper specs failed' }
 # --mapper-035 / --mapper-034 / --mapper-033 / --mapper-031
 # --regression-030 / --audio-gate-036 / --audio-026
 # --library-037 / --tabs-037 / --audio-noise-037（0.1.37 新增）
+# --library-038 / --audio-stretch-038（0.1.38 新增；实际结果以本轮验证占位为准）
 # --audio-alignment-036 会使用实际音频输出，可能听到合成音
 # --audio-onsets-036 快速单独跑既有起音回归
 # 并行 agent 或需要串行构建时用 scripts/Agent-Verify.ps1 -TestArgs <flag> -Name <名字>
@@ -278,7 +284,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Mapper specs failed' }
 - Build-Local建立新目录，publish编辑器/host，自包含runtime检查和固定storage验证通过后才改入口。不覆盖用户旧包。
 - 修改版本时同时检查产品常量、csproj、README/FEATURES/BACKLOG；不要创建RELEASE文档暗示已发布。
 
-### 上次实际通过的结果和日志
+### 上次实际通过的结果和日志（0.1.36–0.1.37；0.1.38 见本轮占位）
 
 | 验证 | 结果/日志 |
 | --- | --- |
@@ -294,8 +300,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Mapper specs failed' }
 | 0.1.37 曲库/标签页 | `agent-finallibrary-037-*`、`agent-finaltabs-037-*`（缓存优先进入、手动刷新、36 标签可达、截图在临时 fixture） |
 | 0.1.37 音频 | `agent-lead-audio-*`（九倍率接缝台阶矩阵）、`agent-finalaudio-026-*`、`agent-finalaudio-gate-036-*`、真实 MP3 只读起音 PASS |
 | 0.1.37 包 | dist/SimpleManiaEditor-0.1.37-Local-20261020-212306，smoke 0.1.37 / storage PASS（由恢复后的源码重建） |
+| 0.1.38 | 见 AGENT-HANDOFF.md「本轮验证」占位；`--library-038`/`--audio-stretch-038` 实际结果待 lead 汇总，不在此表声明 |
 
-一次.33测试在并行DSP压力下Space播放等待超时，原样隔离重跑通过；两个日志均保留，不能隐去第一次失败，也不能未经复现就将其定性成已修复的产品bug。最后包的smoke是0.1.36，宿主固定storage检查通过。
+一次.33测试在并行DSP压力下Space播放等待超时，原样隔离重跑通过；两个日志均保留，不能隐去第一次失败，也不能未经复现就将其定性成已修复的产品bug。上表是 0.1.36/0.1.37 的历史记录；0.1.38 本地包的 smoke/storage 结果见 §1，专项 suite 结果以本轮验证占位汇总为准。
 
 ## 11. 代码导航，避免在巨型文件里盲改
 
@@ -321,21 +328,24 @@ MainWindow.cs/TimelineSurface.cs已有较大体积，新功能优先清晰服务
 
 完整列表以FEATURES.md / BACKLOG.md为准；最初需求在PLAN.md / LUMA_ADOPTION.md / 早期会话.md，历史方案不能覆盖后来的用户决定。
 
-**优先等用户对0.1.36真实反馈并修复回归，不应因为下面有建议就自动开发全部。**
+**优先等用户对0.1.38真实反馈并修复回归，不应因为下面有建议就自动开发全部。**
 
-1. 真实设备/歌曲的慢放音质、音画/按键音、连续切速与跳转；0.1.36合成结果不是最终验收。
-2. 流畅度/帧率：已有高刷新设置与诊断，但稳定180fps、1% low180和“2000帧”没有完成证明；早期4000键绘制约144fps，不等于GPU Present。
+1. 真实设备/歌曲的慢放听感：0.1.38 证据只到设备前 PCM 与回调计时；接缝 0.0299 是否可闻、极慢音色、长时间切速和真实大谱仍需耳机/声卡验收。
+2. 真实 4.6 万用户库的迁移/回填与缺值降级：当前只有 `%TEMP%` 合成 1200 行旧 schema 与 20k 合成库，不能外推。
 3. 原版osu修复/栈错误调查：未定位，保留只读诊断边界。
-4. 排列库管理（重命名、删除、分享）、无歌曲独立排列文档，旧不精确排列的有依据恢复方案。
-5. 官方编辑器补齐：更多Metadata/General/Editor属性编辑、原生书签/break/视频/故事板、资源/导出预检、复杂Timing继承/重复事件/批量编辑、完整hitsound bank/index/additions/LN采样。
-6. 7K正式难度：官方strain与Sunny接入、逐键局部难度/放置预估/热力图；不能将上游4K Rework或实验性负荷包装成正式7K难度。
-7. 变速BPM/offset估计、倍率选择/置信度；新建导入音乐不自动测，用户主动启动。需区分文件offset和全局设备校准。
-8. command journal、逐操作回溯与故障恢复；再考虑协作广播/权限/冲突，不等同现有Git文档快照。
-9. 最小RC模式、完整循环平移/转换、可编辑音频轨、多版本并排编辑、编辑器外部skin/布局方案等。
-10. AI元数据agent、自定义API、general check/mapsetverifier、局域网合作仍属后续/TODO。
+4. 7K 正式难度与 star rating：官方strain与Sunny接入、逐键局部难度/放置预估/热力图；mania star rating 未实现（需要完整难度算法，未造假），ar/od/hp/dr 字段无数据；不能将上游4K Rework或实验性负荷包装成正式7K难度。
+5. --mapper-033 间歇超时（MapperWorkflow033Specs:183 排列虚影后 Space 等待编辑播放）根因未定位；保留日志，不要宣称已修复。
+6. 清理 BuildLibraryView 死代码与 0.1.28 陈旧 suite（--workbench-test/--library-028）；补 length/bpm 提示的 i18n key。
+7. 流畅度/帧率：已有高刷新设置与诊断，但稳定180fps、1% low180和“2000帧”没有完成证明；早期4000键绘制约144fps，不等于GPU Present。
+8. 排列库管理（重命名、删除、分享）、无歌曲独立排列文档，旧不精确排列的有依据恢复方案。
+9. 官方编辑器补齐：更多Metadata/General/Editor属性编辑、原生书签/break/视频/故事板、资源/导出预检、复杂Timing继承/重复事件/批量编辑、完整hitsound bank/index/additions/LN采样。
+10. 变速BPM/offset估计、倍率选择/置信度；新建导入音乐不自动测，用户主动启动。需区分文件offset和全局设备校准。
+11. command journal、逐操作回溯与故障恢复；再考虑协作广播/权限/冲突，不等同现有Git文档快照。
+12. 最小RC模式、完整循环平移/转换、可编辑音频轨、多版本并排编辑、编辑器外部skin/布局方案等。
+13. AI元数据agent、自定义API、general check/mapsetverifier、局域网合作仍属后续/TODO。
 
 ### 新 Agent 的第一步
 
-读AGENTS和本文件→盘点保留本地未提交内容→看FEATURES/BACKLOG与最新技术交接→确认Start-Editor指向0.1.37→根据用户接下来的具体反馈复现→做范围清楚的修改和针对性测试→Build-Local更新入口→说明改动、证据与仍未验证的真实环境问题。
+读AGENTS和本文件→盘点保留本地未提交内容→看FEATURES/BACKLOG与最新技术交接→确认Start-Editor指向0.1.38→根据用户接下来的具体反馈复现→做范围清楚的修改和针对性测试→Build-Local更新入口→说明改动、证据与仍未验证的真实环境问题。
 
 交接无需先清理/重构/重装/重建一切，也不需要让用户重新复述已经记录的操作要求。
