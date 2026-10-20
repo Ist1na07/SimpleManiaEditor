@@ -119,6 +119,15 @@ public sealed class DesktopLibrarySearch
         return search;
     }
 
+    /// <summary>
+    /// Lower-cased personal text (tags, note, state) that free-text search looks
+    /// through. The UI refreshes it whenever the annotation cache changes.
+    /// </summary>
+    public static string BuildPersonalSearchText(MapperAnnotation? annotation) =>
+        annotation is null
+            ? ""
+            : ("\n" + string.Join(' ', annotation.Tags) + "\n" + annotation.Note + "\n" + annotation.State).ToLowerInvariant();
+
     /// <summary>Evaluates the parsed query against one cached library row.</summary>
     public bool Matches(DesktopLibraryChartEntry chart)
     {
@@ -181,7 +190,8 @@ public sealed class DesktopLibrarySearch
         {
             var negated = token.Length > 1 && token[0] == '-';
             var term = negated ? token[1..] : token;
-            if (term.Length == 0) continue;
+            // A lone "-" was ignored by the previous search box; keep that.
+            if (term.Length == 0 || term == "-") continue;
             freeText.Add(new FreeTerm(term, negated, false));
         }
     }

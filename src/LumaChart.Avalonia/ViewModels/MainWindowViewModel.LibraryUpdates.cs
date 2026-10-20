@@ -265,9 +265,7 @@ public sealed partial class MainWindowViewModel
             var annotation = annotations.GetValueOrDefault(entry.ChartPath);
             entry.PersonalAnnotation = annotation;
             entry.PersonalSummary = annotation?.Summary ?? "";
-            entry.PersonalSearchText = annotation is null
-                ? ""
-                : ("\n" + string.Join(' ', annotation.Tags) + "\n" + annotation.Note + "\n" + annotation.State).ToLowerInvariant();
+            entry.PersonalSearchText = DesktopLibrarySearch.BuildPersonalSearchText(annotation);
         }
     }
     public void SetPersonalAnnotation(string path, MapperAnnotation annotation)

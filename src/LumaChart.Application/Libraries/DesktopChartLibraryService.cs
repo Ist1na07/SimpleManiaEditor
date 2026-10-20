@@ -244,7 +244,9 @@ public static class DesktopChartLibraryService
     {
         ArgumentNullException.ThrowIfNull(charts);
         ArgumentNullException.ThrowIfNull(search);
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var paths = charts is ICollection<DesktopLibraryChartEntry> known
+            ? new HashSet<string>(known.Count, StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var chart in charts)
             if (search.Matches(chart)) paths.Add(chart.ChartPath);
         return paths;
