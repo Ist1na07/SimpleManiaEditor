@@ -373,7 +373,7 @@ public sealed partial class MainWindowViewModel
     public async Task OpenReadOnlyAsync(string path)
     {
         var tab = await workspace.OpenReadOnlyAsync(path);
-        Status = "只读查看 · " + tab.DisplayTitle + " · 可复制排列；编辑前请克隆到工作目录";
+        Status = "只读查看 · " + tab.DisplayTitle + " · 可复制排列；点上方「编辑」复制到工作区后可编辑";
         RaiseStateChanged();
     }
 
