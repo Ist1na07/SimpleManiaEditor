@@ -29,6 +29,68 @@ public static class WindowsTitleBarParityPolicy
     public const double DocumentTabOpenMaxWidth = 190;
     public const double DocumentTabCloseWidth = 25;
 
+    // 0.1.37 document-tab overflow. These are additive to the WPF tab metrics:
+    // the strip scrolls with the wheel and shows edge arrows only while the
+    // content is wider than the visible area, so a short tab list keeps the
+    // exact previous title-bar layout and reserves no space.
+    public const double DocumentTabOverflowButtonWidth = 18;
+    public const double DocumentTabOverflowButtonHeight = 24;
+    public const double DocumentTabOverflowButtonEdgeMargin = 2;
+    public const double DocumentTabOverflowButtonGap = 4;
+    public const double DocumentTabOverflowPageFraction = .85;
+    public const double DocumentTabOverflowMinimumPage = 120;
+    public const double DocumentTabOverflowWheelStep = 120;
+    public const double DocumentTabOverflowRepeatStep = 64;
+    public const int DocumentTabOverflowRepeatDelayMilliseconds = 380;
+    public const int DocumentTabOverflowRepeatIntervalMilliseconds = 70;
+    public const double DocumentTabOverflowRevealMargin = 6;
+    public const double DocumentTabOverflowEpsilon = .5;
+
+    /// <summary>
+    /// True only when the tab content is wider than the visible strip. Arrows
+    /// are hidden otherwise, so a fitting tab list never reserves their space.
+    /// </summary>
+    public static bool ShouldShowDocumentTabOverflow(
+        double extentWidth,
+        double viewportWidth) =>
+        double.IsFinite(extentWidth) &&
+        double.IsFinite(viewportWidth) &&
+        viewportWidth > 0 &&
+        extentWidth > viewportWidth + DocumentTabOverflowEpsilon;
+
+    /// <summary>
+    /// Returns the horizontal offset that brings the tab interval into the
+    /// viewport. The current offset is kept when the tab is already visible,
+    /// and the result is clamped to the real scroll range.
+    /// </summary>
+    public static double ResolveDocumentTabRevealOffset(
+        double currentOffset,
+        double extentWidth,
+        double viewportWidth,
+        double tabLeft,
+        double tabRight)
+    {
+        if (!double.IsFinite(currentOffset) ||
+            !double.IsFinite(extentWidth) ||
+            !double.IsFinite(viewportWidth) ||
+            !double.IsFinite(tabLeft) ||
+            !double.IsFinite(tabRight) ||
+            viewportWidth <= 0)
+        {
+            return 0;
+        }
+        var maximum = Math.Max(0, extentWidth - viewportWidth);
+        var target = Math.Clamp(currentOffset, 0, maximum);
+        var margin = Math.Min(
+            DocumentTabOverflowRevealMargin,
+            Math.Max(0, viewportWidth / 4));
+        if (tabLeft < target + margin)
+            target = tabLeft - margin;
+        else if (tabRight > target + viewportWidth - margin)
+            target = tabRight - viewportWidth + margin;
+        return Math.Clamp(target, 0, maximum);
+    }
+
     public static WindowsDocumentTabPresentation ResolveDocumentTab(
         DesktopChartFormat format,
         string displayTitle,

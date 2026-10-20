@@ -61,8 +61,10 @@ internal static class Audio026Specs
             for (var i = 0; i < mono.Length; i++) { identical[i * 2] = identical[i * 2 + 1] = mono[i]; leftOnly[i * 2] = mono[i]; }
             var same = Render(identical, 2, rate, 2048).Samples;
             var one = Render(leftOnly, 2, rate, 2048).Samples;
-            for (var i = 0; i < same.Length; i += 2) Require(same[i] == same[i + 1], $"{rate}x changed identical stereo phase/image");
-            for (var i = 1; i < one.Length; i += 2) Require(one[i] == 0, $"{rate}x leaked the left channel into a silent right channel");
+            for (var i = 0; i < same.Length; i += 2)
+                Require(same[i] == same[i + 1], $"{rate}x changed identical stereo phase/image");
+            for (var i = 1; i < one.Length; i += 2)
+                Require(one[i] == 0, $"{rate}x leaked the left channel into a silent right channel");
             var pulse = new float[SampleRate * 2];
             for (var i = 0; i < SampleRate / 25; i++) pulse[i] = (float)(.6 * Math.Sin(2 * Math.PI * 997 * i / SampleRate));
             var head = Render(pulse, 1, rate, 512).Samples;

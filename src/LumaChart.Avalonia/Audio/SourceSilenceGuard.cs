@@ -14,16 +14,24 @@ internal sealed class SourceSilenceGuard : ISampleProvider
     private readonly RecordingSource input;
     private readonly double rate;
     private readonly double smoothing;
+    private readonly double releaseSmoothing;
     private long outputFrames;
     private double gain = 1;
+    private double target = 1;
 
     public SourceSilenceGuard(ISampleProvider output, RecordingSource input, double rate)
     {
         this.output = output; this.input = input; this.rate = rate;
         smoothing = Math.Exp(-1d / (output.WaveFormat.SampleRate * .001));
+        // Restoring the original quiet envelope must not step the waveform: a
+        // borrowed attack cut to digital zero is a full-scale click at every
+        // note. Ramp over a fraction of a millisecond instead.
+        releaseSmoothing = Math.Exp(-1d / (output.WaveFormat.SampleRate * ReleaseSeconds));
     }
 
     public WaveFormat WaveFormat => output.WaveFormat;
+    private const double ReleaseSeconds = .0008;
+    private double applied = 1;
     public int Read(float[] buffer, int offset, int count)
     {
         var read = output.Read(buffer, offset, count);
@@ -34,14 +42,24 @@ internal sealed class SourceSilenceGuard : ISampleProvider
             var outputPeak = 0f;
             for (var channel = 0; channel < channels && sample + channel < read; channel++)
                 outputPeak = Math.Max(outputPeak, Math.Abs(buffer[offset + sample + channel]));
-            var target = peak < .001f && outputPeak > peak ? peak / outputPeak : 1;
-            gain = target + (gain - target) * smoothing;
+            // A bucket the decoder has not reached yet is unknown, not silent:
+            // holding the previous decision keeps a strict silence gate without
+            // un-muting (a step) when the stretch output briefly runs ahead.
+            if (peak is { } known)
+            {
+                // Source silence always means "attenuate towards zero". The old
+                // ratio fell back to 1 whenever the output was also silent, so a
+                // borrowed attack that appeared in a silent gap arrived at full
+                // scale in one sample.
+                target = known >= .001f ? 1 : (outputPeak > 0 ? Math.Min(1d, known / outputPeak) : 0);
+                gain = target + (gain - target) * smoothing;
+            }
             // Soft decoder pre-ringing must not be amplified into an audible
             // earlier attack by a grain copied from the future. Stay within
             // the original quiet envelope; recover smoothly at the real attack.
-            var appliedGain = Math.Min(gain, target);
+            applied += (target - applied) * releaseSmoothing;
             for (var channel = 0; channel < channels && sample + channel < read; channel++)
-                buffer[offset + sample + channel] *= (float)appliedGain;
+                buffer[offset + sample + channel] *= (float)applied;
         }
         return read;
     }
@@ -57,13 +75,16 @@ internal sealed class SourceSilenceGuard : ISampleProvider
         public RecordingSource(ISampleProvider source)
         { this.source = source; bucketFrames = Math.Max(1, source.WaveFormat.SampleRate / 1000); }
         public WaveFormat WaveFormat => source.WaveFormat;
-        public float PeakAt(long frame)
+        public float? PeakAt(long frame)
         {
             var bucket = frame / bucketFrames;
             var slot = (int)(bucket % Capacity);
             // A future decoder frame cannot be used to infer silence. Stretch
-            // providers normally supply lookahead; missing history is neutral.
-            return stamps[slot] == bucket ? peaks[slot] : frame >= frames ? 0 : 1;
+            // providers normally supply lookahead; an unknown bucket reports
+            // null so the guard holds its last decision instead of stepping the
+            // gain (reporting 0 muted sustained notes, reporting 1 let borrowed
+            // audio through and then cut it).
+            return stamps[slot] == bucket ? peaks[slot] : null;
         }
         public int Read(float[] buffer, int offset, int count)
         {

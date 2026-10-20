@@ -65,6 +65,8 @@ public sealed class DesktopLibraryChartEntry
 
 public sealed class DesktopLibraryFolderEntry
 {
+    private string? searchText;
+
     public required string FolderPath { get; init; }
     public required string RelativeFolderPath { get; init; }
     public required IReadOnlyList<DesktopLibraryChartEntry> Charts { get; init; }
@@ -75,8 +77,18 @@ public sealed class DesktopLibraryFolderEntry
     public required DateTime ModifiedTime { get; init; }
     public required int SongCount { get; init; }
     public required string Formats { get; init; }
-    public required string SearchText { get; init; }
     public required string FolderSearchText { get; init; }
+
+    /// <summary>
+    /// Lower-cased search blob for the folder and every chart in it. It is built
+    /// on first use: arranging a 46k-chart index must not concatenate a string
+    /// per song before anything actually searches.
+    /// </summary>
+    public string SearchText
+    {
+        get => searchText ??= string.Join('\n', Charts.Select(chart => chart.SearchText).Append(FolderSearchText)).ToLowerInvariant();
+        init => searchText = value;
+    }
 
     public string FolderName => Path.GetFileName(
         FolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
@@ -160,13 +172,23 @@ public static class DesktopChartLibraryService
 
     public static IReadOnlyList<DesktopLibraryFolderEntry> GroupByFolder(
         IEnumerable<DesktopLibraryChartEntry> charts,
-        string root)
+        string root, bool useCachedTimes = false)
     {
         ArgumentNullException.ThrowIfNull(charts);
         root = LocalLibraryRootResolver.Resolve(root).ResolvedRoot;
-        return charts.GroupBy(chart => GroupingFolder(chart, root), StringComparer.OrdinalIgnoreCase)
-            .Select(group => CreateFolderEntry(group.Key, root, group.ToList()))
-            .ToArray();
+        // Charts of one mapset share a folder, so the grouping folder is resolved
+        // once per distinct folder instead of once per chart. This keeps a 46k
+        // index from repeating the same path normalisation thousands of times.
+        var groups = new Dictionary<string, List<DesktopLibraryChartEntry>>(StringComparer.OrdinalIgnoreCase);
+        var resolved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var chart in charts)
+        {
+            if (!resolved.TryGetValue(chart.FolderPath, out var folder))
+                resolved[chart.FolderPath] = folder = GroupingFolder(chart, root);
+            if (!groups.TryGetValue(folder, out var group)) groups[folder] = group = [];
+            group.Add(chart);
+        }
+        return groups.Select(pair => CreateFolderEntry(pair.Key, root, pair.Value, useCachedTimes)).ToArray();
     }
 
     public static IReadOnlyList<DesktopLibraryFolderView> FilterAndSort(
@@ -205,9 +227,13 @@ public static class DesktopChartLibraryService
 
     private static string GroupingFolder(DesktopLibraryChartEntry chart, string root)
     {
-        var folder = new DirectoryInfo(Path.GetFullPath(chart.FolderPath));
-        if (chart.Format.Equals("Malody", StringComparison.OrdinalIgnoreCase) &&
-            folder.Name.All(char.IsDigit) &&
+        var folderPath = chart.FolderPath;
+        if (!Path.IsPathFullyQualified(folderPath)) folderPath = Path.GetFullPath(folderPath);
+        // Entries parsed from disk already carry a normalised folder path; only
+        // Malody's numeric _song_ children need to be folded into their parent.
+        if (!chart.Format.Equals("Malody", StringComparison.OrdinalIgnoreCase)) return folderPath;
+        var folder = new DirectoryInfo(folderPath);
+        if (folder.Name.All(char.IsDigit) &&
             folder.Parent is { } parent &&
             parent.Name.StartsWith("_song_", StringComparison.OrdinalIgnoreCase) &&
             IsInsideOrEqual(parent.FullName, root))
@@ -218,7 +244,7 @@ public static class DesktopChartLibraryService
     private static DesktopLibraryFolderEntry CreateFolderEntry(
         string folder,
         string root,
-        List<DesktopLibraryChartEntry> charts)
+        List<DesktopLibraryChartEntry> charts, bool useCachedTimes)
     {
         charts = charts.OrderBy(chart => chart.DisplayTitle, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(chart => chart.KeyCount)
@@ -234,14 +260,12 @@ public static class DesktopChartLibraryService
         if (string.IsNullOrWhiteSpace(folderName)) folderName = new DirectoryInfo(folder).Name;
         var relative = Path.GetRelativePath(root, folder);
         if (relative == ".") relative = folderName;
-        var added = SafeDirectoryCreationTime(folder, charts.Min(chart => chart.AddedTime));
+        var added = useCachedTimes ? charts.Min(chart => chart.AddedTime) : SafeDirectoryCreationTime(folder, charts.Min(chart => chart.AddedTime));
         var displayTitle = songKeys.Length == 1 ? representative.DisplayTitle : folderName;
         var displayArtist = songKeys.Length == 1 ? representative.DisplayArtist : "多曲谱包";
         var formats = string.Join(" / ", charts.Select(chart => chart.Format)
             .Distinct(StringComparer.OrdinalIgnoreCase));
         var folderSearch = $"{folder}\n{relative}\n{displayTitle}\n{displayArtist}".ToLowerInvariant();
-        var search = string.Join('\n', charts.Select(chart => chart.SearchText).Append(folderSearch))
-            .ToLowerInvariant();
         return new DesktopLibraryFolderEntry
         {
             FolderPath = folder,
@@ -254,7 +278,6 @@ public static class DesktopChartLibraryService
             ModifiedTime = charts.Max(chart => chart.ModifiedTime),
             SongCount = songKeys.Length,
             Formats = formats,
-            SearchText = search,
             FolderSearchText = folderSearch
         };
     }
@@ -366,7 +389,8 @@ public static class DesktopChartLibraryService
             if (target != null) target[line[..colon].Trim()] = line[(colon + 1)..].Trim();
         }
 
-        if (general.TryGetValue("Mode", out var mode) && mode != "3") return null;
+        // osu!'s omitted Mode defaults to standard (0), not mania.
+        if (!general.TryGetValue("Mode", out var mode) || mode != "3") return null;
         var info = new FileInfo(path);
         var folder = info.DirectoryName!;
         return new DesktopLibraryChartEntry

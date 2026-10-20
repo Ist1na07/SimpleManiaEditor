@@ -462,36 +462,8 @@ public static class BasicChartEditingService
     /// Beyond the preserved-denominator ceiling it falls back to the ordinary
     /// 1/1920 conversion rather than failing a paste.
     /// </summary>
-    internal static BeatPosition OffsetExact(BeatPosition anchor, BeatPosition value, BeatPosition origin)
-    {
-        try
-        {
-            long anchorDenominator = anchor.Denominator == 0 ? 1 : anchor.Denominator;
-            long valueDenominator = value.Denominator == 0 ? 1 : value.Denominator;
-            long originDenominator = origin.Denominator == 0 ? 1 : origin.Denominator;
-            var denominator = LeastCommonMultiple(
-                LeastCommonMultiple(anchorDenominator, valueDenominator),
-                originDenominator);
-            if (denominator <= BeatPosition.MaximumPreservedDenominator)
-            {
-                var numerator = checked(
-                    ((long)anchor.Bar * anchorDenominator + anchor.Numerator) * (denominator / anchorDenominator) +
-                    ((long)value.Bar * valueDenominator + value.Numerator) * (denominator / valueDenominator) -
-                    ((long)origin.Bar * originDenominator + origin.Numerator) * (denominator / originDenominator));
-                var bar = Math.DivRem(numerator, denominator, out var remainder);
-                if (remainder < 0)
-                {
-                    bar--;
-                    remainder += denominator;
-                }
-                return BeatPosition.Preserve(checked((int)bar), checked((int)remainder), checked((int)denominator));
-            }
-        }
-        catch (OverflowException)
-        {
-        }
-        return BeatPosition.FromDouble(anchor.Value + value.Value - origin.Value, BeatPosition.MaximumPreservedDenominator);
-    }
+    internal static BeatPosition OffsetExact(BeatPosition anchor, BeatPosition value, BeatPosition origin) =>
+        BeatArithmetic.Offset(anchor,value,origin);
 
     private static long LeastCommonMultiple(long left, long right) =>
         checked(left / GreatestCommonDivisor(left, right) * right);

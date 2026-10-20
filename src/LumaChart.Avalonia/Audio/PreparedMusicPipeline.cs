@@ -1,19 +1,17 @@
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using SoundTouch;
-using SoundTouch.Net.NAudioSupport;
 
 namespace LumaChart.Avalonia.Audio;
 
 internal sealed record PreparedMusicPipeline(
-    SoundTouchWaveProvider[] Stages,
+    object[] Stages,
     VolumeSampleProvider Volume,
     Func<bool> Ended) : IDisposable
 {
     public static PreparedMusicPipeline Build(WaveStream source, TimeSpan position,
         double playbackRate, bool preservePitch, float volume, Action throwIfDisposed)
     {
-        var createdSoundTouchProviders = new List<SoundTouchWaveProvider>();
+        var createdSoundTouchProviders = new List<object>();
         VolumeSampleProvider? createdVolumeProvider = null;
         try
         {
@@ -32,29 +30,13 @@ internal sealed record PreparedMusicPipeline(
             // 1x needs no time stretching, including when preserve-pitch is checked.
             if (preservePitch && Math.Abs(playbackRate - 1) > .000001)
             {
-                // One stereo-linked time-domain processor for every rate. Avoid
-                // serial pitch shifts and their per-channel phase/limiter artefacts.
-                var recordedSource = new SourceSilenceGuard.RecordingSource(boundedSource);
-                // The correlation search is forward-looking. Centre that
-                // search for slow playback, then cap the padded output to the
-                // original duration. The guard still reads unpadded PCM time.
-                var searchPaddingFrames = playbackRate <= .5
-                    ? (int)Math.Round(boundedSource.WaveFormat.SampleRate * WindowsPitchPreservingTimeStretchPolicy.SeekWindowDurationMilliseconds / 2000d)
-                    : 0;
-                var originalOutputSamples = (long)Math.Round(boundedSource.RemainingSamples / (boundedSource.WaveFormat.Channels * playbackRate)) * boundedSource.WaveFormat.Channels;
-                IWaveProvider stageSource = new LeadingSilenceSampleProvider(recordedSource, searchPaddingFrames).ToWaveProvider();
-                var processor = new SoundTouchProcessor();
-                var stageProvider = new SoundTouchWaveProvider(stageSource, processor)
-                {
-                    Tempo = (float)WindowsPitchPreservingTimeStretchPolicy.ResolveSoundTouchTempo(playbackRate),
-                    Pitch = 1,
-                    Rate = 1
-                };
-                WindowsPitchPreservingTimeStretchPolicy.Configure(processor);
-                createdSoundTouchProviders.Add(stageProvider);
-                var createdContinuityProvider = new SoundTouchContinuitySampleProvider(
-                    stageProvider.ToSampleProvider(), () => boundedSource.IsEnded);
-                var aligned = new LengthCappedSampleProvider(new SourceSilenceGuard(createdContinuityProvider, recordedSource, playbackRate), originalOutputSamples);
+                var aligned = new TransientAnchoredStretchSampleProvider(
+                    boundedSource, boundedSource.RemainingSamples, playbackRate, () => boundedSource.IsEnded);
+                createdSoundTouchProviders.Add(aligned);
+                // The transient-anchored provider bounds every processor before an
+                // attack, so the former output-gain silence guard is not needed to
+                // keep attacks out of quiet gaps; its per-sample gain steps were an
+                // audible click source on percussive material.
                 musicProvider = aligned;
                 musicReallyEnded = () => aligned.IsEnded;
             }

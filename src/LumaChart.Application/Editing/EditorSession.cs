@@ -152,6 +152,34 @@ public sealed class EditorSession
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Rebases inherited workspace data in the document and every undo/redo
+    /// snapshot. This is not a user edit: the number and order of history entries
+    /// stay unchanged. All projections finish before any live state is replaced.
+    /// A live pointer gesture defers rebasing until it commits or cancels.
+    /// </summary>
+    internal bool TryProjectInheritedDocumentHistory(Action<ChartDocument> projection)
+    {
+        if (interactiveStart != null) return false;
+        ChartDocument Project(ChartDocument original)
+        {
+            var copy = original.Clone();
+            projection(copy);
+            return copy;
+        }
+        var projected = Project(document);
+        var projectedUndo = undo.Select(entry => new HistoryEntry(Project(entry.Before), Project(entry.After))).ToArray();
+        var projectedRedo = redo.Select(entry => new HistoryEntry(Project(entry.Before), Project(entry.After))).ToArray();
+        document = projected;
+        undo.Clear(); foreach (var entry in projectedUndo.Reverse()) undo.Push(entry);
+        redo.Clear(); foreach (var entry in projectedRedo.Reverse()) redo.Push(entry);
+        // The derived workspace must persist its rebased timestamps/timing even
+        // when it had no independent edits before the owner timing changed.
+        Interlocked.Increment(ref changeSerial);
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
     /// <summary>Starts a live mouse edit that will become a single undo operation.</summary>
     public void BeginInteractiveMutation()
     {

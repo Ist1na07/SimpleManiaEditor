@@ -8,6 +8,7 @@ namespace LumaChart.Avalonia;
 
 public sealed partial class MainWindow
 {
+    private LumaChart.Application.Editing.MapperPattern? pendingLibraryPattern;
     private ChartNote[]? pendingNotePaste;
     private Guid? pendingNotePasteTab;
     private int pendingNotePasteWidth;
@@ -26,7 +27,7 @@ public sealed partial class MainWindow
     }
 
     private void CancelNotePaste()
-    { pendingPasteSurface?.ClearPendingPastePreview(); pendingPasteSurface = null; pendingNotePaste = null; pendingNotePasteTab = null; pendingNotePasteWidth = 0; }
+    { pendingPasteSurface?.ClearPendingPastePreview(); pendingPasteSurface = null; pendingNotePaste = null; pendingLibraryPattern = null; pendingNotePasteTab = null; pendingNotePasteWidth = 0; }
 
     private void RegisterPasteSurface(TimelineSurface surface)
     {
@@ -50,7 +51,12 @@ public sealed partial class MainWindow
             if (surface.Session?.IsReadOnly != false || !surface.Session.CanEditNotes ||
                 pendingNotePasteWidth > surface.Session.Document.KeyCount) return;
             if (pendingPasteSurface != surface)
-            { pendingPasteSurface?.ClearPendingPastePreview(); pendingPasteSurface = surface; surface.BeginPendingPaste(pendingNotePaste); }
+            {
+                var scale = pendingPasteSurface?.PatternPasteScale ?? 1;
+                pendingPasteSurface?.ClearPendingPastePreview(); pendingPasteSurface = surface;
+                if (pendingLibraryPattern != null) surface.BeginPatternPaste(pendingNotePaste, scale);
+                else surface.BeginPendingPaste(pendingNotePaste);
+            }
             surface.MovePendingPaste(e.GetPosition(surface));
         }
     }

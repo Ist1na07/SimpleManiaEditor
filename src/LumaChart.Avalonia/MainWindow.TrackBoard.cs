@@ -94,7 +94,10 @@ public sealed partial class MainWindow
             {
                 timeline.ClearObjectSelection();
                 foreach (var view in secondaryTrackViews.Values) view.Surface?.ClearObjectSelection();
-                OpenAddTrackMenu(trackBoardCanvas); e.Handled = true;
+                var x = e.GetPosition(trackBoardCanvas).X;
+                var next = trackPanels.Children.OfType<EditorTrackPanel>().FirstOrDefault(frame =>
+                    frame.TranslatePoint(new Point(), trackBoardCanvas)?.X > x);
+                OpenAddTrackMenu(trackBoardCanvas, next?.TrackKey); e.Handled = true;
             }
         });
         // Timeline/companion surfaces consume their own wheel. Only gestures

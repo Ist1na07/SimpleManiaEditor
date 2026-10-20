@@ -124,6 +124,8 @@ public sealed partial class TimelineSurface
         try { mirror = CenterSymmetryService.CreateCompanion(new ChartNote { Lane = lane, Beat = head, EndBeat = tail }, SymmetrySettings, session.Document.KeyCount); }
         catch (ArgumentException) { return; }
         if (mirror == null) return;
+        var source = new ChartNote { Lane = lane, Beat = head, EndBeat = tail };
+        if (CenterSymmetryService.MergeOverlappingCompanion(source, mirror) == null) mirror = source;
         var width = GetRenderedNoteWidth(geometry.LaneWidth);
         var left = geometry.TrackLeft + mirror.Lane * geometry.LaneWidth + (geometry.LaneWidth - width) / 2;
         using (context.PushOpacity(.55))

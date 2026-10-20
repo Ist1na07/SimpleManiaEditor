@@ -60,7 +60,9 @@ public sealed partial class MainWindow
             try { status.Text = "正在保存…"; await viewModel.SetPersonalAnnotationsAsync([new(chart.ChartPath, new((tags.Text ?? "").Split([',', '，', '\n'], StringSplitOptions.RemoveEmptyEntries), note.Text ?? "", state.SelectedItem as string ?? "未分类", favorite.IsChecked == true))]); status.Text = "已保存。复制或迁移到另一处曲库后仍保留这些信息。"; }
             catch (Exception exception) { status.Text = "保存失败：" + exception.Message; }
         }));
-        actions.Children.Add(MapperButton("打开编辑", "Library.DetailOpen", async () => { window.Close(); await OpenChartAsync(chart.ChartPath); }));
+        var external = !OsuFileSafetyPolicy.IsWithin(chart.ChartPath, viewModel.CreationRoot);
+        actions.Children.Add(MapperButton(external ? "只读查看" : "打开编辑", "Library.DetailOpen", async () => { window.Close(); if (external) await OpenLibraryReadOnlyAsync(chart.ChartPath); else await OpenChartAsync(chart.ChartPath); }));
+        if (external) actions.Children.Add(MapperButton("克隆到工作目录并编辑", "Library.DetailClone", async () => { window.Close(); await CloneLibraryChartAsync(chart); }));
         actions.Children.Add(MapperButton("复制 / 迁移整套谱面…", "Library.Transfer", async () => { window.Close(); await ShowMapsetTransferAsync(chart); }));
         actions.Children.Add(MapperButton("关闭", "Library.DetailClose", () => window.Close())); body.Children.Add(actions);
         await window.ShowDialog(this);

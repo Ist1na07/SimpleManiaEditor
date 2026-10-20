@@ -7,7 +7,7 @@ using LumaChart.Core.Models;
 
 namespace LumaChart.Avalonia.Infrastructure;
 
-public enum EditorTrackKind { Draft, Reference, Hitsound, Density, Difficulty }
+public enum EditorTrackKind { Draft, Reference, Hitsound, Density, Difficulty, Pattern }
 
 public sealed class EditorTrack
 {
@@ -35,7 +35,7 @@ public sealed class EditorTrackWorkspace
     public double? MainViewBeat { get; private set; }
     public Dictionary<string, double> BoardWidths { get; } = [];
     public bool LoadFailed { get; private set; }
-    public bool HasPendingChanges => layoutDirty || Tracks.Any(t => t.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference &&
+    public bool HasPendingChanges => layoutDirty || Tracks.Any(t => t.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Pattern &&
         t.Session != null && t.Session.ChangeSerial != t.SavedSerial);
     private bool layoutDirty;
     private readonly SemaphoreSlim saveGate = new(1);
@@ -66,7 +66,7 @@ public sealed class EditorTrackWorkspace
                     SyncScroll = item.SyncScroll, ViewBeat = double.IsFinite(item.ViewBeat) ? item.ViewBeat : 0,
                     ViewZoom = item.ViewZoom is { } zoom && double.IsFinite(zoom) && zoom is >= 12 and <= 4480 ? zoom : null,
                     SourcePath = item.SourcePath };
-                if (track.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference)
+                if (track.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Pattern)
                 {
                     var file = Path.Combine(DirectoryPath, track.Id.ToString("N") + ".mc");
                     var session = new EditorSession();
@@ -88,10 +88,10 @@ public sealed class EditorTrackWorkspace
         if (LoadFailed) throw new InvalidDataException("轨道资料读取失败；已保留原文件，不能覆盖。请检查 workspace.json 及 .mc 快照。");
         var track = new EditorTrack { Kind = kind, Name = kind switch
         {
-            EditorTrackKind.Draft => "草稿", EditorTrackKind.Reference => "对照", EditorTrackKind.Hitsound => "hitsound",
+            EditorTrackKind.Pattern => "排列库", EditorTrackKind.Draft => "草稿", EditorTrackKind.Reference => "参考", EditorTrackKind.Hitsound => "hitsound",
             EditorTrackKind.Density => "局部密度", _ => "局部难度（实验）"
         }, SourcePath = referencePath };
-        if (kind is EditorTrackKind.Draft or EditorTrackKind.Reference)
+        if (kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Pattern)
         {
             var document = reference?.Clone() ?? main.Clone();
             if (reference == null) document.Notes.Clear();
@@ -125,7 +125,7 @@ public sealed class EditorTrackWorkspace
         {
             var copy = new EditorTrack { Id = source.Id, Kind = source.Kind, Name = source.Name, Visible = source.Visible,
                 SyncScroll = source.SyncScroll, ViewBeat = source.ViewBeat, ViewZoom = source.ViewZoom, SourcePath = source.SourcePath };
-            if (source.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference && source.Session != null)
+            if (source.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Pattern && source.Session != null)
             {
                 var session = new EditorSession { IsReadOnly = source.Session.IsReadOnly, CanEditTiming = false, CanEditMetadata = false };
                 session.ReplaceDocument(source.Session.CaptureCommittedDocument());
@@ -146,7 +146,7 @@ public sealed class EditorTrackWorkspace
         await saveGate.WaitAsync();
         try
         {
-            var documents = Tracks.Where(t => t.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference &&
+            var documents = Tracks.Where(t => t.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Pattern &&
                 t.Session != null && t.Session.ChangeSerial != t.SavedSerial)
                 .Select(t => (Track: t, Serial: t.Session!.ChangeSerial, Document: t.Session.CaptureCommittedDocument())).ToArray();
             if (!layoutDirty && documents.Length == 0) return;

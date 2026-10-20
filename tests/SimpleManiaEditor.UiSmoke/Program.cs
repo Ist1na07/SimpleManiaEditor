@@ -42,6 +42,11 @@ internal static class Program
             try { Audio026Specs.Run(); Audio027Specs.Run(); return 0; }
             catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
         }
+        if (args.Length > 0 && args[0] == "--audio-onsets-036")
+        {
+            try { Audio027Specs.Run(); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--seek-benchmark")
         {
             PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
@@ -52,14 +57,48 @@ internal static class Program
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_LOCAL_DATA_ROOT", Path.Combine(root, "settings"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_EDITING_ROOT", Path.Combine(root, "editing"));
         Environment.SetEnvironmentVariable("LUMACHART_AVALONIA_WORKSPACE_ROOT", Path.Combine(root, "maps"));
+        if (args.Length > 0 && args[0] == "--audio-gate-036")
+        {
+            try { PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory(); AudioMixer036Specs.Run(); AudioCommit036Specs.Run(root); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
+        if (args.Length > 0 && args[0] == "--audio-alignment-036")
+        {
+            try { PlatformAudioOutputs.Current = new WindowsAudioOutputFactory(); AudioAlignment036Specs.Measure(root); Console.WriteLine(root); return 0; }
+            catch(Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        }
+        if (args.Length == 3 && args[0] == "--warm-index-034")
+        {
+            try
+            {
+                AppBuilder.Configure<TestApplication>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+                MapperWorkflow034Specs.BenchmarkCache(root, args[1], args[2]); return 0;
+            }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--library-benchmark-031")
         {
             try { MapperLibrary031Specs.RunBenchmark(root); Console.WriteLine(root); return 0; }
             catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
         }
+        if (args.Length > 0 && args[0] == "--library-037")
+        {
+            try { AppBuilder.Configure<TestApplication>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting(); MapperLibrary037Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
+        if (args.Length > 0 && args[0] == "--tabs-037")
+        {
+            try { AppBuilder.Configure<TestApplication>().UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting(); MapperTabs037Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
+        if (args.Length > 0 && args[0] == "--audio-noise-037")
+        {
+            try { AudioNoise037Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
-        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" && args[0] != "--regression-030" && args[0] != "--mapper-031" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
+        var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" && args[0] != "--regression-030" && args[0] != "--mapper-031" && args[0] != "--mapper-033" && args[0] != "--mapper-034" && args[0] != "--mapper-035" && args[0] != "--mapper-036" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
         Directory.CreateDirectory(screenshotRoot);
         try
         {
@@ -70,6 +109,41 @@ internal static class Program
             AppBuilder.Configure<TestApplication>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
                 .SetupWithoutStarting();
+            if (args.Length > 0 && args[0] == "--mapper-036")
+            {
+                MapperArithmetic036Specs.MarqueeOutsideOnly();
+                MapperIndependent036Specs.InheritedTiming(); MapperIndependent036Specs.SymmetricTails(); MapperIndependent036Specs.SymmetricTailPointer();
+                PlatformAudioOutputs.Current=new SimulatedAudioOutputFactory();
+                var window036=new MainWindow([]){Width=1440,Height=960};window036.Show();Pump(700);
+                MapperIndependent036Specs.PatternCaptureTarget(window036);window036.Close();Pump(100);
+                MapperArithmetic036Specs.MusicalPatterns();
+                Console.WriteLine("PASS mapper036 "+root);return 0;
+            }
+            if (args.Length > 0 && args[0] == "--mapper-035")
+            {
+                MapperInteraction035Specs.Pointer(root);
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var window035 = new MainWindow([]) { Width = 1440, Height = 960 }; window035.Show(); Pump(700);
+                MapperInteraction035Specs.Workbench(window035, root); window035.Close(); Pump(100);
+                Console.WriteLine("PASS mapper035 " + root); return 0;
+            }
+            if (args.Length > 0 && args[0] == "--mapper-034")
+            {
+                MapperWorkflow034Specs.Marquee();
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var window034 = new MainWindow([]) { Width = 1440, Height = 960 }; window034.Show(); Pump(700);
+                MapperWorkflow034Specs.Workbench(window034, root);
+                Console.WriteLine("PASS mapper034 " + root); return 0;
+            }
+            if (args.Length > 0 && args[0] == "--mapper-033")
+            {
+                MapperWorkflow033Specs.Storage(root);
+                MapperWorkflow033Specs.Pointer(screenshotRoot);
+                PlatformAudioOutputs.Current = new SimulatedAudioOutputFactory();
+                var mapperWindow = new MainWindow([]) { Width = 1440, Height = 960 }; mapperWindow.Show(); Pump(700);
+                MapperWorkflow033Specs.Workbench(mapperWindow, root, screenshotRoot); mapperWindow.Close(); Pump(100);
+                Console.WriteLine("PASS mapper033 " + root); return 0;
+            }
             if (args.Length > 0 && args[0] == "--mapper-031")
             {
                 MapperLibrary031Specs.RunStorage(root);

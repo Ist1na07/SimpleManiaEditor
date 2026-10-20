@@ -49,7 +49,7 @@ internal readonly record struct WindowsAudioDeviceDiagnostics(
 /// service disposes an engine without waiting for its gate and an output's
 /// render thread reports stops on its own schedule.
 /// </summary>
-internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
+internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine, IWindowsAudioSourceCommitNotifier
 {
     internal const double DefaultRequestedOutputLatencyMilliseconds = 40;
     internal const double MinimumRequestedOutputLatencyMilliseconds = 20;
@@ -78,7 +78,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     private string? loadedSourcePath;
     private TransportEnvelopeSampleProvider? transportEnvelope;
     private WaveStream? source;
-    private SoundTouchWaveProvider[] soundTouchProviders = [];
+    private object[] soundTouchProviders = [];
     private VolumeSampleProvider? localVolumeProvider;
     private volatile QueuedOverlayMixerSampleProvider? outputMixer;
     private double playbackRate = 1;
@@ -330,6 +330,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
 
     public event EventHandler? PlaybackStopped;
     public event EventHandler<AudioOutputDeviceChangedEventArgs>? DefaultOutputDeviceChanged;
+    public event EventHandler? SourceCommitStarting;
 
     public void Load(string path) => RunSerialized(() =>
     {
@@ -463,7 +464,8 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             {
                 transportEnvelope!.ChangeSource(() =>
                 {
-                    outputMixer!.ReplaceMusic(pipeline.Volume, pipeline.Ended);
+                    SourceCommitStarting?.Invoke(this, EventArgs.Empty);
+                    outputMixer!.ReplaceMusic(pipeline.Volume, pipeline.Ended,target.TotalMilliseconds,newPlaybackRate??playbackRate);
                     source = preparedSource;
                     if (newPlaybackRate.HasValue) playbackRate = newPlaybackRate.Value;
                     soundTouchProviders = pipeline.Stages;
@@ -544,6 +546,8 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     {
         try
         {
+            var scheduled = provider as SourceTimedSampleProvider;
+            if(scheduled!=null) provider=scheduled.Source;
             var activeOutput = output;
             var mixer = outputMixer;
             if (activeOutput == null || mixer == null || !mixer.IsActive ||
@@ -574,7 +578,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             // still escape after the transport epoch changes.
             provider = new EpochGuardSampleProvider(provider, playbackEpoch);
             if (!playbackEpoch.IsCurrent) return false;
-            return mixer.TryEnqueue(provider);
+            return mixer.TryEnqueue(scheduled==null?provider:new SourceTimedSampleProvider(provider,scheduled.SourceMilliseconds,0));
         }
         catch
         {
@@ -611,6 +615,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
     {
         if (source == null) return;
         if (!reuseDevice) FadeOutAndDrain();
+        SourceCommitStarting?.Invoke(this, EventArgs.Empty);
         // Land on the new position before the old output goes away. Leaving the
         // clock running would have Position keep extrapolating from the anchor
         // this rebuild is moving away from, over an output that is already
@@ -621,7 +626,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         positionClock.Reset();
         var previousStages = reuseDevice ? soundTouchProviders : [];
         if (!reuseDevice) DisposeOutput();
-        var createdSoundTouchProviders = new List<SoundTouchWaveProvider>();
+        var createdSoundTouchProviders = new List<object>();
         VolumeSampleProvider? createdVolumeProvider = null;
         QueuedOverlayMixerSampleProvider? createdMixer = null;
         IWavePlayer? createdOutput = null;
@@ -636,7 +641,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             if (reuseDevice)
             {
                 createdMixer = outputMixer!;
-                createdMixer.ReplaceMusic(createdVolumeProvider, musicReallyEnded);
+                createdMixer.ReplaceMusic(createdVolumeProvider, musicReallyEnded,position.TotalMilliseconds,playbackRate);
                 musicReplaced = true;
                 envelope = transportEnvelope!;
                 createdOutput = output!;
@@ -644,7 +649,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             else
             {
                 createdMixer = new QueuedOverlayMixerSampleProvider(createdVolumeProvider, musicReallyEnded,
-                    () => Interlocked.Increment(ref transientMusicZeroCount));
+                    () => Interlocked.Increment(ref transientMusicZeroCount),position.TotalMilliseconds,playbackRate);
                 envelope = new TransportEnvelopeSampleProvider(createdMixer);
                 createdOutput = CreateOutput(envelope.ToWaveProvider());
                 createdOutput.PlaybackStopped += OnPlaybackStopped;
@@ -1201,9 +1206,11 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         private Func<bool> musicSourceEnded;
         private readonly Action? onTransientMusicZero;
         private readonly ConcurrentQueue<ISampleProvider> pending = new();
-        private readonly List<ISampleProvider> active = [];
+        private readonly List<ActiveOverlay> active = [];
         private readonly object completionGate = new();
         private readonly object readGate = new();
+        private double renderSourceMilliseconds;
+        private double renderPlaybackRate=1;
         private float[] scratch = [];
         private float[] overlayScratch = [];
         private bool musicEnded;
@@ -1213,8 +1220,9 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         public QueuedOverlayMixerSampleProvider(
             ISampleProvider music,
             Func<bool> musicSourceEnded,
-            Action? onTransientMusicZero = null)
+            Action? onTransientMusicZero = null, double positionMilliseconds=0,double rate=1)
         {
+            renderSourceMilliseconds=positionMilliseconds;renderPlaybackRate=rate;
             this.music = music;
             this.musicSourceEnded = musicSourceEnded;
             this.onTransientMusicZero = onTransientMusicZero;
@@ -1230,12 +1238,13 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
         /// </summary>
         public bool MusicEnded => Volatile.Read(ref musicEnded);
 
-        public void ReplaceMusic(ISampleProvider provider, Func<bool> ended)
+        public void ReplaceMusic(ISampleProvider provider, Func<bool> ended,double positionMilliseconds=0,double rate=1)
         {
             lock (readGate)
             {
                 if (completed) throw new ObjectDisposedException(nameof(QueuedOverlayMixerSampleProvider));
                 if (!provider.WaveFormat.Equals(WaveFormat)) throw new InvalidOperationException("Seek cannot change output format.");
+                renderSourceMilliseconds=positionMilliseconds;renderPlaybackRate=rate;
                 music = provider;
                 musicSourceEnded = ended;
                 musicEnded = false;
@@ -1273,22 +1282,41 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
 
         private int ReadLocked(float[] buffer, int offset, int count)
         {
-            if (completed) return 0;
-            var musicRead = musicEnded ? 0 : music.Read(buffer, offset, count);
-            if (musicRead <= 0 && !musicEnded && !musicSourceEnded())
+            if (completed || count == 0) return 0;
+            var musicRead = 0;
+            // A short decoder/DSP read does not imply that the rest of this
+            // device period is silent. Fill it with bounded work before deciding
+            // whether there really was an underrun.
+            for (var attempt = 0; attempt < 4 && musicRead < count && !musicEnded; attempt++)
             {
-                // SoundTouch can transiently return no samples while priming its pipeline.
-                // Retry once, then keep the output alive with silence until the real source ends.
-                musicRead = music.Read(buffer, offset, count);
+                var read = music.Read(buffer, offset + musicRead, count - musicRead);
+                if (read < 0 || read > count - musicRead)
+                    throw new InvalidOperationException("Music provider returned an invalid sample count.");
+                if (read > 0) musicRead += read;
+                else if (musicSourceEnded()) Volatile.Write(ref musicEnded, true);
             }
 
             if (completed) return 0;
-            if (musicRead <= 0 && !musicEnded && !musicSourceEnded())
+            if (musicRead < count && !musicEnded)
                 onTransientMusicZero?.Invoke();
-            if (musicRead <= 0 && (musicEnded || musicSourceEnded())) Volatile.Write(ref musicEnded, true);
             if (musicRead < count) AudioSampleBuffer.Clear(buffer, offset + musicRead, count - musicRead);
             SanitizeMusic(buffer, offset, Math.Max(0, musicRead));
-            while (pending.TryDequeue(out var provider)) active.Add(provider);
+            while (pending.TryDequeue(out var provider))
+            {
+                var sourceTimed = provider is SourceTimedSampleProvider;
+                if(provider is SourceTimedSampleProvider scheduled)
+                {
+                    var delay=Math.Max(0,(scheduled.SourceMilliseconds-renderSourceMilliseconds)/renderPlaybackRate);
+                    provider=delay<=0?scheduled.Source:new OffsetSampleProvider(scheduled.Source){DelayBy=TimeSpan.FromMilliseconds(delay)};
+                }
+                active.Add(new ActiveOverlay(provider, sourceTimed));
+            }
+            // Padding a transient underrun is device time, not music source
+            // time. Scheduled voices must retain their remaining delay through
+            // that padding as well. Past real EOF the source clock can continue
+            // so notes beyond the music tail still sound normally.
+            var sourceSampleBudget = musicEnded ? count : musicRead;
+            renderSourceMilliseconds += sourceSampleBudget/(double)WaveFormat.Channels/WaveFormat.SampleRate*1000*renderPlaybackRate;
             if (scratch.Length < count) scratch = new float[count];
             if (overlayScratch.Length < count) overlayScratch = new float[count];
             Array.Clear(overlayScratch, 0, count);
@@ -1297,7 +1325,10 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             for (var index = active.Count - 1; index >= 0; index--)
             {
                 Array.Clear(scratch, 0, count);
-                var read = active[index].Read(scratch, 0, count);
+                var voice = active[index];
+                var budget = voice.SourceTimed ? sourceSampleBudget : count;
+                if (budget == 0) continue;
+                var read = voice.Provider.Read(scratch, 0, budget);
                 for (var sample = 0; sample < read; sample++)
                 {
                     var value = scratch[sample];
@@ -1318,7 +1349,7 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
                 terminalSilenceReturned = false;
                 WindowsKeySoundSoftLimiter.Process(buffer, offset, count);
             }
-            if (!musicEnded || active.Count > 0 || !pending.IsEmpty) return count;
+            if (!musicEnded || active.Count > 0 || !pending.IsEmpty || musicRead > 0 || overlayContributed) return count;
             if (terminalSilenceReturned) return 0;
 
             // WASAPI does not submit the managed buffer when a provider returns
@@ -1328,6 +1359,8 @@ internal sealed class WindowsAudioDeviceEngine : IWindowsAudioDeviceEngine
             AudioSampleBuffer.Clear(buffer, offset, count);
             return count;
         }
+
+        private readonly record struct ActiveOverlay(ISampleProvider Provider, bool SourceTimed);
 
         private static void SanitizeMusic(float[] buffer, int offset, int count)
         {

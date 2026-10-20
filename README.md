@@ -2,11 +2,13 @@
 
 面向 osu!mania mapper、优先优化 7K 工作流的本地谱面编辑器。
 
-当前代码为 0.1.32 本地修订版（最近公开分发版为 0.1.31），编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
+当前代码为 0.1.37 本地修订版（最近公开分发版为 0.1.31），编辑器基于 LumaChart Studio 的 C#/.NET + Avalonia 客户端；试玩直接运行官方 osu! 游戏包和 mania 规则集。默认 osu!mania 编辑操作与原生 7K 新建，保留原始 `.osu` 资料，离线可用。
 
 [下载 Windows 分发包](https://github.com/Ist1na07/SimpleManiaEditor/releases) · [问题反馈](https://github.com/Ist1na07/SimpleManiaEditor/issues)
 
 日常迭代只构建本地体验版；只有用户明确要求时才创建标签或发布 GitHub Release。
+
+更换开发 Agent 时，先读 [完整交接说明](docs/AGENT-HANDOFF.md)，并携带本地未提交及未跟踪源码；GitHub 当前提交不包含全部 0.1.36 开发成果。
 
 下载后完整解压，双击包体根目录 `Start-Editor.cmd`。创作谱面默认保存在包旁 `Maps`，应用设置保存在独立用户目录。开发目录中关闭旧窗口后双击 `Start-Editor.cmd` 启动，`Start-Demo.cmd` 保留旧版 7K 演示入口。干净分发包位于 `dist/SimpleManiaEditor-0.1.31-Distribution/`，包含编辑器和官方游戏宿主各自的运行时。
 
@@ -18,6 +20,7 @@
 - [使用说明](docs/QUICKSTART.md)：启动、键鼠操作、保存与恢复。
 - [0.1.27 慢放时间对齐、频谱与界面](docs/RELEASE-0.1.27.md)：修复 Albemuth 起音提前、缩短慢放粒度、保留反相声道频谱、全曲时间轴和直接设置分类。
 - [本地清理与 osu! 隔离检查](docs/MAINTENANCE.md)：动态清理计划、资料保护、试玩固定存储与调查边界。
+- [曲库、参考与排列库操作](docs/MAPPER-WORKFLOW.md)：左右分栏、只读查看／克隆、曲库选参考与独立索引、相对拍数排列库和缩放放置。
 - [当前功能矩阵](docs/FEATURES.md)。
 - [0.1.26 倍速音质与播放优化](docs/RELEASE-0.1.26.md)：统一保音高处理、各倍速预热与无停机跳转、多轨轻量同步、可见音频状态和稳定的倍速选项。
 - [0.1.25 校准器与虚影粘贴](docs/RELEASE-0.1.25.md)：低速播放优化、校准跳转修复、音画校准器、虚影粘贴与草稿时间对齐。

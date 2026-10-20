@@ -418,7 +418,8 @@ public sealed class WindowsKeySoundService : IDisposable, IAsyncDisposable
         KeySoundPreset preset,
         string? customFile = null,
         float noteGain = 1,
-        double delayMilliseconds = 0)
+        double delayMilliseconds = 0,
+        double? scheduledSourceMilliseconds = null)
     {
         ArgumentNullException.ThrowIfNull(audio);
         if (Volatile.Read(ref disposed) != 0) return false;
@@ -428,7 +429,8 @@ public sealed class WindowsKeySoundService : IDisposable, IAsyncDisposable
             ISampleProvider provider = new CachedSoundProvider(
                 sound,
                 ApplyOutputBoost(noteGain, 1.5f) * volume);
-            provider = Delay(provider, delayMilliseconds);
+            provider = scheduledSourceMilliseconds.HasValue
+                ? new SourceTimedSampleProvider(provider,scheduledSourceMilliseconds.Value,delayMilliseconds) : Delay(provider,delayMilliseconds);
             if (audio.TryPlayOverlay(provider, playbackEpoch))
             {
                 Volatile.Write(ref lastError, null);
@@ -470,7 +472,8 @@ public sealed class WindowsKeySoundService : IDisposable, IAsyncDisposable
                 ISampleProvider provider = new CachedSoundProvider(
                     group.Sound,
                     ApplyOutputBoost(group.Gain, 2.1f) * volume);
-                provider = Delay(provider, group.DelayMilliseconds);
+                provider = group.SourceMilliseconds.HasValue
+                    ? new SourceTimedSampleProvider(provider,group.SourceMilliseconds.Value,group.DelayMilliseconds) : Delay(provider,group.DelayMilliseconds);
                 if (!audio.TryPlayOverlay(provider, playbackEpoch)) continue;
                 accepted += group.TriggerCount;
                 submitted++;
@@ -707,10 +710,11 @@ public sealed class WindowsKeySoundService : IDisposable, IAsyncDisposable
             }
             var key = new ResolvedBatchKey(
                 sound,
-                BitConverter.DoubleToInt64Bits(trigger.DelayMilliseconds));
+                BitConverter.DoubleToInt64Bits(trigger.DelayMilliseconds),
+                BitConverter.DoubleToInt64Bits(trigger.ScheduledSourceMilliseconds ?? double.NaN));
             if (!byIdentity.TryGetValue(key, out var group))
             {
-                group = new ResolvedBatchGroup(sound, trigger.DelayMilliseconds);
+                group = new ResolvedBatchGroup(sound, trigger.DelayMilliseconds,trigger.ScheduledSourceMilliseconds);
                 byIdentity.Add(key, group);
             }
             group.Gain += trigger.Gain;
@@ -1270,12 +1274,13 @@ public sealed class WindowsKeySoundService : IDisposable, IAsyncDisposable
         public long PcmBytes => Samples.LongLength * sizeof(float);
     }
 
-    private readonly record struct ResolvedBatchKey(CachedSound Sound, long DelayBits);
+    private readonly record struct ResolvedBatchKey(CachedSound Sound, long DelayBits, long SourceBits);
 
     private sealed class ResolvedBatchGroup(
         CachedSound sound,
-        double delayMilliseconds)
+        double delayMilliseconds, double? sourceMilliseconds = null)
     {
+        public double? SourceMilliseconds { get; } = sourceMilliseconds;
         public CachedSound Sound { get; } = sound;
         public double DelayMilliseconds { get; } = delayMilliseconds;
         public float Gain { get; set; }

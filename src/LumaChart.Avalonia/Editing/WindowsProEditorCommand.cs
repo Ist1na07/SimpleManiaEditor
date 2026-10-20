@@ -158,8 +158,11 @@ public static class WindowsProEditorCommand
         var note = new ChartNote { Id = id, Beat = start, EndBeat = end, Group = group };
         ProEditorWorkspaceGeometry.ApplyColumn(note, workspaceColumn, session.Document.KeyCount);
         var companion = symmetry == null ? null : CenterSymmetryService.CreateCompanion(note, symmetry, session.Document.KeyCount);
+        companion = CenterSymmetryService.MergeOverlappingCompanion(note, companion);
         if (companion != null && !CenterSymmetryService.CanAdd(session, companion,
                 session.Document.Notes.Where(n => !replacedIds.Contains(n.Id)).Append(note))) companion = null;
+        if (!session.AllowOwnerProtectedEdits && session.IntersectsOwnerProtectedRegion(note.Beat, note.EndBeat ?? note.Beat))
+            throw new InvalidOperationException("中心对称长条涉及锁定范围，未放置任何按键。");
         session.Mutate(document =>
         {
             document.Notes.RemoveAll(n => replacedIds.Contains(n.Id));

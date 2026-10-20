@@ -111,6 +111,20 @@ public sealed class AvaloniaWorkspaceController
         await workspace.SwitchLibraryRootAsync(root, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<DesktopChartTab> OpenManagedChartAsync(string path, OsuNoteTimingImportMode mode, CancellationToken token = default)
+    {
+        await tabIoGate.WaitAsync(token);
+        try { return await workspace.OpenAsync(path, mode, token).ConfigureAwait(false); }
+        finally { tabIoGate.Release(); }
+    }
+
+    public async Task<DesktopChartTab> OpenReadOnlyAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        await tabIoGate.WaitAsync(cancellationToken);
+        try { return await workspace.OpenReadOnlyAsync(sourcePath, cancellationToken).ConfigureAwait(false); }
+        finally { tabIoGate.Release(); }
+    }
+
     public async Task<DesktopChartTab> OpenAsync(
         string sourcePath,
         CancellationToken cancellationToken = default)

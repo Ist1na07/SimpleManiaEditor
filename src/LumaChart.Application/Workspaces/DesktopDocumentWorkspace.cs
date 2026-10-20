@@ -317,15 +317,19 @@ public sealed class DesktopDocumentWorkspace
         CancellationToken cancellationToken = default) =>
         OpenAsync(sourcePath, OsuNoteTimingImportMode.PreserveMilliseconds, cancellationToken);
 
-    public async Task<DesktopChartTab> OpenAsync(
-        string sourcePath,
-        OsuNoteTimingImportMode osuTimingImportMode,
-        CancellationToken cancellationToken = default)
+    public Task<DesktopChartTab> OpenAsync(string sourcePath, OsuNoteTimingImportMode osuTimingImportMode,
+        CancellationToken cancellationToken = default) => OpenCoreAsync(sourcePath, osuTimingImportMode, false, cancellationToken);
+
+    public Task<DesktopChartTab> OpenReadOnlyAsync(string sourcePath, CancellationToken cancellationToken = default) =>
+        OpenCoreAsync(sourcePath, OsuNoteTimingImportMode.PreserveMilliseconds, true, cancellationToken);
+
+    private async Task<DesktopChartTab> OpenCoreAsync(string sourcePath, OsuNoteTimingImportMode osuTimingImportMode,
+        bool readOnly, CancellationToken cancellationToken)
     {
         if (!Enum.IsDefined(osuTimingImportMode))
             throw new ArgumentOutOfRangeException(nameof(osuTimingImportMode));
         sourcePath = NormalizeSourcePath(sourcePath, requireExisting: true);
-        sourcePath = await OsuSongsWorkspacePolicy.GetEditableCopyAsync(sourcePath, SafeCreationRoot(), cancellationToken).ConfigureAwait(false);
+        if (!readOnly) sourcePath = await OsuSongsWorkspacePolicy.GetEditableCopyAsync(sourcePath, SafeCreationRoot(), cancellationToken).ConfigureAwait(false);
 
         var snapshots = CaptureDocumentSnapshots();
         DesktopChartTab tab;
@@ -380,7 +384,7 @@ public sealed class DesktopDocumentWorkspace
                                 sourcePath,
                                 osuTimingImportMode,
                                 snapshots,
-                                cancellationToken)
+                                cancellationToken, readOnly)
                             .ConfigureAwait(false);
                     }
                 }
@@ -390,7 +394,7 @@ public sealed class DesktopDocumentWorkspace
                             sourcePath,
                             osuTimingImportMode,
                             snapshots,
-                            cancellationToken)
+                            cancellationToken, readOnly)
                         .ConfigureAwait(false);
                 }
             }
@@ -400,6 +404,13 @@ public sealed class DesktopDocumentWorkspace
             gate.Release();
         }
 
+        if (readOnly)
+        {
+            tab.IsLibraryReadOnly = true;
+            tab.Session.IsReadOnly = true;
+            tab.Session.CanEditNotes = tab.Session.CanEditTiming = tab.Session.CanEditMetadata = false;
+            await PersistAsync(cancellationToken).ConfigureAwait(false);
+        }
         PublishChanged(DesktopWorkspaceChangeKind.ActiveTab, tab);
         return tab;
     }
@@ -408,7 +419,7 @@ public sealed class DesktopDocumentWorkspace
         string sourcePath,
         OsuNoteTimingImportMode osuTimingImportMode,
         IReadOnlyDictionary<DesktopChartTab, DocumentSnapshot> snapshots,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool readOnly = false)
     {
         var format = GetFormat(sourcePath);
         var sourceHash = await ComputeSha256Async(sourcePath, cancellationToken)
@@ -422,13 +433,13 @@ public sealed class DesktopDocumentWorkspace
                 osuTimingImportMode,
                 cancellationToken)
             .ConfigureAwait(false);
-        await DesktopChartAssetLocalizer.LocalizeAsync(
+        if (!readOnly) await DesktopChartAssetLocalizer.LocalizeAsync(
                 document,
                 sourcePath,
                 workingPath,
                 cancellationToken)
             .ConfigureAwait(false);
-        document.FilePath = workingPath;
+        document.FilePath = readOnly ? sourcePath : workingPath;
         var workingHash = await WriteWorkingCopyAsync(
                 document,
                 workingPath,
@@ -445,6 +456,7 @@ public sealed class DesktopDocumentWorkspace
             format,
             osuTimingImportMode)
         {
+            IsLibraryReadOnly = readOnly,
             SourceSha256 = sourceHash,
             WorkingSha256 = workingHash
         };
@@ -621,6 +633,7 @@ public sealed class DesktopDocumentWorkspace
         // first await. After that the workspace runs on the thread pool, where a
         // clone could observe a half-applied in-place edit.
         var requestedTab = Tabs.FirstOrDefault(candidate => candidate.Id == tabId);
+        if (requestedTab?.IsLibraryReadOnly == true) throw new InvalidOperationException("只读谱面不能保存，请先克隆到工作目录。");
         if (requestedTab != null && OsuFileSafetyPolicy.IsProtectedPath(requestedTab.SourcePath))
         {
             var editable = await OsuSongsWorkspacePolicy.GetEditableCopyAsync(requestedTab.SourcePath, SafeCreationRoot(), cancellationToken).ConfigureAwait(false);
@@ -697,6 +710,7 @@ public sealed class DesktopDocumentWorkspace
         var destinationFormat = GetFormat(destination);
 
         var requestedTab = Tabs.FirstOrDefault(candidate => candidate.Id == tabId);
+        if (requestedTab?.IsLibraryReadOnly == true) throw new InvalidOperationException("只读谱面请先克隆到工作目录。");
         var requestedChangeSerial = requestedTab?.Session.ChangeSerial ?? 0;
         var snapshots = CaptureDocumentSnapshots();
         DesktopChartTab? tab = null;
@@ -1172,7 +1186,7 @@ public sealed class DesktopDocumentWorkspace
                     osuTimingImportMode,
                     cancellationToken).ConfigureAwait(false);
                 Directory.CreateDirectory(cacheDirectory);
-                await DesktopChartAssetLocalizer.LocalizeAsync(
+                if (!item.IsLibraryReadOnly) await DesktopChartAssetLocalizer.LocalizeAsync(
                     document,
                     sourcePath,
                     workingPath,
@@ -1230,8 +1244,8 @@ public sealed class DesktopDocumentWorkspace
                 new InvalidDataException("The source and recoverable working copy could not be restored.");
         }
 
-        document.FilePath = workingPath;
-        var session = new EditorSession();
+        document.FilePath = item.IsLibraryReadOnly ? sourcePath : workingPath;
+        var session = new EditorSession { IsReadOnly = item.IsLibraryReadOnly, CanEditNotes = !item.IsLibraryReadOnly, CanEditTiming = !item.IsLibraryReadOnly, CanEditMetadata = !item.IsLibraryReadOnly };
         session.ReplaceDocument(document, markDirty: dirty || !sourceExists);
         var tab = new DesktopChartTab(
             item.Id,
@@ -1242,6 +1256,7 @@ public sealed class DesktopDocumentWorkspace
             format,
             osuTimingImportMode)
         {
+            IsLibraryReadOnly = item.IsLibraryReadOnly,
             RequiresRecoverySaveAs = requiresRecoverySaveAs,
             CurrentBeat = double.IsFinite(item.CurrentBeat)
                 ? OsuSourceEnvelope.HasSource(session.Document) ? item.CurrentBeat : Math.Max(0, item.CurrentBeat) : 0,
@@ -1585,6 +1600,7 @@ public sealed class DesktopDocumentWorkspace
             OsuTimingImportMode = tab.OsuTimingImportMode.ToString(),
             SourceSha256 = tab.SourceSha256,
             WorkingSha256 = tab.WorkingSha256,
+            IsLibraryReadOnly = tab.IsLibraryReadOnly,
             IsDirty = tab.Session.IsDirty,
             RequiresRecoverySaveAs = tab.RequiresRecoverySaveAs,
             IsPreservedRoomDraft = tab.IsPreservedRoomDraft,
@@ -1617,6 +1633,7 @@ public sealed class DesktopDocumentWorkspace
             SourceSha256 = item.SourceSha256,
             WorkingSha256 = item.WorkingSha256,
             RequiresRecoverySaveAs = item.RequiresRecoverySaveAs,
+            IsLibraryReadOnly = item.IsLibraryReadOnly,
             IsDirty = item.IsDirty,
             IsPreservedRoomDraft = item.IsPreservedRoomDraft,
             PreservedRoomNumber = item.PreservedRoomNumber,
@@ -2189,6 +2206,7 @@ public sealed class DesktopDocumentWorkspace
         public string SourceSha256 { get; set; } = string.Empty;
         public string WorkingSha256 { get; set; } = string.Empty;
         public bool IsDirty { get; set; }
+        public bool IsLibraryReadOnly { get; set; }
         public bool RequiresRecoverySaveAs { get; set; }
         public bool IsPreservedRoomDraft { get; set; }
         public long PreservedRoomNumber { get; set; }
@@ -2236,6 +2254,7 @@ public sealed class DesktopChartTab
     public DesktopChartFormat Format { get; internal set; }
     public OsuNoteTimingImportMode OsuTimingImportMode { get; internal set; }
     public double CurrentBeat { get; internal set; }
+    public bool IsLibraryReadOnly { get; internal set; }
     public bool RequiresRecoverySaveAs { get; internal set; }
     // Replaced as a whole, never mutated in place: the UI thread replaces the
     // markers while a gated persist may be serializing them on the thread pool.
@@ -2293,7 +2312,7 @@ public sealed class DesktopChartTab
         }
     }
 
-    public string FormatBadge => Format == DesktopChartFormat.OsuMania ? "OSU!MANIA" : "MALODY";
+    public string FormatBadge => (IsLibraryReadOnly ? "只读 · " : "") + (Format == DesktopChartFormat.OsuMania ? "OSU!MANIA" : "MALODY");
 }
 
 public sealed record DesktopChartSaveResult(

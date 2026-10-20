@@ -33,7 +33,8 @@ internal readonly record struct WindowsKeySoundPlaybackTrigger(
     float Gain,
     double DelayMilliseconds,
     double WallClockDelayMilliseconds,
-    int ChordVoiceCount);
+    int ChordVoiceCount,
+    double? ScheduledSourceMilliseconds = null);
 
 /// <summary>
 /// Pure editor-transport Key 音 plan and cursor. It snapshots only immutable
@@ -305,7 +306,8 @@ internal sealed class WindowsKeySoundPlaybackCoordinator
                     item.Gain * chordVoiceGain,
                     sampleDelayMilliseconds,
                     wallClockDelayMilliseconds,
-                    audibleVoices));
+                    audibleVoices,
+                    item.Milliseconds + effectiveOffsetMilliseconds));
             }
         }
 

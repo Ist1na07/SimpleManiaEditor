@@ -39,9 +39,8 @@ public sealed class MapperDiffSurface : Control
                 var changed = changedNotes.Contains((note.Lane, ms, end, added));
                 var brush = new SolidColorBrush(Color.Parse(changed ? added ? "#74CDB7" : "#EA8795" : "#52636B"));
                 var left = x + 54 + note.Lane * laneWidth;
-                if (end.HasValue) context.FillRectangle(brush, new Rect(left + laneWidth * .25, Math.Max(24, Y(ms)), laneWidth * .45, Math.Max(3, Math.Min(Bounds.Height, Y(end.Value)) - Math.Max(24, Y(ms)))));
-                if (Y(ms) >= 24) context.FillRectangle(brush, new Rect(left, Y(ms), Math.Max(1, laneWidth - 5), 4));
-                if (end.HasValue && Y(end.Value) <= Bounds.Height) context.FillRectangle(brush, new Rect(left, Y(end.Value), Math.Max(1, laneWidth - 5), 4));
+                var top = Math.Max(24, Y(ms)); var bottom = Math.Min(Bounds.Height, Y(end ?? ms));
+                context.FillRectangle(brush, new Rect(left, top, Math.Max(1, laneWidth - 5), Math.Max(4, bottom - top)));
             }
         }
         Draw(before, false, 0); Draw(after, true, half);

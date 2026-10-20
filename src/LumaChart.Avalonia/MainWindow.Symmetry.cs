@@ -61,7 +61,7 @@ public sealed partial class MainWindow
 
     private Control BuildSymmetryToolButton()
     {
-        symmetryButton = new Button { Height = 34, Margin = new Thickness(0, 5, 0, 0), Padding = new Thickness(6), HorizontalAlignment = HorizontalAlignment.Stretch };
+        symmetryButton = new Button { Height = 34, Padding = new Thickness(6), HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetAutomationId(symmetryButton, "Editor.QuickSymmetry");
         symmetryButton.Click += (_, _) => ToggleSymmetryTool();
         RefreshSymmetryTool();

@@ -1118,7 +1118,7 @@ internal sealed class WindowsAudioKeySoundLease(
             trigger.Preset,
             trigger.CustomFilePath,
             trigger.Gain,
-            trigger.DelayMilliseconds);
+            trigger.DelayMilliseconds,trigger.ScheduledSourceMilliseconds);
     }
 
     public WindowsKeySoundBatchPlaybackResult TryPlayBatch(

@@ -348,6 +348,11 @@ public static class AvaloniaAppPaths
         return roots.ToArray();
     }
 
+    public static void RememberDefaultWorkspaceRoot(string root)
+    {
+        if (string.IsNullOrWhiteSpace(ReadOwnWorkspaceSettings()?.WorkspaceRoot)) SaveWorkspaceRoot(root);
+    }
+
     public static void SaveWorkspaceRoot(string root)
     {
         SaveWorkspacePreferences(root, LoadLibrarySort(), LoadProGridColumns());

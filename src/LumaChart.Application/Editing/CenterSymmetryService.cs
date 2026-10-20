@@ -31,6 +31,16 @@ public static class CenterSymmetryService
         return SamePosition(source, mirror) ? null : mirror;
     }
 
+    public static ChartNote? MergeOverlappingCompanion(ChartNote source, ChartNote? companion)
+    {
+        if (companion == null || !source.EndBeat.HasValue || !companion.EndBeat.HasValue ||
+            source.Lane != companion.Lane || source.IsDraft != companion.IsDraft ||
+            source.Beat.CompareTo(companion.EndBeat.Value) > 0 || companion.Beat.CompareTo(source.EndBeat.Value) > 0) return companion;
+        source.Beat = source.Beat.CompareTo(companion.Beat) <= 0 ? source.Beat : companion.Beat;
+        source.EndBeat = source.EndBeat.Value.CompareTo(companion.EndBeat.Value) >= 0 ? source.EndBeat : companion.EndBeat;
+        return null;
+    }
+
     public static bool CanAdd(EditorSession session, ChartNote candidate, IEnumerable<ChartNote> pool)
         => CheckDestination(session, candidate, pool.Where(n => n.IsDraft == candidate.IsDraft &&
             n.Lane == candidate.Lane && n.Beat.CompareTo(candidate.Beat) == 0).ToArray());
@@ -95,21 +105,6 @@ public static class CenterSymmetryService
         (first.EndBeat.HasValue == second.EndBeat.HasValue) &&
         (!first.EndBeat.HasValue || first.EndBeat.Value.CompareTo(second.EndBeat!.Value) == 0);
 
-    internal static BeatPosition Reflect(BeatPosition start, BeatPosition end, BeatPosition value)
-    {
-        long division = start.Denominator;
-        foreach (var next in new[] { end.Denominator, value.Denominator })
-        {
-            var a = division; long b = next;
-            while (b != 0) (a, b) = (b, a % b);
-            division = division / a * next;
-            if (division > BeatPosition.MaximumPreservedDenominator)
-                return BeatPosition.FromDouble(start.Value + end.Value - value.Value, BeatPosition.MaximumPreservedDenominator);
-        }
-        long Ticks(BeatPosition point) => (long)point.Bar * division + (long)point.Numerator * (division / point.Denominator);
-        var ticks = checked(Ticks(start) + Ticks(end) - Ticks(value));
-        var bar = Math.DivRem(ticks, division, out var numerator);
-        if (numerator < 0) { bar--; numerator += division; }
-        return BeatPosition.Preserve(checked((int)bar), checked((int)numerator), checked((int)division));
-    }
+    internal static BeatPosition Reflect(BeatPosition start, BeatPosition end, BeatPosition value) =>
+        BeatArithmetic.Reflect(start,end,value);
 }

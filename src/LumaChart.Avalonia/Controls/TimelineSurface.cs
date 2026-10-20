@@ -321,6 +321,8 @@ public sealed partial class TimelineSurface : Control
     private ChartDocument? timingMoveStartDocument;
     private bool marqueeSelecting;
     private Point marqueeStartPoint;
+    private Point marqueePointerPoint;
+    private long marqueeSelectionFrameTick;
     private double marqueeStartBeat;
     private Rect marqueeRect;
     private bool placingNote;
@@ -498,6 +500,7 @@ public sealed partial class TimelineSurface : Control
         set
         {
             if (ReferenceEquals(session, value)) return;
+            EndStretch();
             ClearPendingPastePreview();
             IsDefiningSymmetry = false; symmetryFirstPoint = null; symmetryDragEdge = null;
             symmetryPointer?.Capture(null); symmetryPointer = null; SymmetrySettings = null;
@@ -568,6 +571,7 @@ public sealed partial class TimelineSurface : Control
             if (erasingStroke) FinishEraseStroke();
             ReleaseInteractionCapture();
             ResetPointerInteraction();
+            EndStretch();
             tool = value;
             InvalidateVisual();
             StatusChanged?.Invoke(this, AvaloniaLocalizationCatalog.Format("当前工具：{0}", ToolDisplayName(value)));
@@ -976,6 +980,17 @@ public sealed partial class TimelineSurface : Control
         beat = double.IsFinite(beat) ? Math.Max(MinimumEditableBeat, beat) : 0;
         if (Math.Abs(CurrentBeat - beat) < 1e-9) return;
         CurrentBeat = beat;
+        if (marqueeSelecting && session != null)
+        {
+            marqueeStartPoint = new Point(marqueeStartPoint.X, YAtBeat(marqueeStartBeat, GetGeometry(session.Document.KeyCount)));
+            marqueeRect = TimelineMarqueeSelection.Normalize(marqueeStartPoint, marqueePointerPoint);
+            if (Environment.TickCount64 - marqueeSelectionFrameTick >= 16)
+            {
+                marqueeSelectionFrameTick = Environment.TickCount64;
+                UpdateMarqueeSelection(marqueePointerPoint);
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
         InvalidateVisual();
         CurrentBeatChanged?.Invoke(this, beat);
     }
@@ -1431,6 +1446,7 @@ public sealed partial class TimelineSurface : Control
                 using var pasteOpacity = context.PushOpacity(.55);
                 DrawNotes(context, geometry, pendingPastePreview.Where(n => n.Beat.Value <= maximumBeat && (n.EndBeat ?? n.Beat).Value >= minimumStoredBeat), draggingSelectionPass: false);
             }
+            DrawStretchPreview(context, geometry);
             DrawHoldTailResizePreview(context, geometry);
             DrawPlacementPreview(context, geometry);
             DrawPlacementHover(context, geometry);
@@ -1438,6 +1454,7 @@ public sealed partial class TimelineSurface : Control
             if (marqueeSelecting)
                 context.DrawRectangle(MarqueeFillBrush, MarqueePen, marqueeRect);
             DrawCreatorHoverToolTip(context);
+            DrawPatternPasteHint(context);
         }
         finally
         {
@@ -1449,6 +1466,7 @@ public sealed partial class TimelineSurface : Control
     {
         base.OnPointerPressed(eventArgs);
         if (session == null) return;
+        if (HandleStretchPress(eventArgs)) return;
         if (HandlePendingPastePress(eventArgs)) return;
         if (eventArgs.Pointer.Type == PointerType.Touch)
         {
@@ -1738,7 +1756,7 @@ public sealed partial class TimelineSurface : Control
                     return;
                 }
                 BeginHoldTailResize(hit);
-                CaptureInteraction(eventArgs.Pointer, MouseButton.Left, point);
+                if (resizingHoldTail) CaptureInteraction(eventArgs.Pointer, MouseButton.Left, point);
                 eventArgs.Handled = true;
                 return;
             }
@@ -1829,6 +1847,7 @@ public sealed partial class TimelineSurface : Control
         base.OnPointerMoved(eventArgs);
         placementHoverPoint = eventArgs.GetPosition(this);
         if (pendingPasteNotes != null) { MovePendingPaste(placementHoverPoint.Value); eventArgs.Handled = true; return; }
+        if (HandleStretchMove(eventArgs)) return;
         if (HandleSymmetryMove(eventArgs)) return;
         if (Tool is TimelineTool.Tap or TimelineTool.Hold) InvalidateVisual();
         if (session == null) return;
@@ -2063,6 +2082,7 @@ public sealed partial class TimelineSurface : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs eventArgs)
     {
         base.OnPointerReleased(eventArgs);
+        if (HandleStretchRelease(eventArgs)) return;
         if (HandleSymmetryRelease(eventArgs)) return;
         if (eventArgs.Pointer.Type == PointerType.Touch)
         {
@@ -2220,6 +2240,7 @@ public sealed partial class TimelineSurface : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs eventArgs)
     {
         base.OnPointerCaptureLost(eventArgs);
+        CancelStretchDrag();
         if (symmetryDragEdge != null)
         {
             symmetryDragEdge = null; symmetryPointer = null;
@@ -2281,6 +2302,7 @@ public sealed partial class TimelineSurface : Control
     private void HandleWheel(PointerWheelEventArgs eventArgs)
     {
         if (session == null) return;
+        if (HandlePatternPasteWheel(eventArgs)) return;
         if (SynchronizedNavigationSource is { } main && !ReferenceEquals(main, this))
         {
             main.HandleCompanionWheel(eventArgs);
@@ -2334,6 +2356,7 @@ public sealed partial class TimelineSurface : Control
     protected override void OnKeyDown(KeyEventArgs eventArgs)
     {
         base.OnKeyDown(eventArgs);
+        if (eventArgs.Key == Key.Escape && IsStretching) { CancelStretch(); eventArgs.Handled = true; return; }
         if (eventArgs.Key == Key.Escape && pendingPasteNotes != null) { CancelPendingPaste(); eventArgs.Handled = true; return; }
         if (eventArgs.Key == Key.Escape && IsDefiningSymmetry)
         { CancelSymmetryRange(); eventArgs.Handled = true; return; }
@@ -2905,7 +2928,7 @@ public sealed partial class TimelineSurface : Control
     private void DeleteHitNote(ChartNote hit)
     {
         if (session == null || !CanBeginNoteEdit("删除")) return;
-        var ids = session.Selection.Count > 1
+        var ids = session.Selection.Count > 1 && session.Selection.Contains(hit.Id)
             ? session.Selection.ToHashSet() : new HashSet<Guid> { hit.Id };
         try { ids = CenterSymmetryService.ExpandDeletion(session, ids, SymmetrySettings); }
         catch (InvalidOperationException exception) { StatusChanged?.Invoke(this, exception.Message); return; }
@@ -3032,6 +3055,10 @@ public sealed partial class TimelineSurface : Control
             ? 0
             : (now - lastEdgeScrollTick) / 1000d;
         lastEdgeScrollTick = now;
+        // Only deliberate dragging beyond the viewport scrolls time. Interior
+        // bottom/top bands are valid placement and marquee positions.
+        if (edgeScrollPoint.Y>=0 && edgeScrollPoint.Y<=Bounds.Height ||
+            placingNote && placementGestureTool==TimelineTool.Tap) return;
         var step = TimelineEdgeScroll.Resolve(
             CurrentBeat,
             edgeScrollPoint.Y,
@@ -3079,7 +3106,7 @@ public sealed partial class TimelineSurface : Control
         previewLaneDelta = 0;
         previewBeatDelta = 0;
         marqueeSelecting = true;
-        marqueeStartPoint = point;
+        marqueeStartPoint = point; marqueePointerPoint = point;
         marqueeStartBeat = BeatAtY(point.Y, GetGeometry(session.Document.KeyCount));
         marqueeRect = TimelineMarqueeSelection.Normalize(point, point);
         marqueeBaseSelection.Clear();
@@ -3106,6 +3133,7 @@ public sealed partial class TimelineSurface : Control
     private void UpdateMarqueeSelection(Point point)
     {
         if (session == null || !marqueeSelecting) return;
+        marqueePointerPoint = point;
         var geometry = GetGeometry(session.Document.KeyCount);
         marqueeRect = TimelineMarqueeSelection.Normalize(marqueeStartPoint, point);
         var padding = noteHeight / (2 * Math.Max(1, PixelsPerBeat));
@@ -3159,6 +3187,7 @@ public sealed partial class TimelineSurface : Control
         var bestDistance = double.PositiveInfinity;
         foreach (var note in holdTailScratch)
         {
+            if (stretchDragging && stretchIds.Contains(note.Id) && !drawingStretchPreview) continue;
             if (hiddenGroups.Contains(note.Group)) continue;
             var bounds = GetNoteBounds(note, geometry);
             var tailY = InteractionProfile == EditorInteractionProfile.OsuMania
@@ -3196,6 +3225,10 @@ public sealed partial class TimelineSurface : Control
         resizingHoldOriginalEnd = note.EndBeat;
         resizingHoldCurrentEnd = note.EndBeat;
         resizingHoldStartChangeSerial = session.ChangeSerial;
+        resizingHoldSymmetry = SymmetrySettings is { } settings
+            ? settings with { Columns = settings.Columns.ToArray() } : null;
+        if (!UpdateSymmetricHoldTailPlan(note.EndBeat))
+        { ClearHoldTailResizeState(); return; }
         Cursor = HoldTailCursor;
         SelectionChanged?.Invoke(this, EventArgs.Empty);
         if (hadTimingSelection) TimingSelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -3232,6 +3265,7 @@ public sealed partial class TimelineSurface : Control
             }
         }
         if (Nullable.Equals(candidate, resizingHoldCurrentEnd)) return;
+        if (!UpdateSymmetricHoldTailPlan(candidate)) return;
         resizingHoldCurrentEnd = candidate;
         StatusChanged?.Invoke(this, candidate.HasValue
             ? AvaloniaLocalizationCatalog.Format("LN 面尾预览 · {0}", candidate.Value)
@@ -3254,6 +3288,8 @@ public sealed partial class TimelineSurface : Control
         var headBeat = resizingHoldHead;
         var originalEnd = resizingHoldOriginalEnd;
         var targetEnd = resizingHoldCurrentEnd;
+        var symmetry = resizingHoldSymmetry;
+        var expectedSerial = resizingHoldStartChangeSerial;
         if (targetEnd.HasValue && InteractionProfile == EditorInteractionProfile.OsuMania)
             targetEnd = TimelineHoldTailResize.ResolveTarget(headBeat,
                 TimelinePlacementGeometry.NearestGrid(targetEnd.Value.Value, activeSession.SnapDivision));
@@ -3270,11 +3306,12 @@ public sealed partial class TimelineSurface : Control
 
         try
         {
-            var changed = BasicChartEditingService.ResizeHoldTail(
+            var changed = SymmetricHoldTailResizeCommand.Commit(
                 activeSession,
                 noteId,
                 targetEnd ?? headBeat,
-                BasicBeatPlacementPolicy.PreserveAuthoredBeat);
+                symmetry,
+                expectedSerial);
             if (changed)
             {
                 SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -3308,6 +3345,8 @@ public sealed partial class TimelineSurface : Control
         resizingHoldOriginalEnd = null;
         resizingHoldCurrentEnd = null;
         resizingHoldStartChangeSerial = 0;
+        resizingHoldSymmetry = null;
+        resizingHoldPlan = null;
     }
 
     private void UpdateMovePreview(Point point)
@@ -3470,6 +3509,7 @@ public sealed partial class TimelineSurface : Control
 
     public void CancelInteraction()
     {
+        EndStretch();
         IsDefiningSymmetry = false; symmetryFirstPoint = null;
         symmetryDragEdge = null; symmetryPointer?.Capture(null); symmetryPointer = null;
         ReleaseInteractionCapture();
@@ -3940,13 +3980,14 @@ public sealed partial class TimelineSurface : Control
             : new RelativeBeatMove(0, session.SnapDivision);
         foreach (var note in notes)
         {
+            if (stretchDragging && stretchIds.Contains(note.Id) && !drawingStretchPreview) continue;
             if (hiddenGroups.Contains(note.Group)) continue;
             if (erasingStroke && erasedNoteIds.Contains(note.Id)) continue;
             if (placingNote && (note.Id == placementReplacedNoteId || note.Id == placementReplacedCompanionId)) continue;
             // The resizing LN is drawn once from the pure preview state below.
             // Keeping the document copy here would leave a misleading old tail
             // visible while shortening or converting the LN to a Tap.
-            if (resizingHoldTail && note.Id == resizingHoldId) continue;
+            if (resizingHoldTail && (note.Id == resizingHoldId || resizingHoldPlan?.ReplacedIds.Contains(note.Id) == true)) continue;
             var isSelected = selected.Contains(note.Id);
             var isValidationIssue = validationIssueNoteIds.Contains(note.Id);
             if (dragging && isSelected != draggingSelectionPass) continue;
@@ -4248,6 +4289,8 @@ public sealed partial class TimelineSurface : Control
         DrawingContext context,
         TimelineGeometry geometry)
     {
+        if (resizingHoldTail && resizingHoldPlan != null)
+        { DrawSymmetricHoldTailPlan(context, geometry); return; }
         if (!resizingHoldTail || resizingHoldLane < geometry.MinimumColumn ||
             resizingHoldLane > geometry.MaximumColumn) return;
         var width = GetRenderedNoteWidth(geometry.LaneWidth);
@@ -4672,6 +4715,7 @@ public sealed partial class TimelineSurface : Control
         var bestDistance = double.PositiveInfinity;
         foreach (var note in hitScratch)
         {
+            if (stretchDragging && stretchIds.Contains(note.Id) && !drawingStretchPreview) continue;
             if (hiddenGroups.Contains(note.Group)) continue;
             var bounds = GetNoteBounds(note, geometry);
             var head = NoteYAtBeat(note.Beat, geometry);

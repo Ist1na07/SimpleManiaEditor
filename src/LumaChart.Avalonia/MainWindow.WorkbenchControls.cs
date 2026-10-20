@@ -205,7 +205,10 @@ public sealed partial class MainWindow
         fixedToolRailBody.Children.Add(new Border { Height = 1, Background = StrokeBrush, Margin = new Thickness(0, 8) });
         fixedToolRailBody.Children.Add(ToolbarLabel("快捷编辑"));
         fixedToolRailBody.Children.Add(commands);
+        fixedToolRailBody.Children.Add(ToolbarLabel("排列与变换"));
         fixedToolRailBody.Children.Add(BuildSymmetryToolButton());
+        fixedToolRailBody.Children.Add(BuildPatternLibraryButton());
+        fixedToolRailBody.Children.Add(BuildStretchToolButton());
         if (extensionMenuButton != null) { DetachControl(extensionMenuButton); fixedToolRailBody.Children.Add(extensionMenuButton); }
     }
 }

@@ -24,6 +24,11 @@ internal static class Audio027Specs
         foreach (var rate in new[] { .1, .25, .5, .75, 1, 1.1, 1.5, 2 })
         {
             var audio = Audio026Specs.Render(input, 2, rate, 512).Samples;
+            if (rate == .1 && Environment.GetEnvironmentVariable("SME_AUDIO_DIAGNOSTICS") is { Length: > 0 } diagnostic)
+            {
+                using var writer = new WaveFileWriter(diagnostic, WaveFormat.CreateIeeeFloatWaveFormat(sr, 2));
+                writer.WriteSamples(audio, 0, audio.Length);
+            }
             Require(audio.SequenceEqual(Audio026Specs.Render(input, 2, rate, 8192).Samples), "quiet-gap processing depends on output block size");
             foreach (var start in attacks)
             {

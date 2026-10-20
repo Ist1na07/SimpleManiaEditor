@@ -124,6 +124,9 @@ public sealed class MapsetTransferService
     }
     private void CheckGameClosed(MapsetTransferPlan plan)
     {
+        // Cloning out of Songs only reads it. Keep the game-closed requirement
+        // for every operation that can write into or remove a game mapset.
+        if (!plan.Move && !OsuFileSafetyPolicy.IsProtectedPath(plan.Destination)) return;
         if (!(OsuFileSafetyPolicy.IsProtectedPath(plan.Source) || OsuFileSafetyPolicy.IsProtectedPath(plan.Destination))) return;
         if (gameRunning()) throw new IOException("请先退出 osu!，再执行涉及 Songs 的迁移或回退。");
     }

@@ -45,6 +45,11 @@ internal readonly record struct WindowsAudioPlaybackClockSample(
     TimeSpan Position,
     TimeSpan Duration);
 
+internal interface IWindowsAudioSourceCommitNotifier
+{
+    event EventHandler? SourceCommitStarting;
+}
+
 /// <summary>
 /// UI-independent Windows transport. Decoder/output mutations run behind an
 /// asynchronous serialization gate, and rapid timeline seeks collapse into one
@@ -96,6 +101,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         1,
         null);
     private int disposed;
+    private int overlayCommitInProgress;
 
     internal Func<CancellationToken, Task>? BeforeSeekExecutionAsync { get; set; }
 
@@ -291,7 +297,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
                         Duration = activeEngine.Duration,
                         LastError = null
                     },
-                cancellationToken)
+                cancellationToken, suspendOverlays: true)
             .ConfigureAwait(false);
     }
 
@@ -312,7 +318,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
                         Duration = activeEngine.Duration,
                         LastError = null
                     },
-                cancellationToken)
+                cancellationToken, suspendOverlays: true)
             .ConfigureAwait(false);
     }
 
@@ -441,7 +447,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            operationGate.Release();
+            ReleaseOperationGate();
         }
         DrainNotifications();
         failure?.Throw();
@@ -538,7 +544,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            operationGate.Release();
+            ReleaseOperationGate();
         }
         DrainNotifications();
         failure?.Throw();
@@ -602,17 +608,22 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            operationGate.Release();
+            ReleaseOperationGate();
         }
         DrainNotifications();
     }
 
-    internal AudioPlaybackEpochToken CapturePlaybackEpoch() => playbackEpoch.Capture();
+    internal AudioPlaybackEpochToken CapturePlaybackEpoch()
+    {
+        if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref overlayCommitInProgress) != 0) return default;
+        var token = playbackEpoch.Capture();
+        return Volatile.Read(ref disposed) == 0 && Volatile.Read(ref overlayCommitInProgress) == 0 ? token : default;
+    }
 
     internal AudioPlaybackEpochToken InvalidatePlaybackEpoch() => playbackEpoch.Advance();
 
     internal bool IsPlaybackEpochCurrent(AudioPlaybackEpochToken token) =>
-        playbackEpoch.IsCurrent(token);
+        Volatile.Read(ref disposed) == 0 && Volatile.Read(ref overlayCommitInProgress) == 0 && playbackEpoch.IsCurrent(token);
 
     // Compatibility boundary for immediate overlays. Playback schedulers must
     // capture a token before building their batch and use the strict overload.
@@ -624,27 +635,42 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         AudioPlaybackEpochToken playbackEpochToken)
     {
         ArgumentNullException.ThrowIfNull(provider);
-        if (Volatile.Read(ref disposed) != 0 ||
-            !playbackEpoch.IsCurrent(playbackEpochToken)) return false;
+        if (!IsPlaybackEpochCurrent(playbackEpochToken) || !Volatile.Read(ref snapshot).IsPlaying) return false;
         try
         {
-            if (!operationGate.Wait(0)) return false;
+            // Decoder/DSP preparation runs independently of the old device
+            // mixer. Do not reject and consume scheduled key sounds merely
+            // because the control-operation gate is occupied by preparation.
+            // Native mixer completion + its outer epoch guard own the enqueue
+            // race with replacement/disposal; the commit hook invalidates every
+            // lease captured against the old source before it is replaced.
+            var active = Volatile.Read(ref engine);
+            return IsPlaybackEpochCurrent(playbackEpochToken) &&
+                active?.TryPlayOverlay(provider, playbackEpochToken) == true;
         }
-        catch (ObjectDisposedException)
+        catch (Exception exception) when (!IsCriticalException(exception))
         {
             return false;
         }
+    }
 
-        try
-        {
-            return Volatile.Read(ref disposed) == 0 &&
-                playbackEpoch.IsCurrent(playbackEpochToken) &&
-                Volatile.Read(ref engine)?.TryPlayOverlay(provider, playbackEpochToken) == true;
-        }
-        finally
-        {
-            operationGate.Release();
-        }
+    private void BeginOverlayCommit()
+    {
+        Volatile.Write(ref overlayCommitInProgress, 1);
+        _ = playbackEpoch.Advance();
+    }
+
+    private void OnSourceCommitStarting(object? sender, EventArgs eventArgs)
+    {
+        if (ReferenceEquals(sender, Volatile.Read(ref engine))) BeginOverlayCommit();
+    }
+
+    private void ReleaseOperationGate()
+    {
+        // Snapshot publication (or failure rollback) is complete. A fresh lease
+        // can now describe the authoritative source and its playback rate.
+        Volatile.Write(ref overlayCommitInProgress, 0);
+        operationGate.Release();
     }
 
     internal long CurrentLoadGeneration
@@ -778,7 +804,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            operationGate.Release();
+            ReleaseOperationGate();
         }
         DrainNotifications();
         failure?.Throw();
@@ -802,12 +828,14 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
             WindowsAudioPlaybackSnapshot,
             IWindowsAudioDeviceEngine,
             WindowsAudioPlaybackSnapshot?> update,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool suspendOverlays = false)
     {
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ThrowIfDisposed();
+            if (suspendOverlays) BeginOverlayCommit();
             var activeEngine = GetOrCreateEngine();
             await Task.Run(() => operation(activeEngine), CancellationToken.None)
                 .ConfigureAwait(false);
@@ -819,7 +847,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            operationGate.Release();
+            ReleaseOperationGate();
         }
         DrainNotifications();
     }
@@ -928,7 +956,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            operationGate.Release();
+            ReleaseOperationGate();
         }
         DrainNotifications();
     }
@@ -1107,12 +1135,14 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
         activeEngineGeneration = generation;
         target.PlaybackStopped += OnEnginePlaybackStopped;
         target.DefaultOutputDeviceChanged += OnDefaultOutputDeviceChanged;
+        if (target is IWindowsAudioSourceCommitNotifier notifier) notifier.SourceCommitStarting += OnSourceCommitStarting;
     }
 
     private void DetachEngineEventsLocked(IWindowsAudioDeviceEngine target)
     {
         target.PlaybackStopped -= OnEnginePlaybackStopped;
         target.DefaultOutputDeviceChanged -= OnDefaultOutputDeviceChanged;
+        if (target is IWindowsAudioSourceCommitNotifier notifier) notifier.SourceCommitStarting -= OnSourceCommitStarting;
         engineGenerations.Remove(target);
         if (ReferenceEquals(target, engine)) activeEngineGeneration = 0;
     }
@@ -1301,7 +1331,7 @@ public sealed class WindowsAudioPlaybackService : IDisposable, IAsyncDisposable
 
     private void ReleaseGateAfterDispose()
     {
-        operationGate.Release();
+        ReleaseOperationGate();
         operationGate.Dispose();
         lifetime.Dispose();
     }

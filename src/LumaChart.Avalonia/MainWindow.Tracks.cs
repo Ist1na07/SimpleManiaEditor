@@ -27,6 +27,7 @@ public sealed partial class MainWindow
         public EditorTrack Track { get; } = track;
         public TimelineSurface? Surface { get; set; }
         public EditorMetricTrackSurface? Metric { get; set; }
+        public EditorOverviewSurface? ReferenceIndex { get; set; }
         public Border Host { get; set; } = new();
         public long MainSerial { get; set; } = -1;
         public TimingMap? Timing { get; set; }
@@ -53,12 +54,12 @@ public sealed partial class MainWindow
 
     private Control BuildTrackWorkbench(Control frame) => CreateUnifiedBoard(frame);
     private void UpdateMainTrackWidth() => UpdateBoardScrollState();
-    private void OpenAddTrackMenu(Control anchor)
+    private void OpenAddTrackMenu(Control anchor, string? beforeKey = null)
     {
         if (viewModel.ActiveTab == null) return;
         var items = new List<MenuItem>();
         foreach (var (kind, name) in new[] { (EditorTrackKind.Draft, "添加草稿按键轨"),
-            (EditorTrackKind.Reference, "添加其他谱面对照轨…"), (EditorTrackKind.Hitsound, "添加 hitsound 编辑轨"),
+            (EditorTrackKind.Pattern, "添加排列库轨道"), (EditorTrackKind.Reference, "从曲库添加参考谱面…"), (EditorTrackKind.Hitsound, "添加 hitsound 编辑轨"),
             (EditorTrackKind.Density, "添加局部密度轨"), (EditorTrackKind.Difficulty, "添加局部难度轨（实验）") })
         {
             if (osuMinimalMode && kind == EditorTrackKind.Hitsound) continue;
@@ -67,7 +68,7 @@ public sealed partial class MainWindow
             item.Click += async (_, _) =>
             {
                 dismissTrackMenuClick = false;
-                try { await AddEditorTrackAsync(kind); }
+                try { await AddEditorTrackAtAsync(kind, null, beforeKey); }
                 catch (Exception exception) { viewModel.SetStatus($"添加轨道失败：{exception.Message}"); }
             };
             items.Add(item);
@@ -84,18 +85,16 @@ public sealed partial class MainWindow
         addTrackContextMenu.Open(anchor);
     }
 
-    private async Task AddEditorTrackAsync(EditorTrackKind kind, string? referencePath = null)
+    private Task AddEditorTrackAsync(EditorTrackKind kind, string? referencePath = null) => AddEditorTrackAtAsync(kind, referencePath, null);
+
+    private async Task AddEditorTrackAtAsync(EditorTrackKind kind, string? referencePath, string? beforeKey)
     {
         var tab = viewModel.ActiveTab ?? throw new InvalidOperationException("请先打开谱面。");
         RefreshTrackWorkspace(tab);
         ChartDocument? reference = null;
         if (kind == EditorTrackKind.Reference)
         {
-            referencePath ??= await PickLocalFileAsync(new FilePickerOpenOptions
-            {
-                Title = "选择只读对照谱面", AllowMultiple = false,
-                FileTypeFilter = [new FilePickerFileType("谱面") { Patterns = ["*.osu", "*.mc"] }]
-            }, PickedFileRetention.Durable);
+            referencePath ??= await PickIndexedChartAsync();
             if (string.IsNullOrWhiteSpace(referencePath)) return;
             var importedPath = referencePath;
             reference = await Task.Run(() => Path.GetExtension(importedPath).Equals(".osu", StringComparison.OrdinalIgnoreCase)
@@ -105,8 +104,21 @@ public sealed partial class MainWindow
         }
         var workspace = activeTrackWorkspace!;
         var track = workspace.Add(kind, tab.Session.Document, reference, referencePath ?? "");
-        if (kind == EditorTrackKind.Reference) track.Name = "对照 · " + Path.GetFileNameWithoutExtension(referencePath);
+        if (kind == EditorTrackKind.Reference) track.Name = "参考 · " + Path.GetFileNameWithoutExtension(referencePath);
+        // Retain hidden tracks' places in the saved order as well.
+        var oldKeys = workspace.BoardOrder.ToList();
+        foreach (var key in trackPanels.Children.OfType<EditorTrackPanel>().Select(p => p.TrackKey))
+            if (!oldKeys.Contains(key)) oldKeys.Add(key);
+        var insertsBeforeExisting = beforeKey != null && oldKeys.Contains(beforeKey);
+        var insertAt = beforeKey == null ? oldKeys.Count : oldKeys.IndexOf(beforeKey);
+        if (insertAt < 0) insertAt = oldKeys.Count;
+        oldKeys.Insert(insertAt, "track:" + track.Id.ToString("N"));
+        workspace.BoardOrder.Clear(); workspace.BoardOrder.AddRange(oldKeys); workspace.MarkLayoutChanged();
+        var previousPan = pendingBoardPan ?? desiredBoardPan;
         RebuildTrackViews();
+        if (insertsBeforeExisting && boardFrames.TryGetValue("track:" + track.Id.ToString("N"), out var newFrame))
+            RestoreBoardPanAfterLayout(previousPan + newFrame.Width + trackPanels.Spacing);
+        workspace.SetViewState(timeline.CurrentBeat, pendingBoardPan ?? desiredBoardPan);
         await workspace.SaveAsync();
         if (!ReferenceEquals(workspace, activeTrackWorkspace)) return;
 
@@ -194,7 +206,7 @@ public sealed partial class MainWindow
         header.Children.Add(title); Grid.SetColumn(sync, 1); header.Children.Add(sync); Grid.SetColumn(hide, 2); header.Children.Add(hide);
         var body = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
         body.Children.Add(header);
-        if (track.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Hitsound)
+        if (track.Kind is EditorTrackKind.Draft or EditorTrackKind.Reference or EditorTrackKind.Pattern or EditorTrackKind.Hitsound)
         {
             if (track.Kind == EditorTrackKind.Hitsound)
             {
@@ -206,7 +218,7 @@ public sealed partial class MainWindow
                 InteractionProfile = shortcutSettings.Profile, ReverseTimeWheel = timeline.ReverseTimeWheel };
             surface.ConfigureView(editorViewSettings.GridLaneWidth, !track.SyncScroll && track.ViewZoom.HasValue ? track.ViewZoom.Value : timeline.PixelsPerBeat, editorViewSettings.NoteWidth, editorViewSettings.NoteHeight, 1, .79, 1.5, .85,
                 editorViewSettings.NoteAnchor);
-            surface.Tool = track.Kind == EditorTrackKind.Draft ? timeline.Tool : TimelineTool.Select;
+            surface.Tool = track.Kind is EditorTrackKind.Draft or EditorTrackKind.Pattern ? timeline.Tool : TimelineTool.Select;
             surface.SetCurrentBeat(track.ViewBeat);
             surface.StatusChanged += (_, text) => viewModel.SetStatus(text);
 
@@ -232,7 +244,7 @@ public sealed partial class MainWindow
             surface.SizeChanged += (_, _) => SyncTrackViewports();
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6, 0) };
             actions.Children.Add(TrackButton("复制", () => CopyTrackSelection(view)));
-            if (track.Kind == EditorTrackKind.Draft)
+            if (track.Kind is EditorTrackKind.Draft or EditorTrackKind.Pattern)
             {
                 actions.Children.Add(TrackButton("粘贴", () => PasteTrackSelection(view)));
                 actions.Children.Add(TrackButton("撤销", () => track.Session!.Undo()));
@@ -244,7 +256,13 @@ public sealed partial class MainWindow
                 actions.Children.Add(TrackButton("撤销", () => viewModel.ActiveTab?.Session.Undo()));
                 actions.Children.Add(TrackButton("重做", () => viewModel.ActiveTab?.Session.Redo()));
             }
-            actions.Children.Add(TrackButton("放入主轨", () => TransferTrackSelectionToMain(view)));
+            var toMain = TrackButton("放入主轨", () => TransferTrackSelectionToMain(view));
+            toMain.IsEnabled = viewModel.ActiveTab?.Session.IsReadOnly == false; actions.Children.Add(toMain);
+            if (track.Kind == EditorTrackKind.Pattern)
+            {
+                actions.Children.Add(TrackButton("加入主轨选区", () => { _ = AddMainSelectionToPatternTrackAsync(track); }));
+                actions.Children.Add(TrackButton("保存排列…", () => { _ = SavePatternTrackAsync(view); }));
+            }
             if (track.Kind == EditorTrackKind.Hitsound)
             {
                 var sound = new TextBox { PlaceholderText = "采样文件相对路径", Width = 130 };
@@ -264,7 +282,28 @@ public sealed partial class MainWindow
                 Grid.SetRow(edit, 1); body.Children.Add(edit);
             }
             else { Grid.SetRow(actions, 1); body.Children.Add(actions); }
-            Grid.SetRow(surface, 2); body.Children.Add(surface);
+            Control trackContent = surface;
+            if (track.Kind == EditorTrackKind.Reference)
+            {
+                var index = new EditorOverviewSurface { Session = track.Session, Width = 40 };
+                view.ReferenceIndex = index;
+                index.SeekRequested += beat => { sync.IsChecked = false; track.SyncScroll = false; surface.SynchronizedNavigationSource = null; surface.NavigateToBeat(beat.Value); };
+                surface.CurrentBeatChanged += (_, beat) => index.SetCurrentBeat(beat);
+                var referenceGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*") };
+                referenceGrid.Children.Add(index); Grid.SetColumn(surface, 1); referenceGrid.Children.Add(surface); trackContent = referenceGrid;
+                var locate = new TextBox { PlaceholderText = "分:秒 或 ms", Width = 90 };
+                actions.Children.Add(locate);
+                actions.Children.Add(TrackButton("定位", () => {
+                    var input = locate.Text ?? ""; double ms;
+                    if (input.Contains(':') && TimeSpan.TryParse("0:" + input, System.Globalization.CultureInfo.InvariantCulture, out var time)) ms = time.TotalMilliseconds;
+                    else if (!double.TryParse(input, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out ms)) return;
+                    if (!double.IsFinite(ms)) return;
+                    sync.IsChecked = false; surface.SynchronizedNavigationSource = null;
+                    surface.NavigateToBeat(new TimingMap(track.Session!.Document.Timing).MillisecondsToBeat(ms).Value);
+                }));
+                index.SetCurrentBeat(surface.CurrentBeat);
+            }
+            Grid.SetRow(trackContent, 2); body.Children.Add(trackContent);
         }
         else
         {
@@ -338,7 +377,7 @@ public sealed partial class MainWindow
     private void ClearDraftTrack(TrackView view)
     {
         var session = view.Track.Session!;
-        if (view.Track.Kind != EditorTrackKind.Draft) return;
+        if (view.Track.Kind is not (EditorTrackKind.Draft or EditorTrackKind.Pattern)) return;
         MixedSelectionEditingService.Delete(session, session.Document.Notes.Select(n => n.Id).ToArray(), []);
         viewModel.SetStatus("草稿已清空，可撤销。");
     }
@@ -383,6 +422,9 @@ public sealed partial class MainWindow
         foreach (var view in secondaryTrackViews.Values)
         {
             if (view.MainSerial == tab.Session.ChangeSerial) continue;
+            if (view.Track.Kind is EditorTrackKind.Draft or EditorTrackKind.Pattern &&
+                !InheritedTrackTimingService.Synchronize(view.Track.Session!, tab.Session.Document))
+                continue;
             view.MainSerial = tab.Session.ChangeSerial;
             if (view.Track.Kind == EditorTrackKind.Hitsound)
             {
@@ -524,6 +566,7 @@ public sealed partial class MainWindow
 
     private void RefreshTrackCommandButtons()
     {
+        RefreshStretchButton();
         if (activeSecondaryTrack?.Track.Session is not { } session) return;
         var selected = session.Selection.Count > 0;
         var editable = !session.IsReadOnly && session.CanEditNotes;

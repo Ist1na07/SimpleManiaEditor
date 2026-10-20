@@ -10,7 +10,7 @@ public readonly record struct TimelineEdgeScrollStep(
 
 /// <summary>
 /// Pure edge-scroll timing shared by every captured timeline gesture. Values
-/// intentionally match the Windows/WPF editor: a 42 DIP edge band, up to 4x
+/// start strictly outside the viewport: a 42 DIP ramp, up to 4x
 /// intensity, 8 beats/second, and at most 50 ms consumed per dispatcher tick.
 /// </summary>
 public static class TimelineEdgeScroll
@@ -32,10 +32,10 @@ public static class TimelineEdgeScroll
             : 0;
 
         double intensity = 0;
-        if (pointerY < EdgeBand)
-            intensity = Math.Min(4, (EdgeBand - pointerY) / EdgeBand);
-        else if (pointerY > viewportHeight - EdgeBand)
-            intensity = -Math.Min(4, (pointerY - (viewportHeight - EdgeBand)) / EdgeBand);
+        if (pointerY < 0)
+            intensity = Math.Min(4, -pointerY / EdgeBand);
+        else if (pointerY > viewportHeight)
+            intensity = -Math.Min(4, (pointerY - viewportHeight) / EdgeBand);
 
         var nextBeat = Math.Max(0, currentBeat + intensity * BeatsPerSecond * elapsedSeconds);
         return new TimelineEdgeScrollStep(intensity, elapsedSeconds, nextBeat);

@@ -141,6 +141,10 @@ public sealed partial class MainWindowViewModel
     {
         try
         {
+            // 0.1.37: startup reads the persisted header index only. It never walks
+            // Songs on its own, so the first visit to the library shows the cached
+            // list immediately; the scan stays behind the explicit refresh action.
+            var cachedLibrary = EnsureLibrarySnapshotLoadedAsync();
             if (restorePreviousSession)
                 await workspace.InitializeAsync();
             else
@@ -150,11 +154,17 @@ public sealed partial class MainWindowViewModel
                 await workspace.OpenAsync(startupChartPath);
                 AvaloniaAppPaths.SaveWorkspaceRoot(workspace.WorkspaceRoot);
             }
-            Status = !restorePreviousSession
+            if (scanLibrary) await cachedLibrary;
+            if (runStartupMaintenance) AvaloniaAppPaths.RememberDefaultWorkspaceRoot(workspace.WorkspaceRoot);
+            var startupStatus = !restorePreviousSession
                 ? "已按文件启动；上次编辑缓存将在下次普通启动时恢复"
                 : workspace.RecoveryWarnings.Count == 0
                     ? "LumaChart Studio 客户端已启动"
                     : AvaloniaLocalizationCatalog.Format("已恢复工作区；{0} 条恢复提示", workspace.RecoveryWarnings.Count);
+            // While the snapshot is still loading its own message stays visible;
+            // once it is in, say where the list came from instead of a generic line.
+            if (!IsLibraryCacheLoading)
+                Status = LibraryEntries.Count > 0 ? DescribeCachedLibrary(LibraryEntries.Count) : startupStatus;
             RaiseStateChanged();
             if (runStartupMaintenance) StartStorageMaintenance();
             if (scanLibrary) await RefreshLibraryAsync();
@@ -209,21 +219,17 @@ public sealed partial class MainWindowViewModel
         var scanSerial = libraryMutationSerial;
         var scanRoot = workspace.ResolvedWorkspaceRoot;
         var creationRoot = workspace.CreationRoot;
-        try { await Task.Run(libraryMetadataCache.LoadPersistedHeaders, cancellationToken); }
+        try { await LoadCachedLibrarySnapshotAsync(); }
         catch (OperationCanceledException) { return; }
-        if (LibraryEntries.Count == 0)
-        {
-            var allowed = new[] { scanRoot, creationRoot }.Concat(libraryCatalog.Roots)
-                .Select(path => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar).ToArray();
-            var known = libraryCatalog.Charts.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var cached = libraryMetadataCache.CachedCharts.Where(chart => known.Contains(chart.ChartPath) || allowed.Any(prefix => chart.ChartPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))).ToArray();
-            ApplyPersonalSummaries(cached); libraryEntries.ReplaceAll(cached);
-            libraryFolderIndex = DesktopChartLibraryService.GroupByFolder(cached, scanRoot); ApplyLibraryFilterAndSort();
-        }
         IsScanning = true;
         LastLibraryScanError = null;
-        Status = AvaloniaLocalizationCatalog.Format("正在扫描曲库：{0}", WorkspaceRoot);
+        // An explicit scan clears the "directory changed" hint it satisfies.
+        LibraryRefreshSuggested = false;
+        Status = AvaloniaLocalizationCatalog.Format("正在扫描曲库目录：{0}（扫描期间列表仍显示本地索引）", WorkspaceRoot);
         RaiseStateChanged();
+        // Progress reports are queued asynchronously; once the scan has a result
+        // they must never overwrite the final status line.
+        var scanProgressClosed = false;
         try
         {
             var warnings = new List<string>();
@@ -237,6 +243,27 @@ public sealed partial class MainWindowViewModel
             catch (IOException exception) { warnings.Add(exception.Message); }
             var linkedRoots = libraryCatalog.Roots;
             var rememberedCharts = libraryCatalog.Charts;
+            // Throttled progress: scanning Songs is the only operation that can
+            // take seconds, so the status line counts what it has indexed while
+            // the cached list stays usable underneath.
+            var currentScanRoot = scanRoot;
+            var lastProgressTick = 0L;
+            var scanProgress = new Progress<DesktopLibraryScanProgress>(value =>
+            {
+                var tick = Environment.TickCount64;
+                if (value.Processed < value.Total && tick - Interlocked.Read(ref lastProgressTick) < 200) return;
+                Interlocked.Exchange(ref lastProgressTick, tick);
+                var text = AvaloniaLocalizationCatalog.Format("正在扫描曲库：{0} {1:N0} / {2:N0}",
+                    Path.GetFileName(Path.TrimEndingDirectorySeparator(currentScanRoot)), value.Processed, value.Total);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    // The flag and the status only change on the UI thread, so a
+                    // queued progress report can never overwrite a final result.
+                    if (scanProgressClosed || scanCancellation?.Token != cancellationToken) return;
+                    Status = text;
+                    RaiseStateChanged();
+                });
+            });
             var entries = await Task.Run(async () =>
             {
                 var merged = new Dictionary<string, DesktopLibraryChartEntry>(StringComparer.OrdinalIgnoreCase);
@@ -246,9 +273,10 @@ public sealed partial class MainWindowViewModel
                 foreach (var root in roots)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    currentScanRoot = root;
                     try
                     {
-                        foreach (var chart in await DesktopChartLibraryService.ScanAsync(root, cancellationToken: cancellationToken, metadataCache: libraryMetadataCache))
+                        foreach (var chart in await DesktopChartLibraryService.ScanAsync(root, scanProgress, cancellationToken, libraryMetadataCache))
                             merged[chart.ChartPath] = chart;
                         verifiedRoots.Add(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar);
                     }
@@ -261,7 +289,7 @@ public sealed partial class MainWindowViewModel
                     if (merged.ContainsKey(file) || !File.Exists(file)) continue;
                     try
                     {
-                        var chart = DesktopChartLibraryService.ReadChart(file, Path.GetDirectoryName(file)!);
+                        var chart = libraryMetadataCache.Read(file, Path.GetDirectoryName(file)!);
                         if (chart != null) merged[file] = chart;
                     }
                     catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
@@ -272,6 +300,7 @@ public sealed partial class MainWindowViewModel
                 MapperLibrary.ForgetHeaders(stale);
                 return (IReadOnlyList<DesktopLibraryChartEntry>)merged.Values.ToArray();
             }, cancellationToken);
+            scanProgressClosed = true;
             LibraryWarnings = warnings;
             var workspaceRoot = scanRoot;
             var indexedFolders = await Task.Run(
@@ -286,16 +315,21 @@ public sealed partial class MainWindowViewModel
             libraryEntries.ReplaceAll(entries);
             libraryFolderIndex = indexedFolders;
             ApplyLibraryFilterAndSort();
+            LibraryReconciled = true;
+            var refreshedAt = DateTimeOffset.Now;
+            RecordLibraryScanCompleted(refreshedAt);
             Status = entries.Count == 0
                 ? "曲库为空，可新建谱面、打开谱面或选择工作目录"
-                : AvaloniaLocalizationCatalog.Format("曲库已载入 {0:N0} 个文件夹 · {1:N0} 张谱面", libraryFolderIndex.Count, entries.Count);
+                : AvaloniaLocalizationCatalog.Format("曲库已刷新 · {0:N0} 个文件夹 · {1:N0} 张谱面 · {2:MM-dd HH:mm}", libraryFolderIndex.Count, entries.Count, refreshedAt.ToLocalTime());
         }
         catch (OperationCanceledException)
         {
+            scanProgressClosed = true;
             if (scanCancellation?.Token == cancellationToken) Status = "曲库扫描已取消";
         }
         catch (Exception exception)
         {
+            scanProgressClosed = true;
             if (scanCancellation?.Token == cancellationToken)
             {
                 LastLibraryScanError = exception;
@@ -336,6 +370,13 @@ public sealed partial class MainWindowViewModel
         await RefreshLibraryAsync();
     }
 
+    public async Task OpenReadOnlyAsync(string path)
+    {
+        var tab = await workspace.OpenReadOnlyAsync(path);
+        Status = "只读查看 · " + tab.DisplayTitle + " · 可复制排列；编辑前请克隆到工作目录";
+        RaiseStateChanged();
+    }
+
     public async Task OpenAsync(string path)
     {
         await OpenAsync(path, osuTimingImportMode: null);
@@ -345,9 +386,10 @@ public sealed partial class MainWindowViewModel
     {
         var alreadyOpen = Tabs.FirstOrDefault(tab => string.Equals(tab.SourcePath, path, StringComparison.OrdinalIgnoreCase));
         if (alreadyOpen != null) { Activate(alreadyOpen.Id); return; }
-        var tab = osuTimingImportMode.HasValue
-            ? await workspace.OpenAsync(path, osuTimingImportMode.Value)
-            : await workspace.OpenAsync(path);
+        var knownWorkspace = LibraryEntries.Any(c => string.Equals(c.ChartPath, path, StringComparison.OrdinalIgnoreCase)) && IsWorkspaceChart(path);
+        var tab = knownWorkspace
+            ? await workspace.OpenManagedChartAsync(path, osuTimingImportMode ?? OsuNoteTimingImportMode.PreserveMilliseconds)
+            : osuTimingImportMode.HasValue ? await workspace.OpenAsync(path, osuTimingImportMode.Value) : await workspace.OpenAsync(path);
         Status = AvaloniaLocalizationCatalog.Format("已打开 {0} · {1}", tab.DisplayTitle, tab.FormatBadge);
         RaiseStateChanged();
         if (!string.Equals(path, tab.SourcePath, StringComparison.OrdinalIgnoreCase)) MapperLibrary.LinkCopies(path, tab.SourcePath);

@@ -40,3 +40,23 @@
 ## 本地构建
 
 scripts/Build-Local.ps1 -Dotnet '<SDK 的 dotnet.exe>' 会构建到新的本地目录，运行编辑器和试玩存储检查，成功后更新 Start-Editor.cmd。不创建 ZIP、不打标签、不发布 Release。不会覆盖已有运行目录或作品。
+
+## stable 栈溢出调查（2026-10-16，未定位）
+
+用户截图为 osu!.exe 系统错误「无法创建新的堆栈防护页面」，并确认发生时 SME 和试玩均已退出；同时报告两者并行运行时经常出现原版客户端的修复界面。两种现象分别调查，不能用其中一个代替另一个的证据。
+
+该提示对应 STATUS_STACK_OVERFLOW（0xC00000FD）。线程栈用尽、系统无法继续提交内存等都可能导致它，不能单凭截图认定物理内存不足。参考 Microsoft 的 Debugging a Stack Overflow：https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/debugging-a-stack-overflow 。
+
+本机只读检查结果：
+
+- 近 90 天 Application 日志有 18 条 osu!.exe 的 .NET 未处理异常记录，最早为 9 月 19 日；记录的异常为 System.AccessViolationException，部分较早记录与 10 月的混淆调用栈入口相同。早于本仓库 10 月 7 日的首个提交，但不代表截图中的栈溢出已经被解释。
+- 未找到本次截图对应的 0xC00000FD 事件或 osu! 转储。Windows Error Reporting 在 HKLM 和 HKCU 均为 Disabled=1、DontShowUI=1；没有修改这些设置。
+- 检查时 SME／试玩／osu! 均未运行。系统提交约 29.1 / 49.6 GiB，可用物理内存约 11 GiB，过去 7 天未找到资源耗尽事件 2004。这是检查时状态，不能反推崩溃时的峰值。
+- 当天 16:02 的 stable 更新日志记录 No changes to apply、NoUpdate，不足以证明文件损坏或实际执行过修复。原版程序为已启用 LargeAddressAware 的 x86 程序，未修改程序头。
+- 检查编辑器跨进程代码：试玩只启动自己包内的宿主、使用独立 IPC 名；切换焦点按宿主 PID 限定。未发现进程内存写入或全局键盘钩子实现。不能仅凭静态检查排除所有间接影响。
+
+下次复现前双击仓库根目录 Capture-OsuDiagnostics.cmd，在打开的终端中保留采集，然后正常操作客户端。它最多观察 30 分钟，每 2 秒记录相关进程的私有内存／虚拟内存／工作集、句柄和线程数，以及系统提交量；保存前后事件记录和发现的客户端更新日志。Ctrl+C 可提前停止，已刷新的样本保留。不会启动／结束游戏、挂接调试器、启用转储或改动注册表。
+
+如果希望从开始就采集更新日志，可运行 scripts/Collect-OsuDiagnostics.ps1 -OsuRoot '<客户端目录>' -DurationSeconds 1800。不指定目录则从观察到的 osu!.exe 路径识别。默认 DurationSeconds=0 仅做一次即时快照。报告保存在被 Git 忽略的 artifacts/osu-diagnostics-*，包含本机路径和异常消息，仅本地保存，不自动上传。采样可能漏过短暂进程或内存峰值，也不能提供故障调用栈或文件修改归因；必要时仍需用户同意的进一步崩溃捕获。
+
+验证工具：tests/OsuDiagnostics.Tests.ps1 使用临时假游戏目录，验证报告格式、重复采样、原始文件内容和修改时间不变，并拒绝把报告写在游戏目录里。本次仅新增诊断工具和记录，没有改运行时或生成新版本。

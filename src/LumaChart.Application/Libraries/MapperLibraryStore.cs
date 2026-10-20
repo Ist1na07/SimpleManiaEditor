@@ -41,7 +41,19 @@ public sealed class MapperLibraryStore
                 modified INTEGER NOT NULL, payload TEXT, search TEXT NOT NULL, keys INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS header_keys ON headers(keys);
             CREATE VIRTUAL TABLE IF NOT EXISTS lookup USING fts5(path UNINDEXED, search, tokenize='trigram');
+            CREATE TABLE IF NOT EXISTS index_metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
             """);
+        using (var parser = Command(db, "SELECT value FROM index_metadata WHERE key='header_parser'"))
+        {
+            if (parser.ExecuteScalar() as string != "2")
+            {
+                using var revision = db.BeginTransaction();
+                // Rebuild headers only when parsing rules change. Identities,
+                // annotations, JSON backups and Git history remain untouched.
+                Execute(db, "DELETE FROM lookup; DELETE FROM headers; INSERT OR REPLACE INTO index_metadata VALUES('header_parser','2');");
+                revision.Commit();
+            }
+        }
         if (fresh && File.Exists(personalBackup))
         {
             var backup = JsonSerializer.Deserialize<PersonalBackup>(File.ReadAllBytes(personalBackup)) ?? throw new IOException("个人资料备份无法读取。");
@@ -138,14 +150,57 @@ public sealed class MapperLibraryStore
             Execute(db, "INSERT INTO lookup(rowid,path,search) SELECT rowid,$p,$s FROM headers WHERE path=$p", ("$p", row.Path), ("$s", row.Search));
         }
     }
+    /// <summary>Index bookkeeping that must survive a restart (for example the
+    /// last explicit refresh time) but is not part of any user document.</summary>
+    public string? ReadIndexMetadata(string key)
+    {
+        lock (gate)
+        {
+            using var db = Open();
+            using var command = Command(db, "SELECT value FROM index_metadata WHERE key=$k", ("$k", key));
+            return command.ExecuteScalar() as string;
+        }
+    }
+
+    public void WriteIndexMetadata(string key, string value)
+    {
+        lock (gate)
+        {
+            using var db = Open(); using var transaction = db.BeginTransaction();
+            Execute(db, "INSERT INTO index_metadata VALUES($k,$v) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("$k", key), ("$v", value));
+            transaction.Commit();
+        }
+    }
+
     public IReadOnlyList<LibraryCachedHeader> LoadHeaders()
     {
         lock (gate)
         {
             using var db = Open(); using var command = Command(db, "SELECT path,length,modified,payload FROM headers"); using var reader = command.ExecuteReader();
-            var list = new List<LibraryCachedHeader>();
-            while (reader.Read()) list.Add(new(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2),
-                reader.IsDBNull(3) ? null : JsonSerializer.Deserialize<DesktopLibraryChartEntry>(reader.GetString(3))));
+            var paths = new List<string>(); var lengths = new List<long>();
+            var modified = new List<long>(); var payloads = new List<string?>();
+            while (reader.Read())
+            {
+                paths.Add(reader.GetString(0)); lengths.Add(reader.GetInt64(1)); modified.Add(reader.GetInt64(2));
+                payloads.Add(reader.IsDBNull(3) ? null : reader.GetString(3));
+            }
+            reader.Close();
+            // JSON parsing is the dominant cost of a large index snapshot; it is
+            // CPU-bound and independent per row, so it runs on the pool while the
+            // window is already showing the cached list.
+            var entries = new DesktopLibraryChartEntry?[paths.Count];
+            Parallel.For(0, paths.Count,
+                new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 2, 8) },
+                index =>
+                {
+                    var payload = payloads[index];
+                    entries[index] = payload == null
+                        ? null
+                        : JsonSerializer.Deserialize(payload, LibraryIndexJsonContext.Default.DesktopLibraryChartEntry);
+                });
+            var list = new LibraryCachedHeader[paths.Count];
+            for (var index = 0; index < paths.Count; index++)
+                list[index] = new(paths[index], lengths[index], modified[index], entries[index]);
             return list;
         }
     }
@@ -171,7 +226,7 @@ public sealed class MapperLibraryStore
             {
                 var path = Full(header.Path); var chart = header.Entry;
                 Execute(db, "INSERT INTO headers VALUES($p,$l,$m,$j,$s,$k) ON CONFLICT(path) DO UPDATE SET length=excluded.length,modified=excluded.modified,payload=excluded.payload,search=excluded.search,keys=excluded.keys",
-                    ("$p", path), ("$l", header.Length), ("$m", header.ModifiedTicks), ("$j", chart == null ? null : JsonSerializer.Serialize(chart)), ("$s", chart?.SearchText ?? ""), ("$k", chart?.KeyCount ?? 0));
+                    ("$p", path), ("$l", header.Length), ("$m", header.ModifiedTicks), ("$j", chart == null ? null : JsonSerializer.Serialize(chart, LibraryIndexJsonContext.Default.DesktopLibraryChartEntry)), ("$s", chart?.SearchText ?? ""), ("$k", chart?.KeyCount ?? 0));
                 Execute(db, "DELETE FROM lookup WHERE rowid=(SELECT rowid FROM headers WHERE path=$p)", ("$p", path));
                 Execute(db, "INSERT INTO lookup(rowid,path,search) SELECT h.rowid,h.path,h.search || char(10) || coalesce(json_extract(p.payload,'$.Note'),'') || char(10) || coalesce(json_extract(p.payload,'$.State'),'') || char(10) || coalesce((SELECT group_concat(value,' ') FROM json_each(p.payload,'$.Tags')),'') FROM headers h LEFT JOIN identities i ON i.path=h.path LEFT JOIN personal p ON p.identity=i.identity WHERE h.path=$p", ("$p", path));
             }
