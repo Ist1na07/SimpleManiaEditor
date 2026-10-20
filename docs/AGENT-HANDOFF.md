@@ -6,10 +6,10 @@
 
 - 工作目录：`E:\Files\Developing\SimpleManiaEditor`，Windows / PowerShell。
 - 仓库：`https://github.com/Ist1na07/SimpleManiaEditor`，当前分支 `main`。
-- 交接时 HEAD：`57ba5b3`，2026-10-15，`Fix local cleanup and confine embedded playtest storage`。
-- **工作树不是干净状态。后续曲库、参考、排列、交互、音频等大量改动尚未提交，包含很多未跟踪源码和测试。0.1.36 不能仅靠重新 clone GitHub 恢复。**
-- **0.1.37 源码事故（必须知道）**：收尾时一个 Agent 用默认限行的 read（约 950/25,257 行）读了 `src/LumaChart.Avalonia/MainWindow.cs` 后整文件写回，导致该文件被截断；当时工作树未提交，git 里没有任何快照。已用 ilspycmd 反编译 20:47 编译的 0.1.37 程序集恢复：保留 16 个未受损的 `MainWindow.*.cs` partial 的 313 个成员，重建主文件 1,437 个成员，并补回原文件末尾的 3 个辅助类型（WindowsAvaloniaEditorInputPolicy / WindowsOnlineRoomEditorAccess / WindowsOnlineRoomPermissionPolicy），把 ILSpy 的只读集合辅助类型还原成普通数组，清掉两处反编译状态变量。**代价：该文件的注释、原始格式和 `#if LUMACHART_SHARED` 分支代码已丢失（本 checkout 不构建该配置），并加了 `#nullable disable` 与告警抑制 pragma。其余源文件均为原件。** 证据在 artifacts/decompiled、artifacts/MainWindow.split.cs、artifacts/MainWindow.truncated.cs、artifacts/splitter。该文件已通过 -warnaserror 零警告编译并重跑全套回归；后续可逐步补注释、恢复 nullable。**教训：read 有默认行数上限，修改大文件必须指定 offset/limit 或改用 edit；工作树长期未提交本身就是风险，建议尽快把 0.1.37 源码提交到 GitHub 或至少离线备份（提交源码不等于发布 Release）。**
-- 接手先看 `git status --short` / `git diff` / 未跟踪文件。不要 reset、checkout 覆盖、git clean、自动 stash/drop 或将这些文件当残留删除。`docs/早期会话.md` 也是现有未跟踪资料，应保留。
+- 交接时 HEAD：`e60a1a6`，2026-10-20，`Add 0.1.37: cached library entry, tab overflow paging, stretch noise fixes`。这次提交把自 0.1.33 起积压的全部源码、测试、脚本和文档一次性入库（81 个文件，+28,408/−23,057），**工作树已提交且干净**；只提交源码，没有 push、没有 tag、没有 Release。提交者身份沿用本仓库既有历史 `Codex <codex@local>`（只写在仓库级 user.name/user.email，未改全局配置）。
+- **仍然不要 reset、checkout 覆盖、git clean 或 stash/drop。** 上一轮正是 25k 行主文件在工作树里长期没有快照才损失惨重；从现在起每完成一块可运行改动就小步提交，不要把几轮工作再堆在一起。
+- **0.1.37 源码事故（必须知道）**：收尾时一个 Agent 用默认限行的 read（约 950/25,257 行）读了 `src/LumaChart.Avalonia/MainWindow.cs` 后整文件写回，导致该文件被截断；当时工作树未提交，git 里没有任何快照。已用 ilspycmd 反编译 20:47 编译的 0.1.37 程序集恢复：保留 16 个未受损的 `MainWindow.*.cs` partial 的 313 个成员，重建主文件 1,437 个成员，并补回原文件末尾的 3 个辅助类型（WindowsAvaloniaEditorInputPolicy / WindowsOnlineRoomEditorAccess / WindowsOnlineRoomPermissionPolicy），把 ILSpy 的只读集合辅助类型还原成普通数组，清掉两处反编译状态变量。**代价：该文件的注释、原始格式和 `#if LUMACHART_SHARED` 分支代码已丢失（本 checkout 不构建该配置），并加了 `#nullable disable` 与告警抑制 pragma。其余源文件均为原件。** 证据在 artifacts/decompiled、artifacts/MainWindow.split.cs、artifacts/MainWindow.truncated.cs、artifacts/splitter。该文件已通过 -warnaserror 零警告编译并重跑全套回归；后续可逐步补注释、恢复 nullable。**教训：read 有默认行数上限，修改大文件必须指定 offset/limit 或改用 edit；工作树长期未提交本身就是风险（0.1.37 已提交为 e60a1a6，此后应小步提交，勿再堆积）。**
+- 接手先看 `git status --short` / `git diff` / 未跟踪文件。不要 reset、checkout 覆盖、git clean、自动 stash/drop 或将这些文件当残留删除。`docs/历史会话.md` 是最早期的需求与规划对话记录，现已入库，保留它（含用户最初的功能清单和工作方式约定）。
 - 正常入口：根目录 `Start-Editor.cmd`。当前指向：
   `dist/SimpleManiaEditor-0.1.37-Local-20261020-212306/app/SimpleManiaEditor.exe`。
 - 当前版本在 `SimpleManiaProduct.cs`、Avalonia csproj 与 OsuHost csproj 中均为 0.1.37（宿主版本号此前滞后，本轮同步）。最近公开分发版记录为 0.1.31；本地 .32～.37 不能当作已公开发布。
@@ -31,6 +31,7 @@
 
 用户最不满意的是：功能虽然存在，但交互不合直觉，随后长时间逐个纠正。必须先在脑中走完实际 mapper 工作流，再改界面。按钮是否常驻、是否属于当前工具层级、焦点和快捷键冲突、取消是否会误操作、只读查看是否会阻止退出，都属于功能本身。
 
+- **2026-10-20 起的分工（用户明确要求）**：主会话/Lead 只做协调、把关和转述，具体的编码、构建、测试、排查交给子代理或智能体团队分片执行（提交源码这类极简单动作可以主会话自己做）。原因：单个会话上下文已到 500K，长上下文会明显削弱判断力。派活时必须写清文件范围与写作用域，避免两个 agent 同时改同一文件；构建与 suite 用 `scripts/Agent-Verify.ps1` 串行，不要让多个 dotnet build 抢 bin/obj。
 - 有明确要求就直接完成；日常可逆实现不要重复请求许可。
 - 不自行改写已确定的操作习惯；新需求优先于早期记录。
 - 不随意扩大范围，不因为“已有代码”就把多余概念暴露给用户。
