@@ -3519,7 +3519,7 @@ private Control BuildAudioImportNameLayer()
 
 private Control BuildAboutLayer()
 {
-    aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", "0.1.37");
+    aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", "0.1.38");
     aboutVersionText.Foreground = new SolidColorBrush(Color.Parse("#7FA1A4"));
     aboutVersionText.FontFamily = new FontFamily("Cascadia Mono,Consolas");
     aboutVersionText.FontSize = 10.0;
@@ -3621,7 +3621,7 @@ private Control BuildUpdateLayer()
     updateTitleText.FontWeight = FontWeight.DemiBold;
     updateTitleText.Foreground = new SolidColorBrush(Color.Parse("#E5E9EA"));
     AutomationProperties.SetAutomationId(updateTitleText, "Update.Title");
-    updateVersionText.Text = AvaloniaLocalizationCatalog.Format("当前 {0}  →  最新 {1}", "0.1.37", "0.1.37");
+    updateVersionText.Text = AvaloniaLocalizationCatalog.Format("当前 {0}  →  最新 {1}", "0.1.38", "0.1.38");
     updateVersionText.Foreground = new SolidColorBrush(Color.Parse("#A8C3C5"));
     updateVersionText.FontFamily = new FontFamily("Cascadia Mono,Consolas");
     AutomationProperties.SetAutomationId(updateVersionText, "Update.Version");
@@ -9745,7 +9745,7 @@ private void RefreshFollowSystemLanguage()
 
 private Control BuildApplicationInformationSettings()
 {
-    settingsVersionText.Text = "当前版本 0.1.37";
+    settingsVersionText.Text = "当前版本 0.1.38";
     settingsVersionText.Foreground = new SolidColorBrush(Color.Parse("#7E8D91"));
     settingsVersionText.FontSize = 10.0;
     settingsVersionText.Margin = new Thickness(0.0, 3.0, 0.0, 9.0);
@@ -22540,7 +22540,7 @@ private async Task<WindowsAppUpdateSnapshot> RefreshAppUpdateSnapshotAsync(Cance
 private void ApplyAppConfiguration(WindowsAppUpdateSnapshot snapshot)
 {
     aboutContentText.Text = (string.IsNullOrEmpty(snapshot.Configuration.AboutContent) ? "LumaChart Studio" : snapshot.Configuration.AboutContent);
-    aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", "0.1.37");
+    aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", "0.1.38");
     settingsVersionText.Text = WindowsAppUpdatePolicy.SettingsVersionText("1.3.0.0", snapshot);
 }
 
@@ -22666,7 +22666,7 @@ private void OpenCurrentUpdateDownload()
 
 private async Task ShowAboutAsync()
 {
-    aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", "0.1.37");
+    aboutVersionText.Text = AvaloniaLocalizationCatalog.Format("版本 {0}", "0.1.38");
     aboutContentText.Text = ((!SimpleManiaProduct.OnlineEnabled) ? "SimpleManiaEditor\n面向 osu!mania / 7K 的本地编辑器\nCopyright © 2026 Ist1na\n基于 LumaChart Studio（MIT）改造；保留上游与第三方许可证。" : (appConfiguration?.AboutContent ?? "SimpleManiaEditor\n面向 osu!mania / 7K 的本地编辑器\nCopyright © 2026 Ist1na\n基于 LumaChart Studio（MIT）改造；保留上游与第三方许可证。"));
     if (aboutAdminButton != null)
     {

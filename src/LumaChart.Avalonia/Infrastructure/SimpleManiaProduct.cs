@@ -3,7 +3,7 @@ namespace LumaChart.Avalonia.Infrastructure;
 public static class SimpleManiaProduct
 {
     public const string Name = "SimpleManiaEditor";
-    public const string Version = "0.1.37";
+    public const string Version = "0.1.38";
     public const string Repository = "https://github.com/Ist1na07/SimpleManiaEditor";
     public const string Releases = Repository + "/releases";
     public const string Issues = Repository + "/issues/new";
