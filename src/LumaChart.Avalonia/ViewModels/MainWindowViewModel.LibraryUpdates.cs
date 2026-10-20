@@ -188,16 +188,17 @@ public sealed partial class MainWindowViewModel
         return safe;
     }
 
-    private long librarySearchGeneration;
-    public async Task SetLibrarySearchAsync(string? query)
+    public Task SetLibrarySearchAsync(string? query)
     {
         query = query?.Trim() ?? "";
-        var generation = ++librarySearchGeneration;
         LibrarySearchQuery = query;
-        var matching = query.Length == 0 ? null : await Task.Run(() => MapperLibrary.Search(query));
-        if (generation != librarySearchGeneration || LibrarySearchQuery != query) return;
-        ApplyLibraryFilterAndSort(matching, searchAlreadyResolved: true);
+        // Filtering an in-memory 46k-row snapshot takes a few milliseconds. Doing it
+        // here (instead of a round trip to SQLite) keeps the search box responsive and
+        // lets osu!-style field filters use the typed row fields.
+        ApplyLibraryFilterAndSort();
+        Status = LibrarySearchStatus();
         RaiseStateChanged();
+        return Task.CompletedTask;
     }
     private MapperLibraryWatcher? libraryWatcher;
     private bool libraryWatchingStopped;
@@ -259,7 +260,15 @@ public sealed partial class MainWindowViewModel
     private void ApplyPersonalSummaries(IEnumerable<DesktopLibraryChartEntry> entries)
     {
         var annotations = MapperLibrary.AllAnnotations();
-        foreach (var entry in entries) entry.PersonalSummary = annotations.GetValueOrDefault(entry.ChartPath)?.Summary ?? "";
+        foreach (var entry in entries)
+        {
+            var annotation = annotations.GetValueOrDefault(entry.ChartPath);
+            entry.PersonalAnnotation = annotation;
+            entry.PersonalSummary = annotation?.Summary ?? "";
+            entry.PersonalSearchText = annotation is null
+                ? ""
+                : ("\n" + string.Join(' ', annotation.Tags) + "\n" + annotation.Note + "\n" + annotation.State).ToLowerInvariant();
+        }
     }
     public void SetPersonalAnnotation(string path, MapperAnnotation annotation)
     {

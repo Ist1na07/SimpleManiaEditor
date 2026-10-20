@@ -34,6 +34,11 @@ public sealed class DesktopLibraryChartEntry
     public string Creator { get; init; } = string.Empty;
     public string Version { get; init; } = "Normal";
     public int KeyCount { get; init; } = 4;
+    /// <summary>BPM of the first uninherited timing point (osu's initial BPM). The
+    /// index only knows this for .osu charts; null means "unknown", not zero.</summary>
+    public double? Bpm { get; init; }
+    /// <summary>osu! Metadata Source; empty when the format has none.</summary>
+    public string Source { get; init; } = string.Empty;
     public string AudioFile { get; init; } = string.Empty;
     public string? CoverPath { get; init; }
     public DateTime AddedTime { get; init; }
@@ -53,6 +58,12 @@ public sealed class DesktopLibraryChartEntry
     public string PickerTitle => $"{DisplayTitle}  [{Version}]";
     [System.Text.Json.Serialization.JsonIgnore]
     public string PersonalSummary { get; set; } = "";
+    /// <summary>Personal tags/note/state, refreshed together with the summary.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public MapperAnnotation? PersonalAnnotation { get; set; }
+    /// <summary>Lower-cased personal text for free-text search (tags, note, state).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string PersonalSearchText { get; set; } = "";
     [System.Text.Json.Serialization.JsonIgnore]
     public string PickerDetails => $"{KeyCount}K  ·  {Format}  ·  {Creator}";
     [System.Text.Json.Serialization.JsonIgnore]
@@ -225,6 +236,31 @@ public static class DesktopChartLibraryService
         };
     }
 
+    /// <summary>
+    /// Evaluates a parsed osu!-style query over cached rows. The query is parsed
+    /// once by the caller; the per-chart comparison allocates nothing.
+    /// </summary>
+    public static HashSet<string> SearchPaths(IEnumerable<DesktopLibraryChartEntry> charts, DesktopLibrarySearch search)
+    {
+        ArgumentNullException.ThrowIfNull(charts);
+        ArgumentNullException.ThrowIfNull(search);
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var chart in charts)
+            if (search.Matches(chart)) paths.Add(chart.ChartPath);
+        return paths;
+    }
+
+    /// <summary>Same evaluation as <see cref="SearchPaths"/> but returns the rows.</summary>
+    public static IReadOnlyList<DesktopLibraryChartEntry> SearchCharts(IEnumerable<DesktopLibraryChartEntry> charts, DesktopLibrarySearch search)
+    {
+        ArgumentNullException.ThrowIfNull(charts);
+        ArgumentNullException.ThrowIfNull(search);
+        var matches = new List<DesktopLibraryChartEntry>();
+        foreach (var chart in charts)
+            if (search.Matches(chart)) matches.Add(chart);
+        return matches;
+    }
+
     private static string GroupingFolder(DesktopLibraryChartEntry chart, string root)
     {
         var folderPath = chart.FolderPath;
@@ -344,6 +380,7 @@ public static class DesktopChartLibraryService
         var difficulty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var section = string.Empty;
         var background = string.Empty;
+        double? bpm = null;
         var sawGeneral = false;
         var sawMetadata = false;
         var sawDifficulty = false;
@@ -361,10 +398,18 @@ public static class DesktopChartLibraryService
                 sawMetadata |= section.Equals("Metadata", StringComparison.OrdinalIgnoreCase);
                 sawDifficulty |= section.Equals("Difficulty", StringComparison.OrdinalIgnoreCase);
                 sawEvents |= section.Equals("Events", StringComparison.OrdinalIgnoreCase);
-                if ((section.Equals("TimingPoints", StringComparison.OrdinalIgnoreCase) ||
-                     section.Equals("HitObjects", StringComparison.OrdinalIgnoreCase)) &&
+                // Timing points follow the metadata, so the scan continues through
+                // them to cache BPM, then stops at the hit objects.
+                if (section.Equals("HitObjects", StringComparison.OrdinalIgnoreCase) &&
                     sawGeneral && sawMetadata && sawDifficulty && sawEvents)
                     break;
+                continue;
+            }
+
+            if (section.Equals("TimingPoints", StringComparison.OrdinalIgnoreCase))
+            {
+                if (bpm is null && TryReadFirstTimingPoint(line, out var beatLength) && beatLength > 0)
+                    bpm = 60000.0 / beatLength;
                 continue;
             }
 
@@ -406,6 +451,8 @@ public static class DesktopChartLibraryService
             Creator = metadata.GetValueOrDefault("Creator", string.Empty),
             Version = metadata.GetValueOrDefault("Version", "Normal"),
             KeyCount = Math.Clamp(ParseInt(difficulty.GetValueOrDefault("CircleSize"), 4), 1, 18),
+            Bpm = bpm,
+            Source = metadata.GetValueOrDefault("Source", string.Empty),
             AudioFile = general.GetValueOrDefault("AudioFilename", string.Empty),
             CoverPath = ResolveResource(folder, background),
             AddedTime = SafeCreationTime(info),
@@ -431,6 +478,32 @@ public static class DesktopChartLibraryService
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
             ? number
             : fallback;
+
+    /// <summary>
+    /// Reads the beat length of the first uninherited timing point. .osu stores
+    /// negative beat lengths for inherited (SV) points; the final "uninherited"
+    /// field defaults to 1 when omitted by older writers.
+    /// </summary>
+    private static bool TryReadFirstTimingPoint(string line, out double beatLength)
+    {
+        beatLength = 0;
+        var first = line.IndexOf(',');
+        if (first < 0) return false;
+        var second = line.IndexOf(',', first + 1);
+        var beatText = (second < 0 ? line[(first + 1)..] : line[(first + 1)..second]).Trim();
+        if (!double.TryParse(beatText, NumberStyles.Float, CultureInfo.InvariantCulture, out beatLength)) return false;
+        if (second < 0) return true;
+        // Field 6 is the uninherited flag; field 7 (effects) follows.
+        var comma = second;
+        for (var index = 0; index < 4; index++)
+        {
+            comma = line.IndexOf(',', comma + 1);
+            if (comma < 0) return true; // missing trailing fields mean "uninherited"
+        }
+        var end = line.IndexOf(',', comma + 1);
+        var flag = (end < 0 ? line[(comma + 1)..] : line[(comma + 1)..end]).Trim();
+        return flag.Length == 0 || flag == "1";
+    }
 
     /// <summary>
     /// Resolves a cover or background strictly inside the chart's folder.

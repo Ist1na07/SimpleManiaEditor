@@ -276,7 +276,8 @@ public sealed class MapperLibraryStore
                 var parameter = "$v" + args.Count; string condition;
                 if (field == "keys" && int.TryParse(value.TrimEnd('k'), out var keys)) { condition = "h.keys=" + parameter; args.Add((parameter, keys)); }
                 else if (field == "star") { condition = "coalesce(json_extract(p.payload,'$.Favorite'),0)=" + parameter; args.Add((parameter, value is "true" or "1" or "yes" ? 1 : 0)); }
-                else if (field == "tag") { condition = "EXISTS(SELECT 1 FROM json_each(p.payload,'$.Tags') WHERE lower(value)=" + parameter + ")"; args.Add((parameter, value)); }
+                // 0.1.38: substring semantics, matching the library UI's osu!-style tag= filter.
+                else if (field == "tag") { condition = "EXISTS(SELECT 1 FROM json_each(p.payload,'$.Tags') WHERE instr(lower(value)," + parameter + ")>0)"; args.Add((parameter, value)); }
                 else if (field is "state" or "note" or "creator")
                 {
                     var expr = field == "state" ? "coalesce(json_extract(p.payload,'$.State'),'未分类')" : field == "note" ? "coalesce(json_extract(p.payload,'$.Note'),'')" : "coalesce(json_extract(h.payload,'$.Creator'),'')";
