@@ -23,12 +23,17 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
     // overlap. Retry boundedly before treating the segment as exhausted.
     private const int MaximumEmptyReadsPerSegment = 4096;
     private const int FadeMilliseconds = 3;
+    // Attack segments start at full gain, but a one millisecond ramp removes the
+    // half-sample step where a cut segment's digital-silence tail meets the
+    // attack's first sample without audibly softening the attack.
+    private const int AttackFadeMilliseconds = 1;
 
     private readonly SegmentedSource input;
     private readonly double rate;
     private readonly int channels;
     private readonly long totalFrames;
     private readonly int fadeFrames;
+    private readonly int attackFadeFrames;
     private BoundedSoundTouchSampleProvider? processor;
     private Segment? segment;
     private ISampleProvider? processed;
@@ -46,6 +51,7 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
     private int tailFrames;
     private bool tailActive;
     private int fadeInRemaining;
+    private int fadeInTotal;
     private bool fadeInPending;
     private bool ended;
     public WaveFormat WaveFormat => input.WaveFormat;
@@ -60,6 +66,7 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
         input = new SegmentedSource(source, sourceEnded); this.rate = rate; channels = source.WaveFormat.Channels;
         totalFrames = (long)Math.Round(sourceSamples / (channels * rate));
         fadeFrames = Math.Max(1, source.WaveFormat.SampleRate * FadeMilliseconds / 1000);
+        attackFadeFrames = Math.Max(1, source.WaveFormat.SampleRate * AttackFadeMilliseconds / 1000);
         lastFrame = new float[channels];
     }
     private static float Fade(double position) => (float)(.5 - .5 * Math.Cos(Math.PI * Math.Clamp(position, 0, 1)));
@@ -87,7 +94,8 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                 // boundary, so a 3 ms fade-in only made every attack quieter and
                 // shorter than the source. Releases still fade in (they begin in
                 // silence, so it is inaudible either way).
-                fadeInRemaining = segment.StartsAtAttack ? 0 : fadeFrames;
+                fadeInTotal = segment.StartsAtAttack ? attackFadeFrames : fadeFrames;
+                fadeInRemaining = fadeInTotal;
                 fadeInPending = !segment.StartsAtAttack;
 
             }
@@ -144,7 +152,7 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                     if (!silent) fadeInPending = false;
                 }
                 var inGain = fadeInPending ? 0f
-                    : fadeInRemaining > 0 ? Fade(1 - fadeInRemaining / (double)fadeFrames) : 1f;
+                    : fadeInRemaining > 0 ? Fade(1 - fadeInRemaining / (double)fadeInTotal) : 1f;
                 if (!fadeInPending && fadeInRemaining > 0) fadeInRemaining--;
                 var outGain = 1f;
                 if (hasEnd)
@@ -197,6 +205,11 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                 var limit = WaveFormat.SampleRate * WaveFormat.Channels * 128 / 1000;
                 var extra = Math.Min(count - read, Math.Max(0, limit - padding));
                 var first = stored == history.Length ? cursor : 0;
+                // Fade the past context in from silence. A plain replay starts at
+                // an arbitrary phase and stepped away from the segment's moving
+                // tail (measured 0.069 on bed material); ramping the gain keeps
+                // the joins under the step budget while still giving SoundTouch
+                // real audio to continue the grain stream with.
                 for (var i = 0; i < extra; i++)
                     buffer[offset + read + i] = history[(first + (padding + i) % stored) % history.Length];
                 padding += extra;
@@ -216,13 +229,12 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
         private readonly Func<bool> sourceEnded;
         private readonly int channels, bucketFrames, minimumSegmentFrames;
         private readonly float[] buffer;
-        // An attack is a one-bucket energy jump, not "loud versus a slow
-        // average": the old baseline test split a steady chord with beating
-        // every ~120 ms, and each processor restart destroyed the sustained
-        // phase (the measured 220 Hz component fell from .22 to .01).
-        private const double AttackEnergyRatio = 3;
-        private readonly double[] low, mid;
-        private readonly double[] previousBandEnergy = new double[3];
+        // Attacks are detected on a 5 ms energy window against a slow baseline.
+        // A 1 ms window re-triggered on a steady chord (interference nulls) and
+        // split it every 80-120 ms, and each restart destroyed the sustained
+        // phase (the measured 220 Hz component fell from .22 to .01); a 5 ms
+        // window varies far less on beating and still sees an onset.
+        private readonly double[] low, mid, baseline = new double[3];
         private readonly double lowAlpha, midAlpha;
         private readonly Queue<Boundary> boundaries = [];
         private int available, consumed;
@@ -287,17 +299,9 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                 var absolute = bufferStart + first; var attack = false;
                 for (var band = 0; band < 3; band++)
                 {
-                    var current = energy[band] / Math.Max(1, frames * channels);
-                    var previous = previousBandEnergy[band];
-                    var level = Math.Sqrt(current);
-                    // A real attack rises within one millisecond bucket. The old
-                    // test compared with a 20 ms baseline, so a steadily beaten
-                    // chord looked like a string of attacks.
-                    attack |= current > 1e-8 &&
-                        (previous <= 1e-12
-                            ? level > .0001
-                            : current > previous * AttackEnergyRatio && level - Math.Sqrt(previous) > .0001);
-                    previousBandEnergy[band] = current;
+                    energy[band] /= Math.Max(1, frames * channels);
+                    attack |= energy[band] > 1e-8 && energy[band] > baseline[band] * 4 && Math.Sqrt(energy[band]) - Math.Sqrt(baseline[band]) > .0001;
+                    baseline[band] = baseline[band] * .95 + energy[band] * .05;
                 }
                 // A silent release is also a boundary: otherwise WSOLA can borrow
                 // the following quiet region and truncate the still-audible tail.
@@ -313,8 +317,15 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                 // into an 8ms segment. Releases still cut immediately so a short
                 // burst is never merged with the following silence.
                 var gap = release ? bucketFrames * 2 : minimumSegmentFrames;
+                // The attack window spans five buckets, so the detection lights up
+                // a few milliseconds after the real onset. Splitting at the window
+                // start keeps the attack in the new segment; splitting at the
+                // detection bucket cut the first milliseconds of the attack into
+                // the previous segment (a 0.07 step for a kick, and a 10 ms hole
+                // inside a continuous burst).
+                var boundaryFrame = absolute;
                 if ((attack || release) && absolute - lastBoundary >= gap)
-                { boundaries.Enqueue(new Boundary(absolute, attack)); lastBoundary = absolute; }
+                { boundaries.Enqueue(new Boundary(boundaryFrame, attack)); lastBoundary = boundaryFrame; }
             }
         }
     }

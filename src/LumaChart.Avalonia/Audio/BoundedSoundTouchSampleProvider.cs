@@ -17,7 +17,9 @@ internal sealed class BoundedSoundTouchSampleProvider : ISampleProvider
     // SoundTouch needs a little input to keep its grain pipeline primed. The
     // upper bound only guards against a pathological request; a normal device
     // period never comes near it.
-    private const int MinimumChunkFrames = 16;
+    // The chunk is fixed rather than request-derived: the output must not depend
+    // on how large a block the caller asks for.
+    private const int InputChunkFrames = 256;
     private const int MaximumChunkFrames = 4096;
 
     private readonly ISampleProvider source;
@@ -45,6 +47,7 @@ internal sealed class BoundedSoundTouchSampleProvider : ISampleProvider
     public WaveFormat WaveFormat { get; }
     /// <summary>Source frames consumed per output frame (the stretch rate).</summary>
     public double SourceFramesPerOutputFrame { get; }
+    public int ChunkFrames => InputChunkFrames;
     public bool IsEnded => sourceEnded && flushed && Processor.AvailableSamples == 0;
 
     public int Read(float[] buffer, int offset, int count)
@@ -78,8 +81,8 @@ internal sealed class BoundedSoundTouchSampleProvider : ISampleProvider
 
     private void Feed(int stillNeededFrames)
     {
-        var wanted = (int)Math.Ceiling(stillNeededFrames * SourceFramesPerOutputFrame) + 8;
-        wanted = Math.Clamp(wanted, MinimumChunkFrames, MaximumChunkFrames);
+        _ = stillNeededFrames;
+        var wanted = Math.Clamp(InputChunkFrames, 1, MaximumChunkFrames);
         var samples = wanted * channels;
         var read = source.Read(input, 0, samples);
         if (read <= 0)
