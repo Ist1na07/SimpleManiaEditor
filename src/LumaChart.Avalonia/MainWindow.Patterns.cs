@@ -14,7 +14,6 @@ namespace LumaChart.Avalonia;
 
 public sealed partial class MainWindow
 {
-    private Button? cloneReadOnlyButton;
     private Control BuildPatternLibraryButton()
     {
         var button = new Button { Content = "排列库…", Height = 34, Padding = new Thickness(6), HorizontalAlignment = HorizontalAlignment.Stretch };

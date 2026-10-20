@@ -3755,7 +3755,7 @@ private void ShowRoomPermissionNotice(WindowsRoomPermissionNoticePresentation pr
     DesktopChartTab? activeTab = viewModel.ActiveTab;
     if (activeTab != null && activeTab.IsLibraryReadOnly)
     {
-        viewModel.SetStatus("只读查看：编辑前请克隆到工作目录。播放、选择、复制、切换和关闭不受限制。");
+        viewModel.SetStatus("只读查看：点上方「编辑」复制到工作区后可编辑。播放、选择、复制、切换和关闭不受限制。");
         return;
     }
 
@@ -5387,6 +5387,9 @@ private void BuildEditorView()
     {
         Orientation = Orientation.Horizontal
     };
+    // Read-only documents get their single clone-to-workspace action in the
+    // document top bar instead of the left note-tool rail (0.1.38).
+    stackPanel.Children.Add(BuildReadOnlyEditTopBarButton());
     Button button = CommandIconTextButton("新建", "M3,2 H10 L14,6 V15 H3 Z M10,2 V6 H14 M8.5,9 V13 M6.5,11 H10.5", async (object? _, RoutedEventArgs _) =>
     {
         await CreateChartAsync();
@@ -17458,7 +17461,7 @@ private void RefreshMetadataEditor(DesktopChartTab? tab, bool force = false)
             string text;
             if (tab.Session.IsReadOnly)
             {
-                text = (tab.IsLibraryReadOnly ? "只读谱面：可查看和复制，克隆后编辑。" : "观察者只读：谱面信息不可修改。");
+                text = (tab.IsLibraryReadOnly ? "只读谱面：可查看和复制；点上方「编辑」复制到工作区后可编辑。" : "观察者只读：谱面信息不可修改。");
             }
             else
             {

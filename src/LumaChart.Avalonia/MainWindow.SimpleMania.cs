@@ -289,8 +289,8 @@ public sealed partial class MainWindow
             fixedToolButtons.Add(tool, (button, shortcut));
             panel.Children.Add(button);
         }
-        cloneReadOnlyButton = MapperButton("克隆并编辑", "Editor.CloneReadOnly", async () => await CloneActiveReadOnlyAsync());
-        panel.Children.Add(cloneReadOnlyButton);
+        // The clone-to-workspace action lives in the document top bar
+        // (Editor.TopBar.EditReadOnly); the rail stays reserved for note tools.
         RefreshFixedTools();
         return new Border { Background = PanelBrush, BorderBrush = StrokeBrush,
             BorderThickness = new Thickness(0, 0, 1, 0), Child = new ScrollViewer { Content = panel,
@@ -299,7 +299,7 @@ public sealed partial class MainWindow
 
     private void RefreshFixedTools()
     {
-        if (cloneReadOnlyButton != null) cloneReadOnlyButton.IsVisible = viewModel.ActiveTab?.IsLibraryReadOnly == true;
+        RefreshReadOnlyEditTopBar();
         RefreshSymmetryTool();
         foreach (var (tool, controls) in fixedToolButtons)
         {
