@@ -52,9 +52,24 @@ internal sealed record PreparedMusicPipeline(
                 musicProvider = createdRateProvider;
             }
 
+            // Everything above this line used to run inside the render callback.
+            // A background producer now keeps a 1.4 s ring full, so the callback
+            // only copies samples at every rate (see PrefetchingSampleProvider).
+            // The plain 1x path stays direct: it only decodes (no stretch work),
+            // and its existing end-of-stream/decoder-time contract is what the
+            // seek and rate-change commit tests rely on.
+            ISampleProvider staged = musicProvider;
+            if (preservePitch && Math.Abs(playbackRate - 1) > .000001)
+            {
+                var prefetched = new PrefetchingSampleProvider(musicProvider);
+                createdSoundTouchProviders.Add(prefetched);
+                staged = prefetched;
+                musicReallyEnded = () => prefetched.IsEnded;
+            }
+
             // Precompute the first 20ms on the preparation worker for every
             // rate, including decoder-only 1x. Retain it to preserve song onset.
-            var primed = new PrimedMusicSampleProvider(musicProvider, musicReallyEnded);
+            var primed = new PrimedMusicSampleProvider(staged, musicReallyEnded);
             primed.Prime();
             throwIfDisposed();
             createdVolumeProvider = new VolumeSampleProvider(primed) { Volume = volume };

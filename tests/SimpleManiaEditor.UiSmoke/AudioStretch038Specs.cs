@@ -51,7 +51,7 @@ internal static class AudioStretch038Specs
         return all.ToArray();
     }
 
-    private readonly record struct StretchResult(float[] Pcm, int Segments, double PaddedMs, int Retries);
+    private readonly record struct StretchResult(float[] Pcm, int Segments, double PaddedMs, int Retries, (long SourceStart, long OutputStart, long OutputFrames)[] Traces);
 
     private static StretchResult Stretch(float[] input, double rate, bool segmented)
     {
@@ -71,7 +71,9 @@ internal static class AudioStretch038Specs
             { Tempo = (float)rate, Pitch = 1, Rate = 1 }.ToSampleProvider();
         }
         var pcm = Render(provider, (int)(input.Length / Channels / rate) + SampleRate / 10);
-        return new StretchResult(pcm, anchored?.ObservedSegmentCount ?? 0, anchored?.ObservedPaddedMilliseconds ?? 0, anchored?.ObservedEmptyReadRetries ?? 0);
+        return new StretchResult(pcm, anchored?.ObservedSegmentCount ?? 0, anchored?.ObservedPaddedMilliseconds ?? 0,
+            anchored?.ObservedEmptyReadRetries ?? 0,
+            anchored?.ObservedTraces.Select(t => (t.SourceStart, t.OutputStart, t.OutputFrames)).ToArray() ?? []);
     }
 
     private static float[] ClickTrain(double spacing, int seconds)
@@ -195,30 +197,76 @@ internal static class AudioStretch038Specs
             $"rt {Realtime:F3} p50 {P50:F3} p95 {P95:F3} p99 {P99:F3} max {Max:F3}ms over5 {Over5} over10 {Over10} over20 {Over20}";
     }
 
-    private static ReadStats TimePipeline(double rate, int blockMs, double seconds, out int segments)
+    /// <summary>
+    /// Times the real decoder/DSP chain read by read. The first <paramref name="warmupSeconds"/>
+    /// of output are decoded and dropped: cold-start JIT, decoder warm-up and
+    /// first-grain costs are not the steady state the device has to meet, and
+    /// counting them made the deadline check fail whenever the machine was busy.
+    /// The cold-start numbers are returned separately for the log only.
+    /// </summary>
+    private static ReadStats TimePipeline(double rate, int blockMs, double warmupSeconds, double steadySeconds,
+        out int segments, out ReadStats cold, out long underruns)
     {
         using var reader = AudioDecoder.OpenWaveStream(RealAudio);
         reader.CurrentTime = TimeSpan.FromSeconds(20);
         using var pipeline = PreparedMusicPipeline.Build(reader, reader.CurrentTime, rate, true, .8f, () => { });
         segments = pipeline.Stages.OfType<TransientAnchoredStretchSampleProvider>().FirstOrDefault()?.ObservedSegmentCount ?? 0;
+        var prefetch = pipeline.Stages.OfType<PrefetchingSampleProvider>().FirstOrDefault();
         var buffer = new float[SampleRate * blockMs / 1000 * Channels];
-        var times = new List<double>();
-        var produced = 0;
+        // Pace the reads like a device: a real render callback asks for one
+        // period every period. Reading as fast as the disk allows would measure
+        // the producer wait, not the callback, and would make the number depend
+        // on the test's own scheduling instead of on the audio path.
+        var clock = Stopwatch.StartNew();
+        var block = 0L;
+        var coldTimes = new List<double>();
+        var warm = 0L;
         var stopwatch = new Stopwatch();
-        while (produced < SampleRate * seconds)
+        while (warm < (long)(SampleRate * warmupSeconds))
         {
+            var target = block * blockMs;
+            var now = clock.Elapsed.TotalMilliseconds;
+            if (now < target) Thread.Sleep(Math.Max(1, (int)(target - now)));
+            stopwatch.Restart();
+            var read = pipeline.Volume.Read(buffer, 0, buffer.Length);
+            stopwatch.Stop();
+            coldTimes.Add(stopwatch.Elapsed.TotalMilliseconds);
+            block++;
+            if (read <= 0) break;
+            warm += read / Channels;
+        }
+        var underrunsBefore = prefetch?.UnderrunFrames ?? 0;
+        var times = new List<double>();
+        var produced = 0L;
+        while (produced < (long)(SampleRate * steadySeconds))
+        {
+            var target = block * blockMs;
+            var now = clock.Elapsed.TotalMilliseconds;
+            if (now < target) Thread.Sleep(Math.Max(1, (int)(target - now)));
             stopwatch.Restart();
             var read = pipeline.Volume.Read(buffer, 0, buffer.Length);
             stopwatch.Stop();
             times.Add(stopwatch.Elapsed.TotalMilliseconds);
+            block++;
             if (read <= 0) break;
             produced += read / Channels;
         }
-        times.Sort();
-        double P(double q) => times[Math.Min(times.Count - 1, (int)(times.Count * q))];
-        return new ReadStats(P(.5), P(.95), P(.99), times[^1],
-            times.Count(x => x > 5), times.Count(x => x > 10), times.Count(x => x > 20),
-            produced * 1000d / Math.Max(1, times.Sum()));
+        underruns = (prefetch?.UnderrunFrames ?? 0) - underrunsBefore;
+        return Summarize(times, produced, out cold, coldTimes, warm);
+    }
+
+    private static ReadStats Summarize(List<double> times, long produced, out ReadStats cold, List<double> coldTimes, long warmFrames)
+    {
+        ReadStats Build(List<double> list, long frames)
+        {
+            list.Sort();
+            double P(double q) => list.Count == 0 ? 0 : list[Math.Min(list.Count - 1, (int)(list.Count * q))];
+            return new ReadStats(P(.5), P(.95), P(.99), list.Count == 0 ? 0 : list[^1],
+                list.Count(x => x > 5), list.Count(x => x > 10), list.Count(x => x > 20),
+                frames * 1000d / Math.Max(1, list.Sum()));
+        }
+        cold = Build(coldTimes, warmFrames);
+        return Build(times, produced);
     }
 
     private static string Sha256(string path)
@@ -280,6 +328,26 @@ internal static class AudioStretch038Specs
             var result = Stretch(bed, rate, true);
             var (maxJump, steps) = MeasureSteps(result.Pcm);
             Line($"bed {rate}x: segs {result.Segments} padded {result.PaddedMs:F0}ms maxJump {maxJump:F4} steps {steps}");
+            if (maxJump > .05)
+            {
+                var jumpFrame = 0; var best = 0.0;
+                for (var f = 1; f < result.Pcm.Length / Channels; f++)
+                {
+                    var delta = Math.Abs(result.Pcm[f * Channels] - result.Pcm[(f - 1) * Channels]);
+                    if (delta > best) { best = delta; jumpFrame = f; }
+                }
+                var ms = jumpFrame * 1000d / SampleRate;
+                var near = result.Traces.Where(t =>
+                {
+                    var end = (t.OutputStart + t.OutputFrames) * 1000d / SampleRate;
+                    return Math.Abs(ms - end) < 300 || Math.Abs(ms - t.OutputStart * 1000d / SampleRate) < 300;
+                }).Select(t => $"{t.SourceStart * 1000d / SampleRate:F0}->{t.OutputStart * 1000d / SampleRate:F0}+{t.OutputFrames * 1000d / SampleRate:F0}");
+                Line($"  jump at {ms:F1}ms near segments [{string.Join(", ", near)}]");
+                var samples = new List<string>();
+                for (var f = Math.Max(0, jumpFrame - 8); f < Math.Min(result.Pcm.Length / Channels, jumpFrame + 8); f++)
+                    samples.Add(result.Pcm[f * Channels].ToString("F3"));
+                Line("  samples " + string.Join(" ", samples));
+            }
             Require(maxJump <= .05, $"bed {rate}x: waveform step {maxJump:F4}", failures);
             Require(steps == 0, $"bed {rate}x: {steps} join steps", failures);
         }
@@ -293,12 +361,36 @@ internal static class AudioStretch038Specs
             {
                 var gap = LongestInnerGapMs(result.Pcm, rate, start);
                 Line($"pulse {rate}x {start * 1000:0}ms: inner gap {gap}ms segs {result.Segments}");
+                if (rate == .1 && start == 1)
+                {
+                    var from = (int)(start / rate * SampleRate);
+                    var parts = new List<string>();
+                    for (var ms = 0; ms < 620; ms += 5)
+                    {
+                        var peak = 0.0;
+                        for (var f = from + ms * SampleRate / 1000; f < Math.Min(result.Pcm.Length / Channels, from + (ms + 5) * SampleRate / 1000); f++)
+                            peak = Math.Max(peak, Math.Abs(result.Pcm[f * Channels]));
+                        parts.Add(peak < .001 ? "." : ((int)Math.Min(9, Math.Round(peak * 12))).ToString());
+                    }
+                    Line("  pulse envelope 5ms cells from burst start: " + string.Join("", parts));
+                }
                 Require(gap < 10, $"pulse {rate}x {start * 1000:0}ms: {gap}ms hole inside the burst", failures);
             }
         }
 
         Line("-- sustained chord (reported, plus segment count) --");
         var chord = Chord(8);
+        {
+            var buckets = new List<double>();
+            for (var f = 0; f + SampleRate / 1000 <= chord.Length / Channels; f += SampleRate / 1000)
+            {
+                double sum = 0;
+                for (var n = 0; n < SampleRate / 1000; n++) { var x = chord[(f + n) * Channels]; sum += x * x; }
+                buckets.Add(sum / (SampleRate / 1000));
+            }
+            var sorted = buckets.OrderBy(x => x).ToArray();
+            Line($"  chord 1 ms energy percentiles: p1 {sorted[sorted.Length / 100]:E2} p5 {sorted[sorted.Length / 20]:E2} p50 {sorted[sorted.Length / 2]:E2} p95 {sorted[sorted.Length * 19 / 20]:E2} max {sorted[^1]:E2} min {sorted[0]:E2}");
+        }
         foreach (var rate in Rates)
         {
             var result = Stretch(chord, rate, true);
@@ -306,21 +398,55 @@ internal static class AudioStretch038Specs
             var tone = ToneLevel(result.Pcm, 220);
             var referenceTone = ToneLevel(reference.Pcm, 220);
             Line($"chord {rate}x: segs {result.Segments} tone220 {tone:F4} (continuous {referenceTone:F4})");
-            // Steady harmonic content is still split by the 0.1.37 detector
-            // (about every 120 ms at every rate); the tonal loss is recorded
-            // here as a measurement, not asserted away.
-            if (result.Segments > 12)
-                Line($"  NOTE chord {rate}x: {result.Segments} segments and a {tone:F4}/{referenceTone:F4} 220 Hz component - known detector limitation");
+            Require(result.Segments <= 3, $"chord {rate}x: {result.Segments} segments on steady content", failures);
+            Require(tone >= referenceTone * .7, $"chord {rate}x: 220 Hz {tone:F4} versus continuous {referenceTone:F4} (< 70%)", failures);
         }
 
-        Line("-- real mp3 render-callback cost (read-only) --");
+        Line("-- prefetcher: offline reads must not depend on read block size --");
+        {
+            var wav = Path.Combine(Path.GetTempPath(), "sme-038-prefetch.wav");
+            var chordForWav = Chord(2);
+            using (var writer = new WaveFileWriter(wav, WaveFormat.CreateIeeeFloatWaveFormat(SampleRate, Channels)))
+                writer.WriteSamples(chordForWav, 0, chordForWav.Length);
+            foreach (var rate in new[] { .1, .5, 2d })
+            {
+                var outputs = new List<float[]>();
+                var underruns = new List<long>();
+                foreach (var chunk in new[] { 512, 8192 })
+                {
+                    using var reader = new WaveFileReader(wav);
+                    using var pipeline = PreparedMusicPipeline.Build(reader, TimeSpan.Zero, rate, true, 1, () => { });
+                    var prefetch = pipeline.Stages.OfType<PrefetchingSampleProvider>().FirstOrDefault();
+                    var buffer = new float[chunk];
+                    var collected = new List<float>();
+                    for (var reads = 0; reads < 200_000; reads++)
+                    {
+                        var read = pipeline.Volume.Read(buffer, 0, buffer.Length);
+                        if (read <= 0) { if (pipeline.Ended()) break; continue; }
+                        for (var i = 0; i < read; i++) collected.Add(buffer[i]);
+                    }
+                    outputs.Add(collected.ToArray());
+                    underruns.Add(prefetch?.UnderrunFrames ?? -1);
+                }
+                var same = outputs[0].Length == outputs[1].Length && outputs[0].AsSpan().SequenceEqual(outputs[1]);
+                Line($"  prefetch {rate}x: 512 -> {outputs[0].Length / Channels} frames ({underruns[0]} underrun), 8192 -> {outputs[1].Length / Channels} frames ({underruns[1]} underrun), equal {same}");
+                Require(same, $"prefetch {rate}x: read block size changed the output", failures);
+                Require(underruns[0] == 0 && underruns[1] == 0, $"prefetch {rate}x: {underruns[0]}/{underruns[1]} underrun frames in an offline read", failures);
+            }
+            File.Delete(wav);
+        }
+
+        if (extraArgs.Contains("--quick")) { _ = root; return; }
+        Line("-- real mp3 render-callback cost (read-only; 2 s warm-up dropped, 15 s steady) --");
         foreach (var rate in new[] { 2d, 1.5, .5, .25, .1 })
             foreach (var blockMs in new[] { 5, 20 })
             {
-                var stats = TimePipeline(rate, blockMs, 12, out var segments);
-                Line($"real {rate}x {blockMs}ms block: {stats} segments {segments}");
-                Require(stats.P99 <= 10, $"real {rate}x {blockMs}ms: p99 {stats.P99:F2}ms over a 10 ms deadline", failures);
-                Require(stats.Over20 == 0, $"real {rate}x {blockMs}ms: {stats.Over20} reads over 20 ms", failures);
+                var stats = TimePipeline(rate, blockMs, 2, 15, out var segments, out var cold, out var underruns);
+                Line($"real {rate}x {blockMs}ms block: steady {stats} segments {segments} underruns {underruns} | cold(max {cold.Max:F2}ms, {cold.Over10} >10ms, {cold.Over20} >20ms, informational)");
+                Require(stats.P99 <= 8, $"real {rate}x {blockMs}ms: steady p99 {stats.P99:F2}ms over an 8 ms deadline", failures);
+                Require(stats.Over10 == 0, $"real {rate}x {blockMs}ms: {stats.Over10} steady reads over 10 ms", failures);
+                Require(stats.Max <= 25, $"real {rate}x {blockMs}ms: steady max {stats.Max:F2}ms above the 25 ms hard cap", failures);
+                Require(underruns == 0, $"real {rate}x {blockMs}ms: producer underran {underruns} frames during steady playback", failures);
             }
 
         var hashAfter = Sha256(RealAudio);

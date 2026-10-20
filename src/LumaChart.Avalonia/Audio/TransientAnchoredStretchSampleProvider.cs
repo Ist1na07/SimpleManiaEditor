@@ -50,6 +50,11 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
     private readonly List<SegmentTrace> traces = [];
     private int tailFrames;
     private bool tailActive;
+    // When the processor runs out of real audio it emits digital zeros before
+    // the output budget ends. Fade the last audible sample into that silence
+    // instead of stepping from a moving waveform to zero (measured 0.196 on
+    // bed material at every join).
+    private int silenceFadeRemaining;
     private int fadeInRemaining;
     private int fadeInTotal;
     private bool fadeInPending;
@@ -66,7 +71,7 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
         input = new SegmentedSource(source, sourceEnded); this.rate = rate; channels = source.WaveFormat.Channels;
         totalFrames = (long)Math.Round(sourceSamples / (channels * rate));
         fadeFrames = Math.Max(1, source.WaveFormat.SampleRate * FadeMilliseconds / 1000);
-        attackFadeFrames = Math.Max(1, source.WaveFormat.SampleRate * AttackFadeMilliseconds / 1000);
+        attackFadeFrames = Math.Max(1, source.WaveFormat.SampleRate * AttackFadeMilliseconds / 2000);
         lastFrame = new float[channels];
     }
     private static float Fade(double position) => (float)(.5 - .5 * Math.Cos(Math.PI * Math.Clamp(position, 0, 1)));
@@ -161,11 +166,27 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                     if (remaining < fadeFrames) outGain = Fade(remaining / (double)fadeFrames);
                 }
                 var gain = inGain * outGain;
+                var silentFrame = true;
+                for (var c = 0; c < channels; c++)
+                {
+                    var value = scratch[f * channels + c] * gain;
+                    if (Math.Abs(value) > 1e-9f) silentFrame = false;
+                }
+                if (silentFrame && silenceFadeRemaining > 0)
+                {
+                    var silenceGain = Fade(silenceFadeRemaining / (double)fadeFrames);
+                    silenceFadeRemaining--;
+                    for (var c = 0; c < channels; c++)
+                        buffer[offset + written + f * channels + c] = lastFrame[c] * silenceGain;
+                    continue;
+                }
+                if (!silentFrame) silenceFadeRemaining = fadeFrames;
+                else silenceFadeRemaining = 0;
                 for (var c = 0; c < channels; c++)
                 {
                     var value = scratch[f * channels + c] * gain;
                     buffer[offset + written + f * channels + c] = value;
-                    lastFrame[c] = value;
+                    if (Math.Abs(value) > 1e-9f) lastFrame[c] = value;
                 }
             }
             segmentFrames += frames; producedFrames += frames; written += frames * channels;
@@ -180,8 +201,25 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
 
     private sealed class Segment(SegmentedSource owner, long start, bool startsAtAttack) : ISampleProvider
     {
-        private readonly float[] history = new float[Math.Max(1, owner.WaveFormat.SampleRate * 64 / 1000) * owner.WaveFormat.Channels];
-        private int stored, cursor, padding;
+        // A slow rate needs more output than a short segment's input can carry:
+        // at 0.1x a 50 ms burst must fill 500 ms of budget, but the processor
+        // consumes its first 24 ms as grain warm-up. Feed the segment's own last
+        // 24 ms back as a cross-faded loop instead of stopping: the tail keeps
+        // sounding and repeats in phase, which is exactly what the old plain
+        // 64 ms replay failed to do (it restarted at an arbitrary phase and let
+        // SoundTouch re-seek into the attack).
+        private const int LoopMilliseconds = 24;
+        // Only segments too short for the processor's 24 ms warm-up need it:
+        // longer segments lose a few percent of their tail to the same limit,
+        // but looping a long segment's decaying tail would repeat a note body.
+        private const int LoopMaximumSegmentMilliseconds = 100;
+        private const int LoopCrossfadeMilliseconds = 4;
+        private readonly float[] history = new float[Math.Max(1, owner.WaveFormat.SampleRate * LoopMilliseconds / 1000) * owner.WaveFormat.Channels];
+        private readonly int crossfadeFrames = Math.Max(1, owner.WaveFormat.SampleRate * LoopCrossfadeMilliseconds / 1000);
+        private int stored, cursor;
+        private int loopPhase;
+        private long loopFrames;
+        private long loopLimitFrames = -1;
         public long StartFrame { get; } = start;
         /// <summary>The boundary that opened this segment was a detected attack.</summary>
         public bool StartsAtAttack { get; } = startsAtAttack;
@@ -189,33 +227,46 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
         public WaveFormat WaveFormat => owner.WaveFormat;
         public int Read(float[] buffer, int offset, int count)
         {
-            var read = EndFrame.HasValue ? 0 : owner.ReadSegment(this, buffer, offset, count);
-            for (var i = 0; i < read; i++)
+            if (!EndFrame.HasValue)
             {
-                history[cursor] = buffer[offset + i];
-                cursor = (cursor + 1) % history.Length;
-                stored = Math.Min(history.Length, stored + 1);
+                var read = owner.ReadSegment(this, buffer, offset, count);
+                for (var i = 0; i < read; i++)
+                {
+                    history[cursor] = buffer[offset + i];
+                    cursor = (cursor + 1) % history.Length;
+                    stored = Math.Min(history.Length, stored + 1);
+                }
+                return read;
             }
-            // SoundTouch's flush pads with zeroes. At extreme slow rates that
-            // padding can enter valid output before the segment's final frame.
-            // Supply bounded past-only context instead; the output budget still
-            // stops precisely at EndFrame and never includes the next attack.
-            if (EndFrame.HasValue && stored > 0)
+            count -= count % WaveFormat.Channels;
+            if (stored == 0 || count <= 0) return 0;
+            var segmentFrames = EndFrame.Value - StartFrame;
+            if (segmentFrames > WaveFormat.SampleRate * LoopMaximumSegmentMilliseconds / 1000) return 0;
+            var loopLength = stored / WaveFormat.Channels;
+            if (loopLimitFrames < 0) loopLimitFrames = Math.Max(0, segmentFrames);
+            var remaining = loopLimitFrames - loopFrames;
+            if (remaining <= 0) return 0;
+            var frames = (int)Math.Min(count / WaveFormat.Channels, remaining);
+            var first = stored == history.Length ? cursor : 0;
+            var steady = Math.Max(1, loopLength - crossfadeFrames);
+            for (var f = 0; f < frames; f++)
             {
-                var limit = WaveFormat.SampleRate * WaveFormat.Channels * 128 / 1000;
-                var extra = Math.Min(count - read, Math.Max(0, limit - padding));
-                var first = stored == history.Length ? cursor : 0;
-                // Fade the past context in from silence. A plain replay starts at
-                // an arbitrary phase and stepped away from the segment's moving
-                // tail (measured 0.069 on bed material); ramping the gain keeps
-                // the joins under the step budget while still giving SoundTouch
-                // real audio to continue the grain stream with.
-                for (var i = 0; i < extra; i++)
-                    buffer[offset + read + i] = history[(first + (padding + i) % stored) % history.Length];
-                padding += extra;
-                read += extra;
+                var phase = loopPhase;
+                for (var c = 0; c < WaveFormat.Channels; c++)
+                {
+                    var head = history[(first + phase * WaveFormat.Channels + c) % history.Length];
+                    if (phase >= steady)
+                    {
+                        var blend = (phase - steady) / (double)crossfadeFrames;
+                        var tail = history[(first + (phase - steady) * WaveFormat.Channels + c) % history.Length];
+                        head = (float)(head * (1 - blend) + tail * blend);
+                    }
+                    buffer[offset + f * WaveFormat.Channels + c] = head;
+                }
+                loopPhase = phase + 1 >= loopLength ? crossfadeFrames : phase + 1;
             }
-            return read;
+            loopFrames += frames;
+            return frames * WaveFormat.Channels;
         }
     }
     /// <summary>A source split point. Attacks and releases need different
@@ -235,6 +286,17 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
         // phase (the measured 220 Hz component fell from .22 to .01); a 5 ms
         // window varies far less on beating and still sees an onset.
         private readonly double[] low, mid, baseline = new double[3];
+        // Attack must also be a step up from the recent background: a steady
+        // chord with beating varies its 1 ms energy but its 50 ms level stays
+        // put, and the 0.1.37 baseline test cut it every ~120 ms.
+        private const int BackgroundBuckets = 200;
+        private const double AttackBackgroundRatio = 8;
+        private double[] bandEnergy = [];
+        private float[] bucketPeak = [];
+        private readonly double[] levelHistory = new double[BackgroundBuckets];
+        private int levelHistoryIndex;
+        private double levelHistorySum;
+        private int levelHistoryCount;
         private readonly double lowAlpha, midAlpha;
         private readonly Queue<Boundary> boundaries = [];
         private int available, consumed;
@@ -284,48 +346,74 @@ internal sealed class TransientAnchoredStretchSampleProvider : ISampleProvider
                 var n = source.Read(buffer, available, buffer.Length - available); if (n <= 0) { ended = sourceEnded(); break; }
                 available += n;
             }
-            Span<double> energy = stackalloc double[3];
-            for (var first = 0; first < available / channels; first += bucketFrames)
+            var bucketCount = available / channels / bucketFrames;
+            if (bucketCount <= 0) return;
+            if (bandEnergy.Length < bucketCount * 3) bandEnergy = new double[bucketCount * 3];
+            if (bucketPeak.Length < bucketCount) bucketPeak = new float[bucketCount];
+            for (var index = 0; index < bucketCount; index++)
             {
-                energy.Clear();
+                var first = index * bucketFrames;
                 var frames = Math.Min(bucketFrames, available / channels - first);
+                double lowEnergy = 0, midEnergy = 0, highEnergy = 0;
                 var peak = 0f;
-                for (var f = 0; f < frames; f++) for (var c = 0; c < channels; c++)
-                {
-                    var x = buffer[(first + f) * channels + c]; low[c] += lowAlpha * (x - low[c]); mid[c] += midAlpha * (x - mid[c]);
-                    peak = Math.Max(peak, Math.Abs(x));
-                    energy[0] += low[c] * low[c]; energy[1] += (mid[c] - low[c]) * (mid[c] - low[c]); energy[2] += (x - mid[c]) * (x - mid[c]);
-                }
-                var absolute = bufferStart + first; var attack = false;
+                for (var f = 0; f < frames; f++)
+                    for (var c = 0; c < channels; c++)
+                    {
+                        var x = buffer[(first + f) * channels + c];
+                        low[c] += lowAlpha * (x - low[c]);
+                        mid[c] += midAlpha * (x - mid[c]);
+                        peak = Math.Max(peak, Math.Abs(x));
+                        lowEnergy += low[c] * low[c];
+                        midEnergy += (mid[c] - low[c]) * (mid[c] - low[c]);
+                        highEnergy += (x - mid[c]) * (x - mid[c]);
+                    }
+                var scale = 1.0 / Math.Max(1, frames * channels);
+                bandEnergy[index * 3] = lowEnergy * scale;
+                bandEnergy[index * 3 + 1] = midEnergy * scale;
+                bandEnergy[index * 3 + 2] = highEnergy * scale;
+                bucketPeak[index] = peak;
+            }
+            // Second pass: candidates come from the same baseline test as 0.1.37,
+            // so the split position does not move. The extra check looks *forward*
+            // 5 ms (the buffer is already available) and compares that level with
+            // the 50 ms before the candidate: a steady beaten chord keeps both
+            // levels equal and is rejected, a drum or a new note over a quieter
+            // bed steps up several times and is accepted.
+            for (var index = 0; index < bucketCount; index++)
+            {
+                var absolute = bufferStart + index * bucketFrames;
+                var attack = false;
+                var bucketLevel = bandEnergy[index * 3] + bandEnergy[index * 3 + 1] + bandEnergy[index * 3 + 2];
                 for (var band = 0; band < 3; band++)
                 {
-                    energy[band] /= Math.Max(1, frames * channels);
-                    attack |= energy[band] > 1e-8 && energy[band] > baseline[band] * 4 && Math.Sqrt(energy[band]) - Math.Sqrt(baseline[band]) > .0001;
-                    baseline[band] = baseline[band] * .95 + energy[band] * .05;
+                    var energy = bandEnergy[index * 3 + band];
+                    attack |= energy > 1e-8 && energy > baseline[band] * 4 && Math.Sqrt(energy) - Math.Sqrt(baseline[band]) > .0001;
+                    baseline[band] = baseline[band] * .95 + energy * .05;
                 }
-                // A silent release is also a boundary: otherwise WSOLA can borrow
-                // the following quiet region and truncate the still-audible tail.
-                // Boundaries closer than one processor warm-up are coalesced: a
-                // segment that short cannot emit anything but flush padding, and
-                // the repeated transient detection split every attack into an
-                // 8ms segment which was then zero-filled (audible clicks).
+                if (attack)
+                {
+                    var future = 0.0;
+                    for (var slot = 0; slot < 5 && index + slot < bucketCount; slot++)
+                        future += bandEnergy[(index + slot) * 3] + bandEnergy[(index + slot) * 3 + 1] + bandEnergy[(index + slot) * 3 + 2];
+                    // Compare the 5 ms level with the 200 ms median-ish mean:
+                    // a beaten chord's instantaneous level swings 3000x at 1 ms
+                    // and ~10x at 5 ms, but its 200 ms level does not move at all,
+                    // so only a genuine step up from a quieter background is cut.
+                    var background = levelHistoryCount == 0 ? 0 : levelHistorySum / levelHistoryCount;
+                    attack = future / Math.Max(1, Math.Min(5, bucketCount - index)) > Math.Max(background * AttackBackgroundRatio, 1e-8);
+                }
+                levelHistory[levelHistoryIndex] = bucketLevel;
+                levelHistoryIndex = (levelHistoryIndex + 1) % BackgroundBuckets;
+                levelHistorySum += bucketLevel;
+                if (levelHistoryCount < BackgroundBuckets) levelHistoryCount++;
+                else levelHistorySum -= levelHistory[levelHistoryIndex];
+                var peak = bucketPeak[index];
                 var audible = peak >= .001f;
                 var release = previousBucketAudible && !audible;
                 previousBucketAudible = audible;
-                // Attack boundaries need a processor warm-up of source behind
-                // them; a repeated transient detection used to split every attack
-                // into an 8ms segment. Releases still cut immediately so a short
-                // burst is never merged with the following silence.
                 var gap = release ? bucketFrames * 2 : minimumSegmentFrames;
-                // The attack window spans five buckets, so the detection lights up
-                // a few milliseconds after the real onset. Splitting at the window
-                // start keeps the attack in the new segment; splitting at the
-                // detection bucket cut the first milliseconds of the attack into
-                // the previous segment (a 0.07 step for a kick, and a 10 ms hole
-                // inside a continuous burst).
-                var boundaryFrame = absolute;
                 if ((attack || release) && absolute - lastBoundary >= gap)
-                { boundaries.Enqueue(new Boundary(boundaryFrame, attack)); lastBoundary = boundaryFrame; }
+                { boundaries.Enqueue(new Boundary(absolute, attack)); lastBoundary = absolute; }
             }
         }
     }
