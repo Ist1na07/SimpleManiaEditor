@@ -511,8 +511,8 @@ internal static class LibrarySearch038Specs
         Wait(model.SetLibrarySearchAsync("length<120"));
         Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 3, "length<120 did not match the 1.9 s charts");
         Require(!model.Status.Contains("暂不支持", StringComparison.Ordinal), "length is still explained as unsupported: " + model.Status);
-        Wait(model.SetLibrarySearchAsync("length<2"));
-        Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 0, "length<2 matched a 1.9 s chart");
+        Wait(model.SetLibrarySearchAsync("length<1"));
+        Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 0, "length<1 matched a 1.9 s chart");
         Wait(model.SetLibrarySearchAsync(""));
         Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 3, "clearing the view model search did not restore rows");
 
@@ -529,10 +529,10 @@ internal static class LibrarySearch038Specs
             keyEquals = 2,
             bpmAtLeast = 1,
             lengthAtMost120 = 3,
-            lengthBelow2 = 0,
+            lengthBelow1 = 0,
             lengthUnsupportedStatus = false
         };
-        Log.AppendLine("[ui] ★ 收藏/未发布 now filter the read-only Songs pane (1 row each; previously 0 result); mapper=/key=/bpm>= counts 2/2/1, length<120 matches 3 and length<2 matches 0");
+        Log.AppendLine("[ui] ★ 收藏/未发布 now filter the read-only Songs pane (1 row each; previously 0 result); mapper=/key=/bpm>= counts 2/2/1, length<120 matches 3 and length<1 matches 0");
     }
 
     // ------------------------------------------------------------------ real library scan benchmark (manual)

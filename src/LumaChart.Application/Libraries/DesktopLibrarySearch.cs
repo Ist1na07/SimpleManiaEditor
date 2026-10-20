@@ -238,9 +238,9 @@ public sealed class DesktopLibrarySearch
             case "bpm":
                 return TryApplyRange(ref bpmFilter, op, value, 0.5, negated);
             case "length":
-                // osu! FilterCriteria.Length is playable seconds with the same
-                // half-unit tolerance used for BPM comparisons.
-                return TryApplyRange(ref lengthFilter, op, value, 0.5, negated);
+                // osu! FilterCriteria.Length is playable seconds; < / > are
+                // strict at the stated second, while = stays exact.
+                return TryApplyRange(ref lengthFilter, op, value, 0, negated);
             case "cs":
                 return TryApplyRange(ref circleSizeFilter, op, value, 0.05, negated);
             case "star":
