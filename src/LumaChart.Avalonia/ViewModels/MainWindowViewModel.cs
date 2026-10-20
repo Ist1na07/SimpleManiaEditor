@@ -914,6 +914,10 @@ public sealed partial class MainWindowViewModel
     {
         if (search.UnsupportedFields.Count > 0)
             return AvaloniaLocalizationCatalog.Format("暂不支持 {0}（该条件按文本搜索）", string.Join("、", search.UnsupportedFields));
+        // Missing length is an un-backfilled legacy row: < / > exclude it rather
+        // than silently treating it as zero or returning the whole library.
+        if (search.HasLengthFilter && libraryEntries.Any(entry => entry.Length is null))
+            return "部分谱面时长未知，刷新索引后补齐";
         if (search.HasBpmFilter && libraryEntries.Any(entry => entry.Bpm is null))
             return "部分谱面缺少 BPM 数据，刷新索引后可补全";
         return "";

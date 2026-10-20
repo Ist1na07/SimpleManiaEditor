@@ -22,6 +22,10 @@ public sealed class MapperLibraryStore
     private readonly object gate = new();
     private readonly string personalBackup;
     public string DatabasePath { get; }
+    /// <summary>True while an in-place schema upgrade still has rows whose
+    /// playable length/BPM were never derived. The cache starts a background
+    /// backfill; searches keep working with null (unknown) values meanwhile.</summary>
+    public bool NeedsDerivedBackfill { get; private set; }
     public MapperLibraryStore(string profile)
     {
         DatabasePath = Path.Combine(profile, "mapper-library.sqlite3");
@@ -38,7 +42,8 @@ public sealed class MapperLibraryStore
             CREATE INDEX IF NOT EXISTS identity_index ON identities(identity);
             CREATE TABLE IF NOT EXISTS personal(identity TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS headers(path TEXT PRIMARY KEY COLLATE NOCASE, length INTEGER NOT NULL,
-                modified INTEGER NOT NULL, payload TEXT, search TEXT NOT NULL, keys INTEGER NOT NULL);
+                modified INTEGER NOT NULL, payload TEXT, search TEXT NOT NULL, keys INTEGER NOT NULL,
+                playable_length REAL, bpm REAL);
             CREATE INDEX IF NOT EXISTS header_keys ON headers(keys);
             CREATE VIRTUAL TABLE IF NOT EXISTS lookup USING fts5(path UNINDEXED, search, tokenize='trigram');
             CREATE TABLE IF NOT EXISTS index_metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -54,6 +59,19 @@ public sealed class MapperLibraryStore
                 revision.Commit();
             }
         }
+        // 0.1.38/39 in-place upgrade: old header tables had file size/mtime but
+        // no playable length or typed BPM column. Adding columns is cheap; the
+        // expensive file parse is deferred to the background backfill.
+        var addedLength = EnsureColumn(db, "headers", "playable_length", "REAL");
+        var addedBpm = EnsureColumn(db, "headers", "bpm", "REAL");
+        var pendingBackfill = addedLength || addedBpm || ReadMetadata(db, "derived_backfill_pending") == "1";
+        if (pendingBackfill)
+        {
+            var remaining = Scalar(db, "SELECT COUNT(*) FROM headers WHERE payload IS NOT NULL AND playable_length IS NULL");
+            NeedsDerivedBackfill = remaining > 0;
+            Execute(db, "INSERT INTO index_metadata VALUES('derived_backfill_pending',$v) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("$v", NeedsDerivedBackfill ? "1" : "0"));
+        }
         if (fresh && File.Exists(personalBackup))
         {
             var backup = JsonSerializer.Deserialize<PersonalBackup>(File.ReadAllBytes(personalBackup)) ?? throw new IOException("个人资料备份无法读取。");
@@ -64,6 +82,25 @@ public sealed class MapperLibraryStore
         }
     }
     private SqliteConnection Open() { var db = new SqliteConnection(connectionString); db.Open(); Execute(db, "PRAGMA busy_timeout=10000;"); return db; }
+    private static bool EnsureColumn(SqliteConnection db, string table, string column, string type)
+    {
+        using (var command = Command(db, $"PRAGMA table_info({table})"))
+        using (var reader = command.ExecuteReader())
+            while (reader.Read())
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) return false;
+        Execute(db, $"ALTER TABLE {table} ADD COLUMN {column} {type}");
+        return true;
+    }
+    private static string? ReadMetadata(SqliteConnection db, string key)
+    {
+        using var command = Command(db, "SELECT value FROM index_metadata WHERE key=$k", ("$k", key));
+        return command.ExecuteScalar() as string;
+    }
+    private static long Scalar(SqliteConnection db, string sql)
+    {
+        using var command = Command(db, sql);
+        return Convert.ToInt64(command.ExecuteScalar() ?? 0L, System.Globalization.CultureInfo.InvariantCulture);
+    }
     private static int Execute(SqliteConnection db, string sql, params (string Key, object? Value)[] args)
     {
         using var command = Command(db, sql, args); return command.ExecuteNonQuery();
@@ -176,13 +213,16 @@ public sealed class MapperLibraryStore
     {
         lock (gate)
         {
-            using var db = Open(); using var command = Command(db, "SELECT path,length,modified,payload FROM headers"); using var reader = command.ExecuteReader();
+            using var db = Open(); using var command = Command(db, "SELECT path,length,modified,payload,playable_length,bpm FROM headers"); using var reader = command.ExecuteReader();
             var paths = new List<string>(); var lengths = new List<long>();
             var modified = new List<long>(); var payloads = new List<string?>();
+            var playableLengths = new List<double?>(); var bpms = new List<double?>();
             while (reader.Read())
             {
                 paths.Add(reader.GetString(0)); lengths.Add(reader.GetInt64(1)); modified.Add(reader.GetInt64(2));
                 payloads.Add(reader.IsDBNull(3) ? null : reader.GetString(3));
+                playableLengths.Add(reader.IsDBNull(4) ? null : reader.GetDouble(4));
+                bpms.Add(reader.IsDBNull(5) ? null : reader.GetDouble(5));
             }
             reader.Close();
             // JSON parsing is the dominant cost of a large index snapshot; it is
@@ -194,9 +234,17 @@ public sealed class MapperLibraryStore
                 index =>
                 {
                     var payload = payloads[index];
-                    entries[index] = payload == null
+                    var entry = payload == null
                         ? null
                         : JsonSerializer.Deserialize(payload, LibraryIndexJsonContext.Default.DesktopLibraryChartEntry);
+                    // Typed columns are the durable source for the two derived
+                    // fields; old payloads without them still load as null.
+                    if (entry != null)
+                    {
+                        if (playableLengths[index] is { } length) entry.Length = length;
+                        if (bpms[index] is { } bpm) entry.Bpm = bpm;
+                    }
+                    entries[index] = entry;
                 });
             var list = new LibraryCachedHeader[paths.Count];
             for (var index = 0; index < paths.Count; index++)
@@ -225,14 +273,27 @@ public sealed class MapperLibraryStore
             foreach (var header in headers)
             {
                 var path = Full(header.Path); var chart = header.Entry;
-                Execute(db, "INSERT INTO headers VALUES($p,$l,$m,$j,$s,$k) ON CONFLICT(path) DO UPDATE SET length=excluded.length,modified=excluded.modified,payload=excluded.payload,search=excluded.search,keys=excluded.keys",
-                    ("$p", path), ("$l", header.Length), ("$m", header.ModifiedTicks), ("$j", chart == null ? null : JsonSerializer.Serialize(chart, LibraryIndexJsonContext.Default.DesktopLibraryChartEntry)), ("$s", chart?.SearchText ?? ""), ("$k", chart?.KeyCount ?? 0));
+                Execute(db, "INSERT INTO headers(path,length,modified,payload,search,keys,playable_length,bpm) VALUES($p,$l,$m,$j,$s,$k,$pl,$b) ON CONFLICT(path) DO UPDATE SET length=excluded.length,modified=excluded.modified,payload=excluded.payload,search=excluded.search,keys=excluded.keys,playable_length=excluded.playable_length,bpm=excluded.bpm",
+                    ("$p", path), ("$l", header.Length), ("$m", header.ModifiedTicks), ("$j", chart == null ? null : JsonSerializer.Serialize(chart, LibraryIndexJsonContext.Default.DesktopLibraryChartEntry)), ("$s", chart?.SearchText ?? ""), ("$k", chart?.KeyCount ?? 0),
+                    ("$pl", chart?.Length), ("$b", chart?.Bpm));
                 Execute(db, "DELETE FROM lookup WHERE rowid=(SELECT rowid FROM headers WHERE path=$p)", ("$p", path));
                 Execute(db, "INSERT INTO lookup(rowid,path,search) SELECT h.rowid,h.path,h.search || char(10) || coalesce(json_extract(p.payload,'$.Note'),'') || char(10) || coalesce(json_extract(p.payload,'$.State'),'') || char(10) || coalesce((SELECT group_concat(value,' ') FROM json_each(p.payload,'$.Tags')),'') FROM headers h LEFT JOIN identities i ON i.path=h.path LEFT JOIN personal p ON p.identity=i.identity WHERE h.path=$p", ("$p", path));
             }
             transaction.Commit();
         }
     }
+    /// <summary>Clears the migration flag once every legacy row was revisited.</summary>
+    public void CompleteDerivedBackfill()
+    {
+        lock (gate)
+        {
+            using var db = Open(); using var transaction = db.BeginTransaction();
+            Execute(db, "INSERT INTO index_metadata VALUES('derived_backfill_pending','0') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+            transaction.Commit();
+            NeedsDerivedBackfill = false;
+        }
+    }
+
     public void LinkCopies(string source, string destination) => LinkCopiesBatch([(source, destination)]);
     public void LinkCopiesBatch(IEnumerable<(string Source, string Destination)> copies)
     {
