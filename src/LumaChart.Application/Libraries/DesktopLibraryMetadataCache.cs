@@ -31,6 +31,7 @@ public sealed class DesktopLibraryMetadataCache
     public int PendingCount => pending.Count;
     public int BackfillProcessed => Volatile.Read(ref backfillProcessed);
     public int BackfillTotal => Volatile.Read(ref backfillTotal);
+    public DesktopLibraryBackfillProgress BackfillProgress => new(BackfillProcessed, BackfillTotal);
 
     public IReadOnlyList<DesktopLibraryChartEntry> CachedCharts
     {
