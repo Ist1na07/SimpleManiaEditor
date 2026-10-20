@@ -96,6 +96,21 @@ internal static class Program
             try { AudioNoise037Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
             catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
         }
+        if (args.Length > 0 && args[0] == "--audio-stretch-038")
+        {
+            try { AudioStretch038Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
+        if (args.Length > 0 && args[0] == "--readonly-038")
+        {
+            try { ReadOnlyEdit038Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
+        if (args.Length > 0 && args[0] == "--search-038")
+        {
+            try { LibrarySearch038Specs.Run(root, args.Skip(1).ToArray()); Console.WriteLine(root); return 0; }
+            catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+        }
         if (args.Length > 0 && args[0] == "--render-benchmark") return EditorRenderBenchmark.Run(root, args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
         if (args.Length >= 2 && args[0] == "--resident-process-test") return ResidentSupervisorSpecs.Run(Path.GetFullPath(args[1]), root);
         var screenshotRoot = args.Length > 0 && args[0] != "--workbench-test" && args[0] != "--interaction-025" && args[0] != "--seek-stress-025" && args[0] != "--library-028" && args[0] != "--regression-030" && args[0] != "--mapper-031" && args[0] != "--mapper-033" && args[0] != "--mapper-034" && args[0] != "--mapper-035" && args[0] != "--mapper-036" ? Path.GetFullPath(args[0]) : Path.Combine(root, "screenshots");
