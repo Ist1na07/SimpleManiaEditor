@@ -17,7 +17,7 @@ public sealed partial class MainWindow
 {
     private readonly ListBox readOnlyLibraryList = new();
     private readonly ComboBox readOnlyLibrarySource = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly TextBox readOnlyLibrarySearch = new() { PlaceholderText = "搜索歌曲、难度、作者、标签或备注…" };
+    private readonly TextBox readOnlyLibrarySearch = new() { PlaceholderText = "搜索歌曲/难度/作者，支持 mapper= artist= key= bpm>= 条件" };
     private readonly TextBlock workspaceLibraryCount = MapperText("");
     private readonly TextBlock readOnlyLibraryCount = MapperText("");
     // 0.1.37: the header names the source of the list (local index cache, how old
@@ -37,6 +37,7 @@ public sealed partial class MainWindow
     private readonly DispatcherTimer browserSearchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer workspaceSearchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private HashSet<string>? readOnlySearchMatches;
+    private string readOnlySearchHint = "";
     private int browserSearchGeneration;
     private bool cloningLibraryChart;
     private sealed record BrowserRoot(string Path) { public override string ToString() => Path; }
@@ -62,8 +63,12 @@ public sealed partial class MainWindow
         ToolTip.SetTip(libraryRefreshButton, "曲库浏览只读取本地索引，不扫描磁盘。点此重新扫描曲库目录（Songs 较大时需要一些时间）。");
         header.Children.Add(libraryRefreshButton);
         header.Children.Add(MapperButton("批量整理", "Library.OrganizeSelected", async () => await ShowBatchAnnotationsAsync()));
-        header.Children.Add(MapperButton("★ 收藏", "Library.Favorites", () => librarySearchBox.Text = "star:true"));
-        header.Children.Add(MapperButton("未发布", "Library.Unpublished", () => librarySearchBox.Text = "state:未发布"));
+        // These quick filters must hit the personal annotation fields on both panes:
+        // a favourite / unpublished map can live in the editable workspace or in a
+        // read-only Songs root, and before 0.1.38 the button only drove the left pane.
+        void ApplyQuickSearch(string query) { librarySearchBox.Text = query; readOnlyLibrarySearch.Text = query; }
+        header.Children.Add(MapperButton("★ 收藏", "Library.Favorites", () => ApplyQuickSearch("star:true")));
+        header.Children.Add(MapperButton("未发布", "Library.Unpublished", () => ApplyQuickSearch("state:未发布")));
         header.Children.Add(MapperButton("迁移记录", "Library.TransferHistory", async () => await ShowTransferHistoryAsync()));
         libraryView.Children.Add(header);
         libraryStatusText.Margin = new Thickness(14, 4, 14, 8);
@@ -79,7 +84,7 @@ public sealed partial class MainWindow
             Grid.SetRow(filter, 2); pane.Children.Add(filter); Grid.SetRow(list, 3); pane.Children.Add(list);
             Grid.SetRow(count, 4); pane.Children.Add(count); return pane;
         }
-        librarySearchBox.PlaceholderText = "搜索工作目录…";
+        librarySearchBox.PlaceholderText = "搜索工作目录 · 支持 mapper= / key= / bpm> 条件";
         AutomationProperties.SetAutomationId(librarySearchBox, "Library.Search");
         librarySearchBox.TextChanged += (_, _) => { workspaceSearchTimer.Stop(); workspaceSearchTimer.Start(); };
         workspaceSearchTimer.Tick += async (_, _) =>
@@ -120,14 +125,19 @@ public sealed partial class MainWindow
         Grid.SetRow(actions, 1); right.Children.Add(actions); Grid.SetColumn(right, 2); columns.Children.Add(right);
         readOnlyLibrarySource.SelectionChanged += (_, _) => { mapperBrowserDirty = true; RefreshMapperLibraryBrowser(); };
         readOnlyLibrarySearch.TextChanged += (_, _) => { browserSearchGeneration++; browserSearchTimer.Stop(); browserSearchTimer.Start(); };
-        browserSearchTimer.Tick += async (_, _) =>
+        browserSearchTimer.Tick += (_, _) =>
         {
             browserSearchTimer.Stop(); var generation = browserSearchGeneration; var query = readOnlyLibrarySearch.Text ?? "";
             try
             {
-                var matching = query.Length == 0 ? null : await Task.Run(() => viewModel.MapperLibrary.Search(query));
+                // 0.1.38: osu!-style query (mapper=, key=, bpm<…) over the cached rows.
+                // Parsing happens once; the 46k-row pass takes a few milliseconds on
+                // the UI thread, so the debounce no longer needs a worker thread.
+                var result = viewModel.SearchLibrary(query);
                 if (generation != browserSearchGeneration) return;
-                readOnlySearchMatches = matching; mapperBrowserDirty = true; RefreshMapperLibraryBrowser();
+                readOnlySearchMatches = result.Paths;
+                readOnlySearchHint = result.Paths is null ? "" : viewModel.DescribeLibrarySearch(result.Query);
+                mapperBrowserDirty = true; RefreshMapperLibraryBrowser();
             }
             catch (Exception ex) { if (generation == browserSearchGeneration) readOnlyLibraryCount.Text = "搜索未完成：" + ex.Message; }
         };
@@ -193,7 +203,9 @@ public sealed partial class MainWindow
         if (!ReferenceEquals(readOnlyLibraryList.ItemsSource, external)) readOnlyLibraryList.ItemsSource = external;
         readOnlyLibraryList.SelectedItem = external.FirstOrDefault(c => string.Equals(c.ChartPath, selectedChart, StringComparison.OrdinalIgnoreCase));
         workspaceLibraryCount.Text = $"{work.Length:N0} 首歌曲 · {work.Sum(v => v.VisibleCharts.Count):N0} 张谱面 · 含已收录的旧工作区 · 双击难度编辑";
-        readOnlyLibraryCount.Text = source == null ? "先添加只读 Songs 曲库。仅索引 mania 谱面，不改动原文件。" : $"{external.Length:N0} 张 mania 谱面 · 双击只读查看，编辑前克隆";
+        readOnlyLibraryCount.Text = source == null
+            ? "先添加只读 Songs 曲库。仅索引 mania 谱面，不改动原文件。"
+            : $"{external.Length:N0} 张 mania 谱面 · 双击只读查看，编辑前克隆" + (readOnlySearchHint.Length == 0 ? "" : " · " + readOnlySearchHint);
     }
 
     private async Task OpenLibraryReadOnlyAsync(string path)
@@ -236,12 +248,12 @@ public sealed partial class MainWindow
         list.DoubleTapped += (_, _) => Choose(); list.KeyDown += (_, e) => { if (e.Key == Key.Enter) Choose(); };
         async Task Filter()
         {
-            var ticket = ++generation; var query = search.Text ?? ""; var entries = viewModel.LibraryEntries.ToArray();
+            var ticket = ++generation; var query = search.Text ?? "";
             try
             {
-                var matches = query.Length == 0 ? null : await Task.Run(() => viewModel.MapperLibrary.Search(query));
+                var matches = viewModel.SearchLibraryCharts(query);
                 if (ticket != generation) return;
-                list.ItemsSource = entries.Where(e => matches == null || matches.Contains(e.ChartPath)).ToArray();
+                list.ItemsSource = matches;
             }
             catch (Exception ex) { if (ticket == generation) status.Text = "索引搜索未完成：" + ex.Message; }
         }

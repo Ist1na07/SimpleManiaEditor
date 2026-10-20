@@ -864,15 +864,77 @@ public sealed partial class MainWindowViewModel
         RaiseStateChanged();
     }
 
+    private string librarySearchParsedText = "";
+    private DesktopLibrarySearch librarySearchParsed = DesktopLibrarySearch.Empty;
+
+    /// <summary>
+    /// The current search box text parsed into osu!-style filters. Parsed once per
+    /// text change; per-chart evaluation never runs a regex.
+    /// </summary>
+    private DesktopLibrarySearch ParsedLibrarySearch
+    {
+        get
+        {
+            if (!string.Equals(librarySearchParsedText, LibrarySearchQuery, StringComparison.Ordinal))
+            {
+                librarySearchParsed = DesktopLibrarySearch.Parse(LibrarySearchQuery);
+                librarySearchParsedText = LibrarySearchQuery;
+            }
+            return librarySearchParsed;
+        }
+    }
+
+    /// <summary>
+    /// Evaluates a search query over the cached library rows. Supports osu!'s song
+    /// select keywords (mapper=, key=, bpm&lt;…) as well as the existing plain text,
+    /// quoted phrases, -exclusion and personal tag:/state:/note:/star: fields.
+    /// </summary>
+    public DesktopLibrarySearchResult SearchLibrary(string? query)
+    {
+        var parsed = DesktopLibrarySearch.Parse(query);
+        return parsed.IsEmpty
+            ? new DesktopLibrarySearchResult(parsed, null)
+            : new DesktopLibrarySearchResult(parsed, DesktopChartLibraryService.SearchPaths(libraryEntries, parsed));
+    }
+
+    /// <summary>Rows matching a query; used by pickers that need the entries themselves.</summary>
+    public IReadOnlyList<DesktopLibraryChartEntry> SearchLibraryCharts(string? query)
+    {
+        var parsed = DesktopLibrarySearch.Parse(query);
+        return parsed.IsEmpty
+            ? LibraryEntries.ToArray()
+            : DesktopChartLibraryService.SearchCharts(libraryEntries, parsed);
+    }
+
+    /// <summary>
+    /// Explains why a search term had no effect: either the osu! field has no data
+    /// in this index (e.g. length) or cached rows predate the BPM column.
+    /// </summary>
+    public string DescribeLibrarySearch(DesktopLibrarySearch search)
+    {
+        if (search.UnsupportedFields.Count > 0)
+            return AvaloniaLocalizationCatalog.Format("暂不支持 {0}（该条件按文本搜索）", string.Join("、", search.UnsupportedFields));
+        if (search.HasBpmFilter && libraryEntries.Any(entry => entry.Bpm is null))
+            return "部分谱面缺少 BPM 数据，刷新索引后可补全";
+        return "";
+    }
+
+    private string LibrarySearchStatus()
+    {
+        if (LibrarySearchQuery.Length == 0)
+            return AvaloniaLocalizationCatalog.Format("曲库显示 {0:N0} 个文件夹", LibraryFolders.Count);
+        var hint = DescribeLibrarySearch(ParsedLibrarySearch);
+        var text = AvaloniaLocalizationCatalog.Format("搜索“{0}” · {1:N0} 张谱面", LibrarySearchQuery, LibraryFolders.Sum(folder => folder.VisibleCharts.Count));
+        return hint.Length == 0 ? text : text + " · " + hint;
+    }
+
     public void SetLibrarySearch(string? query)
     {
         query = query?.Trim() ?? string.Empty;
         if (string.Equals(LibrarySearchQuery, query, StringComparison.Ordinal)) return;
         LibrarySearchQuery = query;
         ApplyLibraryFilterAndSort();
-        Status = LibrarySearchQuery.Length == 0
-            ? AvaloniaLocalizationCatalog.Format("曲库显示 {0:N0} 个文件夹", LibraryFolders.Count)
-            : AvaloniaLocalizationCatalog.Format("搜索“{0}” · {1:N0} 张谱面", LibrarySearchQuery, LibraryFolders.Sum(folder => folder.VisibleCharts.Count));
+        Status = LibrarySearchStatus();
         RaiseStateChanged();
     }
 
@@ -887,7 +949,12 @@ public sealed partial class MainWindowViewModel
 
     private void ApplyLibraryFilterAndSort(HashSet<string>? resolvedSearch = null, bool searchAlreadyResolved = false)
     {
-        var matching = searchAlreadyResolved ? resolvedSearch : LibrarySearchQuery.Length == 0 ? null : MapperLibrary.Search(LibrarySearchQuery);
+        // 0.1.38: osu!-style keyword filters are evaluated over the cached rows in
+        // memory. The SQLite/FTS store is still kept for personal bookkeeping and
+        // incremental indexing, but field filters need typed columns, not a blob.
+        var matching = searchAlreadyResolved
+            ? resolvedSearch
+            : LibrarySearchQuery.Length == 0 ? null : DesktopChartLibraryService.SearchPaths(libraryEntries, ParsedLibrarySearch);
         var folders = DesktopChartLibraryService.FilterAndSort(libraryFolderIndex, "", LibrarySort);
         if (matching != null) folders = folders.Select(view => new DesktopLibraryFolderView(view.Folder, view.VisibleCharts.Where(chart => matching.Contains(chart.ChartPath)).ToArray()))
             .Where(view => view.VisibleCharts.Count > 0).ToArray();
