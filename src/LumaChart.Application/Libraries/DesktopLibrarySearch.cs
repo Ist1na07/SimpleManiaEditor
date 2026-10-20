@@ -10,11 +10,11 @@ namespace LumaChart.Application.Libraries;
 /// rows instead of the online beatmap database.
 ///
 /// Supported keyword fields: mapper/creator/author, artist, title, diff/version,
-/// source, tag (personal tags, osu's "user tags"), key/keys, bpm, cs, and the
-/// local library's own fields format, state, note and star (favourite).
-/// Unsupported osu! fields (length, star rating, ar/od/hp/dr, ln, status,
-/// dates, divisor) fall back to literal text exactly like osu! does for keys it
-/// does not know; they are also reported through <see cref="UnsupportedFields"/>
+/// source, tag (personal tags, osu's "user tags"), key/keys, bpm, length, cs,
+/// and the local library's own fields format, state, note and star (favourite).
+/// Unsupported osu! fields (star rating, ar/od/hp/dr, ln, status, dates,
+/// divisor) fall back to literal text exactly like osu! does for keys it does
+/// not know; they are also reported through <see cref="UnsupportedFields"/>
 /// so the UI can say why a term had no effect.
 /// </summary>
 public sealed class DesktopLibrarySearch
@@ -57,6 +57,7 @@ public sealed class DesktopLibrarySearch
     private bool? favoriteFilter;
     private KeyCountFilter? keyFilter;
     private NumberRange? bpmFilter;
+    private NumberRange? lengthFilter;
     private NumberRange? circleSizeFilter;
 
     private DesktopLibrarySearch()
@@ -71,13 +72,16 @@ public sealed class DesktopLibrarySearch
 
     public bool HasBpmFilter => bpmFilter is { HasFilter: true };
 
+    /// <summary>True when the query constrains playable length in seconds.</summary>
+    public bool HasLengthFilter => lengthFilter is { HasFilter: true };
+
     public bool HasPersonalFilters =>
         userTags.Count > 0 || stateFilter is not null || noteFilter is not null || favoriteFilter is not null;
 
     public bool IsEmpty => freeText.Count == 0 && userTags.Count == 0 && creatorFilter is null && artistFilter is null &&
                            titleFilter is null && difficultyFilter is null && sourceFilter is null && formatFilter is null &&
                            stateFilter is null && noteFilter is null && favoriteFilter is null && keyFilter is null &&
-                           bpmFilter is null && circleSizeFilter is null;
+                           bpmFilter is null && lengthFilter is null && circleSizeFilter is null;
 
     /// <summary>Parses a query. Malformed input never throws: it degrades to literal text.</summary>
     public static DesktopLibrarySearch Parse(string? query)
@@ -140,6 +144,9 @@ public sealed class DesktopLibrarySearch
         if (formatFilter is { } format && !format.Matches(chart.Format)) return false;
         if (keyFilter is { } keys && !keys.Matches(chart.KeyCount)) return false;
         if (bpmFilter is { } bpm && !bpm.Matches(chart.Bpm)) return false;
+        // Missing length (an un-backfilled legacy row) cannot satisfy a range
+        // and is excluded rather than treated as zero or as a wildcard.
+        if (lengthFilter is { } length && !length.Matches(chart.Length)) return false;
         if (circleSizeFilter is { } circleSize && !circleSize.Matches(chart.KeyCount)) return false;
 
         var annotation = chart.PersonalAnnotation;
@@ -230,6 +237,10 @@ public sealed class DesktopLibrarySearch
                 return keyFilter.Apply(op, value, negated);
             case "bpm":
                 return TryApplyRange(ref bpmFilter, op, value, 0.5, negated);
+            case "length":
+                // osu! FilterCriteria.Length is playable seconds with the same
+                // half-unit tolerance used for BPM comparisons.
+                return TryApplyRange(ref lengthFilter, op, value, 0.5, negated);
             case "cs":
                 return TryApplyRange(ref circleSizeFilter, op, value, 0.05, negated);
             case "star":
@@ -242,7 +253,6 @@ public sealed class DesktopLibrarySearch
                 }
                 AddUnsupported("star");
                 return false;
-            case "length":
             case "ln":
             case "lns":
             case "ar":

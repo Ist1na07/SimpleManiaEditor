@@ -180,9 +180,15 @@ internal static class LibrarySearch038Specs
         Check("[7K]", 0, 3);
         Check("[7K Insane]", 0);
 
-        // osu! fields without local data fall back to literal text and are reported
-        Unsupported("length<120", "length");
-        Unsupported("length=120", "length");
+        // 0.1.39: length is a real playable-time filter. These fixtures use known
+        // lengths; rows 2 and 5 stay null to cover the legacy unknown-length case.
+        charts[0].Length = 90;
+        charts[1].Length = 150;
+        charts[3].Length = 200;
+        charts[4].Length = 240;
+        Check("length<120", 0);
+        Check("length>=120", 1, 3, 4);
+        // osu! fields without local data still fall back to literal text and are reported.
         Unsupported("ar=9", "ar");
         Unsupported("star>6", "star");
         Unsupported("ln=50", "ln");
@@ -201,9 +207,11 @@ internal static class LibrarySearch038Specs
         Require(DesktopLibrarySearch.Parse("").IsEmpty, "empty query is not empty");
         Require(DesktopLibrarySearch.Parse("star:true").HasPersonalFilters, "favourite query does not need personal data");
         Require(DesktopLibrarySearch.Parse("bpm>120").HasBpmFilter, "bpm query not marked as BPM filter");
-        Require(DesktopLibrarySearch.Parse("length<120").UnsupportedFields.Count == 1, "length fallback not reported");
+        Require(DesktopLibrarySearch.Parse("length<120").HasLengthFilter &&
+                DesktopLibrarySearch.Parse("length<120").UnsupportedFields.Count == 0,
+            "length is not a real filter");
 
-        Report["parse"] = new { cases, fixtureRows = charts.Length, unsupportedFields = new[] { "length", "ar", "star", "ln" } };
+        Report["parse"] = new { cases, fixtureRows = charts.Length, unsupportedFields = new[] { "ar", "star", "ln" }, lengthSupported = true };
         Log.AppendLine("[parse] " + cases + " query cases over " + charts.Length + " fixture rows PASS");
     }
 
@@ -237,7 +245,8 @@ internal static class LibrarySearch038Specs
             ("artist=E2E", 2),
             ("bpm>=130", 1),
             ("bpm<130", 1),
-            ("length<120", 0),
+            // 0.1.39: both scanned fixtures are 1.9 s playable, so length<120 is true.
+            ("length<120", 2),
             ("mode=0", 0),
         };
         foreach (var (query, expected) in checks)
@@ -498,9 +507,12 @@ internal static class LibrarySearch038Specs
         Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 2, "view model key= filter count is wrong");
         Wait(model.SetLibrarySearchAsync("bpm>=125"));
         Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 1, "view model bpm>= filter count is wrong");
+        // 0.1.39: the generated fixture charts are 1.9 s playable each.
         Wait(model.SetLibrarySearchAsync("length<120"));
-        Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 0, "unsupported length field matched rows");
-        Require(model.Status.Contains("length", StringComparison.Ordinal), "unsupported length field is not explained in the status line: " + model.Status);
+        Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 3, "length<120 did not match the 1.9 s charts");
+        Require(!model.Status.Contains("暂不支持", StringComparison.Ordinal), "length is still explained as unsupported: " + model.Status);
+        Wait(model.SetLibrarySearchAsync("length<2"));
+        Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 0, "length<2 matched a 1.9 s chart");
         Wait(model.SetLibrarySearchAsync(""));
         Require(model.LibraryFolders.Sum(folder => folder.VisibleCharts.Count) == 3, "clearing the view model search did not restore rows");
 
@@ -516,9 +528,11 @@ internal static class LibrarySearch038Specs
             mapperEquals = 2,
             keyEquals = 2,
             bpmAtLeast = 1,
-            lengthUnsupportedStatus = true
+            lengthAtMost120 = 3,
+            lengthBelow2 = 0,
+            lengthUnsupportedStatus = false
         };
-        Log.AppendLine("[ui] ★ 收藏/未发布 now filter the read-only Songs pane (1 row each; previously 0 result); mapper=/key=/bpm>= counts 2/2/1, length<120 explains the unsupported field");
+        Log.AppendLine("[ui] ★ 收藏/未发布 now filter the read-only Songs pane (1 row each; previously 0 result); mapper=/key=/bpm>= counts 2/2/1, length<120 matches 3 and length<2 matches 0");
     }
 
     // ------------------------------------------------------------------ real library scan benchmark (manual)
