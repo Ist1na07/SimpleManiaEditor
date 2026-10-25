@@ -1,17 +1,30 @@
-param([string]$Archive = '', [switch]$ExplicitReleaseRequest)
+param([string[]]$Archive = @(), [switch]$ExplicitReleaseRequest)
 $ErrorActionPreference = 'Stop'
 if (!$ExplicitReleaseRequest) { throw 'A GitHub release requires an explicit human request. Use Build-Local.ps1 for normal iteration; supply -ExplicitReleaseRequest only after that request.' }
 $taskRoot = Split-Path -Parent $PSScriptRoot
 [xml]$definition = Get-Content -LiteralPath (Join-Path $taskRoot 'src/LumaChart.Avalonia/LumaChart.Avalonia.csproj') -Raw
 $version = [string](($definition.Project.PropertyGroup | Where-Object Version | Select-Object -First 1).Version)
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version.' }
-if (!$Archive) { $Archive = Join-Path $taskRoot "dist/SimpleManiaEditor-$version-Distribution-win-x64.zip" }
-$Archive = (Resolve-Path -LiteralPath $Archive).Path
+if ($Archive.Count -eq 0) {
+    $Archive = @(
+        (Join-Path $taskRoot "dist/SimpleManiaEditor-$version-Full-win-x64.zip"),
+        (Join-Path $taskRoot "dist/SimpleManiaEditor-$version-Portable-win-x64.zip")
+    ) | Where-Object { Test-Path -LiteralPath $_ }
+}
+$Archive = @($Archive | ForEach-Object { (Resolve-Path -LiteralPath $_).Path })
+if ($Archive.Count -eq 0) { throw 'No distribution archive found to publish.' }
 $repo = 'Ist1na07/SimpleManiaEditor'
 $tag = 'v' + $version
 $notes = Get-Content -LiteralPath (Join-Path $taskRoot "docs/RELEASE-$version.md") -Raw
-$hash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
-$length = (Get-Item -LiteralPath $Archive).Length
+$assets = @()
+foreach ($path in $Archive) {
+    $assets += [pscustomobject]@{
+        Path   = $path
+        Name   = [IO.Path]::GetFileName($path)
+        Hash   = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        Length = (Get-Item -LiteralPath $path).Length
+    }
+}
 Push-Location $taskRoot
 try {
     $commit = (& git rev-parse HEAD).Trim()
@@ -33,23 +46,25 @@ try {
     $releases = Invoke-RestMethod -Uri "$base/releases?per_page=100" -Headers $headers
     $release = $releases | Where-Object tag_name -eq $tag | Select-Object -First 1
     if ($release -and !$release.draft) { throw 'This version is already published.' }
-    $body = $notes + "`n`nWindows x64 ZIP SHA256: ``$hash``"
+    $hashLines = ($assets | ForEach-Object { '- ' + '``' + $_.Name + '``' + ' (' + [math]::Round($_.Length / 1MB, 1) + ' MiB) SHA256: ``' + $_.Hash + '``' }) -join "`n"
+    $body = $notes + "`n`n" + $hashLines
     if (!$release) {
         $payload = @{ tag_name = $tag; target_commitish = $commit; name = "SimpleManiaEditor $version"; body = $body; draft = $true; prerelease = $false } | ConvertTo-Json
         $release = Invoke-RestMethod -Uri "$base/releases" -Headers $headers -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($payload))
     }
     if ($release.target_commitish -ne $commit) { throw 'Draft release belongs to a different commit.' }
-    $name = [IO.Path]::GetFileName($Archive)
-    $asset = $release.assets | Where-Object name -eq $name | Select-Object -First 1
-    if (!$asset) {
-        $upload = $release.upload_url -replace '\{.*$', ''
-        if ($upload -notlike "https://uploads.github.com/repos/$repo/releases/*/assets") { throw 'Unexpected asset upload host.' }
-        $asset = Invoke-RestMethod -Uri ($upload + '?name=' + [Uri]::EscapeDataString($name)) -Headers $headers -Method Post -ContentType 'application/zip' -InFile $Archive -TimeoutSec 1800
+    $upload = $release.upload_url -replace '\{.*$', ''
+    if ($upload -notlike "https://uploads.github.com/repos/$repo/releases/*/assets") { throw 'Unexpected asset upload host.' }
+    foreach ($item in $assets) {
+        $asset = $release.assets | Where-Object name -eq $item.Name | Select-Object -First 1
+        if (!$asset) {
+            $asset = Invoke-RestMethod -Uri ($upload + '?name=' + [Uri]::EscapeDataString($item.Name)) -Headers $headers -Method Post -ContentType 'application/zip' -InFile $item.Path -TimeoutSec 1800
+        }
+        if ($asset.state -ne 'uploaded' -or $asset.size -ne $item.Length -or $asset.digest -ne ('sha256:' + $item.Hash)) { throw "Uploaded asset $($item.Name) checksum or size does not match. Draft retained." }
+        Write-Output "Asset verified: $($item.Name) ($($item.Length) bytes), SHA256 $($item.Hash)"
     }
-    if ($asset.state -ne 'uploaded' -or $asset.size -ne $length -or $asset.digest -ne ('sha256:' + $hash)) { throw 'Uploaded asset checksum or size does not match. Draft retained.' }
     $payload = @{ draft = $false; make_latest = 'true'; body = $body } | ConvertTo-Json
     $published = Invoke-RestMethod -Uri "$base/releases/$($release.id)" -Headers $headers -Method Patch -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($payload))
     Write-Output "Published: $($published.html_url)"
-    Write-Output "Asset verified: $name ($length bytes), SHA256 $hash"
 }
 finally { $headers = $null; $fields = $null; $credential = $null; Pop-Location }
